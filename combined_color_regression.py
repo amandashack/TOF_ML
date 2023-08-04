@@ -14,10 +14,10 @@ import re
 import numpy as np
 import os
 
-folder_path = r'C:\Users\lauren\Documents\Simion_Simulation\simulation_files'
-output_path = r'C:\Users\lauren\Desktop\NM_voltage_files\combined-regression'
+folder_path = r'C:\Users\lauren\Documents\Simion_Simulation\simulation_files\EA_files'
+output_path = r'C:\Users\lauren\Documents\Simion_Simulation\simulation_files\EA_files'
 
-file_list = [file for file in os.listdir(folder_path) if file.endswith('grouped.csv') and (re.search('A0_E', file)) and not (re.search('E4', file))]
+file_list = [file for file in os.listdir(folder_path) if file.endswith('grouped.csv') and (re.search('A0_EA', file)) and not (re.search('E4', file))]
 
 data = []
 
@@ -67,7 +67,7 @@ th = np.dot(np.log2(Y), Xt)  # Use log2(Y) instead of Y for best fit line
 x = np.ones((10, 2))
 x[:, 1] = np.linspace(np.log2(X).min(), np.log2(X).max(), num=10)  # Use log2(X) range for x values
 ypred = np.dot(th, x.T)
-plt.plot(x[:, 1], ypred, '-', label=f'Best Fit Line: Y = {th[1]:.4g}X + {th[0]:.4g}')
+plt.plot(x[:, 1], ypred, '-', label=f'Best Fit Line: Y = {th[1]:.6g}X + {th[0]:.6g}')
 plt.xlabel('log2(Pass Energy)') 
 plt.ylabel('log2(TOF)')
 plt.legend(prop={'size': 6})  # Adjust the font size of the legend
