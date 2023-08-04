@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
 """
 Created on Wed Jul 12 09:59:37 2023
-
+change the percentile of data you want to represent in the histogram-(line 66) lowering the percentile to even 99.9% allows 
+one to better visualize the data as there are significant outliers in TOFs that can over saturate the colorbar  
 @author: lauren
 """
 

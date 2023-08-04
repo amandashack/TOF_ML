@@ -1,12 +1,10 @@
 # -*- coding: utf-8 -*-
 """
-Created on Tue Jul 11 09:35:43 2023
-
-this code will plot scatter plots using the 'cleaned' up .csv files (outputs of csv_reader program)
-Pass Energy (K)
-
+Created on Tue Jul 11 10:11:06 2023
+this logs the 
 @author: lauren
 """
+
 import os
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -64,14 +62,14 @@ total_plots = len(column_three_values)
 total_pages = (total_plots - 1) // plots_per_page + 1
 
 # Find the minimum and maximum values of the fifth column for consistent y-axis limits
-y_min = hit_sensor_data[df.columns[4]].min()
-y_max = hit_sensor_data[df.columns[4]].max()
+y_min = np.log10(hit_sensor_data[df.columns[4]]).min()
+y_max = np.log10(hit_sensor_data[df.columns[4]]).max()
 
 # Calculate the overall minimum and maximum values of Reduced Kinetic Energy for consistent x-axis limits
-x_min = hit_sensor_data['Reduced_Kinetic_Energy'].min()
-x_max = hit_sensor_data['Reduced_Kinetic_Energy'].max()
+x_min = np.log10(hit_sensor_data['Reduced_Kinetic_Energy']).min()
+x_max = np.log10(hit_sensor_data['Reduced_Kinetic_Energy']).max()
 
-pdf_path = os.path.join(folder_path, 'plot91.pdf')
+pdf_path = os.path.join(folder_path, 'log_plot.pdf')
 with PdfPages(pdf_path) as pdf:
     # Variables to store the overall y-axis limits and tick values
     overall_y_min = float('inf')
@@ -99,11 +97,15 @@ with PdfPages(pdf_path) as pdf:
             # Assign colors based on retardation values
             colors = [color_dict[retardation] for retardation in retardation_values]
 
+            # Take the logarithm of the data
+            reduced_kinetic_energy = np.log10(reduced_kinetic_energy)
+            fifth_column_values = np.log10(fifth_column_values)
+
             # Create scatter plot with specific colors
             ax.scatter(reduced_kinetic_energy, fifth_column_values, c=colors)
 
-            ax.set_xlabel('Pass Energy')
-            ax.set_ylabel('Time of Flight')
+            ax.set_xlabel('log(Pass Energy)')
+            ax.set_ylabel('log(Time of Flight)')
             ax.set_title(f'Elevation: {value}')
 
             # Update overall y-axis limits
@@ -140,5 +142,4 @@ with PdfPages(pdf_path) as pdf:
 
         pdf.savefig(fig)
         plt.close()
-        
-        plt.show()
+
