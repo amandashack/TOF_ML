@@ -24,12 +24,12 @@ def swish(x):
 
 # Defining the Y0 from the regression line on the NM simulation datasets
 def y0_NM(x_value):
-    y0 = -0.4454 * x_value - 1.154
+    y0 = -0.445 * x_value - 1.158
     return y0
 
 # Function to create the dataframe for given folder path
 def create_dataframe_from_files(folder_path):
-        file_list = [file for file in os.listdir(folder_path) if file.endswith('grouped.csv') and (re.search('A0_E', file)) and not (re.search('E4', file))]
+        file_list = [file for file in os.listdir(folder_path) if file.endswith('grouped.csv')] #and (re.search('A0_E', file)) and not (re.search('R090', file))]
         data = []
 
         for fname in file_list:
@@ -65,8 +65,8 @@ def create_dataframe_from_files(folder_path):
         return model_data
    
 # Paths for model data and test data
-folder_path_model = r'C:\Users\lauren\Documents\Simion_Simulation\grouped_files\grouped_files_EA'
-folder_path_test =r'C:\Users\lauren\Documents\Simion_Simulation\simulation_files'  #smaller data sets from before
+folder_path_model = r'C:\Users\lauren\Documents\Simion_Simulation\simulation_files\EA_files'
+folder_path_test =r'C:\Users\lauren\Documents\Simion_Simulation\simulation_files\test_files\model_testing_small'  #smaller data sets from before
 
 # Create model_data and test_data dataframes
 model_data = create_dataframe_from_files(folder_path_model)
@@ -101,11 +101,11 @@ epochs_list = [5] * 20
 
 model = Sequential()
 
-model.add(Dense(32, input_dim=3))
-model.add(LeakyReLU(alpha=0.001))
-model.add(Dense(16))
-model.add(LeakyReLU(alpha=0.001))
-model.add(Dense(16, activation=swish))
+model.add(Dense(16, input_dim=3))
+model.add(LeakyReLU(alpha=0.01))
+model.add(Dense(8))
+model.add(LeakyReLU(alpha=0.01))
+model.add(Dense(8, activation=swish))  #swish works better
 model.add(Dropout(0.2))
 model.add(Dense(1, activation='linear'))
 model.compile(loss='mean_squared_error', optimizer=tf.keras.optimizers.Adam(learning_rate=0.001))
@@ -114,7 +114,7 @@ loss_list = []
 
 for epochs in epochs_list:
     # Train the model with all data from model_data
-    model.fit(X_model_data, Y_model_data, epochs=epochs, batch_size=16, verbose=0)
+    model.fit(X_model_data, Y_model_data, epochs=epochs, batch_size=4, verbose=0)
     
     # Evaluate the model on the test_data
     loss = model.evaluate(X_test_data, Y_test_data -y0_NM(test_data['log2(Pass Energy)']), verbose=0)
