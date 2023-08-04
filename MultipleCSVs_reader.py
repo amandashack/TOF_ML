@@ -1,6 +1,12 @@
 # -*- coding: utf-8 -*-
 """
 Created on Tue Aug  1 13:40:52 2023
+this code should access the raw SIMION simulation .csv files essentially clean them up
+so data analysis for later will be easier. 
+
+enter the folder path in which all your raw SIMION .csv files are located into "input_directory" 
+as well as an "output_directory location"
+
 
 @author: lauren
 """
@@ -42,7 +48,7 @@ os.makedirs(output_directory, exist_ok=True)
 
 # Process all CSV files in the input directory
 for file_name in os.listdir(input_directory):
-    if file_name.endswith("0.csv"):
+    if file_name.endswith("0.csv"):   #this will be specific to what you name your files
         input_file_path = os.path.join(input_directory, file_name)
         
         # Get the file name and extension separately

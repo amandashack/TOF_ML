@@ -1,3 +1,13 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Mon Jul 17 14:30:21 2023
+
+@author: lauren
+
+this code filters all the data provided in the folder path and plots log2(Pass Energy)
+vs. log2(TOF) and creates a best fit line and equation of the line in the legend. 
+The points are also color coded based off of retardation value
+"""
 import pandas as pd
 import matplotlib.pyplot as plt
 import re
@@ -38,13 +48,14 @@ colors = plt.cm.autumn(color_range)
 # Create a color dictionary to map retardation values to colors
 color_dict = {value: color for value, color in zip(retardation, colors)}
 
-
 X = pd.to_numeric(valid_data.iloc[:, 3]) - pd.to_numeric(valid_data.iloc[:, 10])  # Convert epass column to numeric
 Y = pd.to_numeric(valid_data.iloc[:, 4])  # Convert tof column to numeric
 
+# Plot each point with the assigned color based on retardation value
+for r in retardation:
+    mask = valid_data['Retardation'] == r
+    plt.plot(np.log2(X[mask]), np.log2(Y[mask]), '.', color=color_dict[r], label=f'Retardation: {r}', marker='o', markersize=2)
 
-
-plt.plot(np.log2(X), np.log2(Y), '.')
 plt.xlabel('log2(Pass Energy)')
 plt.ylabel('log2(TOF)')
 
@@ -57,9 +68,9 @@ x = np.ones((10, 2))
 x[:, 1] = np.linspace(np.log2(X).min(), np.log2(X).max(), num=10)  # Use log2(X) range for x values
 ypred = np.dot(th, x.T)
 plt.plot(x[:, 1], ypred, '-', label=f'Best Fit Line: Y = {th[1]:.4g}X + {th[0]:.4g}')
-plt.xlabel('log2(Pass Energy)')
+plt.xlabel('log2(Pass Energy)') 
 plt.ylabel('log2(TOF)')
-plt.legend()
+plt.legend(prop={'size': 6})  # Adjust the font size of the legend
 
 figure_output_file = os.path.join(output_path, 'combined_plot.pdf')
 plt.savefig(figure_output_file)

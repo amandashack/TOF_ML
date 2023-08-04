@@ -152,14 +152,16 @@ with PdfPages(pdf_file) as pdf_pages:
             ax.set_zticks(z_ticks)
             ax.set_zticklabels(z_ticklabels, fontsize=8)
 
+
+#%% (needs to be debugged, the color bars are not consistent in every graph)
         # Create a colorbar legend
-      #  cbar_ax = fig.add_axes([0.05, 0.2, 0.02, 0.6])  # Adjust the position and size of the colorbar
-      #  cbar = fig.colorbar(scatter, cax=cbar_ax)
-     #   cbar.set_label('Collection Efficiency', fontsize=10)
+            cbar_ax = fig.add_axes([0.05, 0.2, 0.02, 0.6])  # Adjust the position and size of the colorbar
+            cbar = fig.colorbar(scatter, cax=cbar_ax)
+            cbar.set_label('Collection Efficiency', fontsize=10)
 
         # Set the colorbar tick positions and labels
-       # cbar.set_ticks(z_ticks)
-#        cbar.set_ticklabels(z_ticklabels)
+            cbar.set_ticks(z_ticks)
+            cbar.set_ticklabels(z_ticklabels)
 
         # Save the current page to the PDF file
         pdf_pages.savefig(fig)
