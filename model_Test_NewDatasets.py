@@ -97,14 +97,10 @@ loss2 = loaded_model.evaluate(X_test_data[1000:2000, :], Y_test_data[1000:2000],
 
 loss3 = loaded_model.evaluate(X_test_data[2100:3000, :], Y_test_data[2100:3000], verbose=0)
 
-#%%
+#%% 
 
-# # Plot loss_list vs. training number
-# plt.plot(range(1, len(loss) + 1), loss_list, ".-")
-# plt.xlabel('Training Number')
-# plt.ylabel('Mean Squared Error (MSE)')
-# plt.title('MSE vs. Training Number')
-# plt.xticks(range(1, len(loss_list) + 1))
-# plt.show()
-
+Y_evaluated = loaded_model.predict(X_test_data)
+plt.figure(101)
+plt.plot(Y_test_data, 'blue')
+plt.plot(Y_evaluated, 'red')
 
