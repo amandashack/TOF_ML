@@ -12,10 +12,11 @@ as well as an "output_directory location"
 """
 import os
 import pandas as pd
+import re
 
 # Function to process each CSV file
 def process_csv_file(file_path):
-    rows_to_skip = 343
+    rows_to_skip = 10
     data1 = pd.read_csv(file_path, skiprows=rows_to_skip)
 
     grouped_data = pd.concat([data1.iloc[::2].reset_index(drop=True), data1.iloc[1::2].reset_index(drop=True)], axis=1)
@@ -48,7 +49,7 @@ os.makedirs(output_directory, exist_ok=True)
 
 # Process all CSV files in the input directory
 for file_name in os.listdir(input_directory):
-    if file_name.endswith("1200.csv"):   #this will be specific to what you name your files
+    if file_name.endswith(".csv") and re.search('TEA', file_name):  #this will be specific to what you name your files
         input_file_path = os.path.join(input_directory, file_name)
         
         # Get the file name and extension separately

@@ -1,10 +1,13 @@
 # -*- coding: utf-8 -*-
 """
-Created on Thu Aug  3 10:05:25 2023
+Created on Wed Aug 16 00:26:40 2023
 
 @author: lauren
 """
 
+import numpy as np
+import tensorflow as tf
+from tensorflow.keras.models import load_model
 import pandas as pd
 import numpy as np
 import re
@@ -17,10 +20,6 @@ from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import Dense
 from tensorflow.keras.layers import Dropout
 from tensorflow.keras.layers import LeakyReLU
-
-# Define Swish activation function
-def swish(x):
-    return x * tf.sigmoid(x)
 
 # Defining the Y0 from the regression line on the NM simulation datasets
 def y0_NM(x_value):
@@ -63,71 +62,49 @@ def create_dataframe_from_files(folder_path):
         })
 
         return model_data
-   
-# Paths for model data and test data
-folder_path_model = r'C:\Users\lauren\Documents\Simion_Simulation\simulation_files\EA_files'
-folder_path_test =r'C:\Users\lauren\Documents\Simion_Simulation\simulation_files\test_files\model_testing_2'  #smaller data sets from before
 
-# Create model_data and test_data dataframes
-model_data = create_dataframe_from_files(folder_path_model)
+
+
+# test DATA
+folder_path_test = r'C:\Users\lauren\Documents\Simion_Simulation\simulation_files\test_files\model_testing_2'
 test_data = create_dataframe_from_files(folder_path_test)
 
-print("Model Data:")
-print(model_data.head())
-print("\nTest Data:")
-print(test_data.head())
-#%%
-model_data_residual = model_data.copy()
-model_data_residual['Residuals'] = model_data['log2(TOF)'] - y0_NM(model_data['log2(Pass Energy)'])
 
-# Assign X and Y values for model_data
-X_model_data = model_data_residual.iloc[:, 0:3].values.astype(float)
-Y_model_data = model_data_residual.iloc[:, -1].values.astype(float)  # Use 'Residuals' column as the target (output) variable
+#Filter out infinite values from test_data
+test_data = test_data.replace([np.inf, -np.inf], np.nan)
+test_data = test_data.dropna()
 
-# Assign X and Y values for test_data
+
+# Assign X and Y values for filtered test_data
 X_test_data = test_data.iloc[:, 0:3].values.astype(float)
 Y_test_data = test_data.iloc[:, -1].values.astype(float)  # Use 'Residuals' column as the target (output) variable
 
+ # Evaluate the model on the filtered test_data
+y0 = y0_NM(X_test_data[:,2])
+
+#Calculating the residual
+Y_test_data = Y_test_data - y0
+
+#%%
+# Load the trained model from the H5 file
+model_filename = r'C:\Users\lauren\Documents\Simion_Simulation\simulation_files\EA_files\model_trained.h5'
+loaded_model = load_model(model_filename)
+#%%
+loss1 = loaded_model.evaluate(X_test_data[0:930, :], Y_test_data[0:930], verbose=0)
+
+loss2 = loaded_model.evaluate(X_test_data[1000:2000, :], Y_test_data[1000:2000], verbose=0)
+#loss = np.float64(loss)
+
+loss3 = loaded_model.evaluate(X_test_data[2100:3000, :], Y_test_data[2100:3000], verbose=0)
+
 #%%
 
-# Define a list to store the results for different epochs
-epochs_list = [5] * 20
-
-## Create a PDF to store the plots
-#pdf_filename = 'tof_prediction_plots_residual.pdf'
-#pdf_pages = PdfPages(pdf_filename)
-
-model = Sequential()
-
-model.add(Dense(32, input_dim=3))
-model.add(LeakyReLU(alpha=0.0001))
-model.add(Dense(16))
-model.add(LeakyReLU(alpha=0.0001))
-model.add(Dense(16, activation=swish))  #swish works better
-model.add(Dropout(0.2))
-model.add(Dense(1, activation='linear'))
-model.compile(loss='mean_squared_error', optimizer=tf.keras.optimizers.Adam(learning_rate=0.01))
-
-loss_list = []
-
-
-for training_number, epochs in enumerate(epochs_list, start=1):
-    # Train the model 
-    model.fit(X_model_data, Y_model_data, epochs=epochs, batch_size=8, verbose=0)
-    
-    # Evaluate the model on the test_data
-    y0 = y0_NM(test_data['log2(Pass Energy)'])
-    loss = model.evaluate(X_test_data, Y_test_data - y0, verbose=0)
-    loss = np.float64(loss)
-    print(f'Training {training_number} - Mean Squared Error (MSE) on test data:', loss)
-    loss_list.append(loss)
-  
-# Plot loss_list vs. training number
-plt.plot(range(1, len(loss_list) + 1), loss_list, ".-")
-plt.xlabel('Training Number')
-plt.ylabel('Mean Squared Error (MSE)')
-plt.title('MSE vs. Training Number')
-plt.xticks(range(1, len(loss_list) + 1))
-plt.show()
+# # Plot loss_list vs. training number
+# plt.plot(range(1, len(loss) + 1), loss_list, ".-")
+# plt.xlabel('Training Number')
+# plt.ylabel('Mean Squared Error (MSE)')
+# plt.title('MSE vs. Training Number')
+# plt.xticks(range(1, len(loss_list) + 1))
+# plt.show()
 
 
