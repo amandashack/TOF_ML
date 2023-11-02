@@ -18,27 +18,29 @@ from tensorflow.keras.layers import Dense
 from tensorflow.keras.layers import Dropout
 from tensorflow.keras.layers import LeakyReLU
 
+
 # Define Swish activation function
 def swish(x):
     return x * tf.sigmoid(x)
 
+
 # Defining the Y0 from the regression line on the NM simulation datasets
 def y0_NM(x_value):
-    y0 = -0.4454 * x_value - 1.154
+    y0 = -0.4821 * x_value - 0.7139
     return y0
+
 
 # make numpy values easier to read
 np.set_printoptions(precision=3, suppress=True)
 
 # Creating valid_data dataframe
-
-#make numpy values easier to read
+# make numpy values easier to read
 np.set_printoptions(precision=3, suppress=True)
 
-#creating valid_data dataframe
+# creating valid_data dataframe
 
-folder_path = r'C:\Users\lauren\Documents\Simion_Simulation\simulation_files'
-output_path = r'C:\Users\lauren\Desktop\NM_voltage_files\combined-regression'
+folder_path = r'C:/Users/proxi/Downloads/NM_simulations'
+output_path = r'C:/Users/proxi/Downloads/NM_simulations'
 
 file_list = [file for file in os.listdir(folder_path) if file.endswith('grouped.csv') and (re.search('A0_E', file)) and not (re.search('E4', file))]
 data = []
@@ -63,7 +65,7 @@ retardation = sorted(valid_data['Retardation'].unique())
 valid_data['Pass Energy'] = valid_data['KE_initial'].astype(float) - valid_data['Retardation'].astype(float)
 valid_data = valid_data[['Elevation', 'Retardation','Pass Energy', 'TOF']]
 
-#create model data, narrow the data frame to only x inputs and output, also log2 necessary columns
+# create model data, narrow the data frame to only x inputs and output, also log2 necessary columns
 model_data = valid_data.copy()
 model_data['Pass Energy'] = np.log2(model_data['Pass Energy'].astype(float))
 model_data['TOF'] = np.log2(model_data['TOF'].astype(float))
@@ -72,7 +74,7 @@ model_data = model_data.rename(columns={
     'TOF': 'log2(TOF)'
 })
 
-#%%
+
 model_data_residual =  model_data.copy()
 model_data_residual['Residuals'] = model_data['log2(TOF)'] - y0_NM(model_data['log2(Pass Energy)'])
 
@@ -92,9 +94,9 @@ Y_test_tensor = tf.convert_to_tensor(Y_test)
 # Define a list to store the results for different epochs
 epochs_list = [5] * 20
 
-## Create a PDF to store the plots
-#pdf_filename = 'tof_prediction_plots_residual.pdf'
-#pdf_pages = PdfPages(pdf_filename)
+# Create a PDF to store the plots
+pdf_filename = 'tof_prediction_plots_residual.pdf'
+pdf_pages = PdfPages(pdf_filename)
 
 model = Sequential()
 
@@ -138,12 +140,12 @@ for epochs in epochs_list:
     plt.title(f'Model with {epochs} epochs: Residual Method')
     plt.figtext(0.95, 0.05, f'Epochs: {epochs}', ha='right', fontsize=8)
     
-    ## Save the plot to the PDF file
-    #pdf_pages.savefig()
-    #plt.close()
+    # Save the plot to the PDF file
+    pdf_pages.savefig()
+    plt.close()
 
 # Print the list of MSE for different epochs
 print(loss_list)
 
 # Close the PDF after saving all the plots
-#pdf_pages.close()
+pdf_pages.close()
