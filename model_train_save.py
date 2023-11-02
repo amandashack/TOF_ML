@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Created on Thu Aug  3 10:05:25 2023
+Created on Tue Aug 15 22:22:37 2023
 
 @author: lauren
 """
@@ -66,68 +66,73 @@ def create_dataframe_from_files(folder_path):
    
 # Paths for model data and test data
 folder_path_model = r'C:\Users\lauren\Documents\Simion_Simulation\simulation_files\EA_files'
-folder_path_test =r'C:\Users\lauren\Documents\Simion_Simulation\simulation_files\test_files\model_testing_2'  #smaller data sets from before
+#folder_path_test = r'C:\Users\lauren\Documents\Simion_Simulation\simulation_files\test_files\model_testing_2'
 
 # Create model_data and test_data dataframes
 model_data = create_dataframe_from_files(folder_path_model)
-test_data = create_dataframe_from_files(folder_path_test)
+#test_data = create_dataframe_from_files(folder_path_test)
 
 print("Model Data:")
 print(model_data.head())
 print("\nTest Data:")
-print(test_data.head())
-#%%
+#print(test_data.head())
+
+# Assuming model_data and test_data are defined
 model_data_residual = model_data.copy()
 model_data_residual['Residuals'] = model_data['log2(TOF)'] - y0_NM(model_data['log2(Pass Energy)'])
+
+# Filter out infinite values from test_data
+#test_data = test_data.replace([np.inf, -np.inf], np.nan)
+#test_data = test_data.dropna()
 
 # Assign X and Y values for model_data
 X_model_data = model_data_residual.iloc[:, 0:3].values.astype(float)
 Y_model_data = model_data_residual.iloc[:, -1].values.astype(float)  # Use 'Residuals' column as the target (output) variable
 
-# Assign X and Y values for test_data
-X_test_data = test_data.iloc[:, 0:3].values.astype(float)
-Y_test_data = test_data.iloc[:, -1].values.astype(float)  # Use 'Residuals' column as the target (output) variable
+# Assign X and Y values for filtered test_data
+#X_test_data = test_data.iloc[:, 0:3].values.astype(float)
+#Y_test_data = test_data.iloc[:, -1].values.astype(float)  # Use 'Residuals' column as the target (output) variable
 
-#%%
-
-# Define a list to store the results for different epochs
-epochs_list = [5] * 20
-
-## Create a PDF to store the plots
-#pdf_filename = 'tof_prediction_plots_residual.pdf'
-#pdf_pages = PdfPages(pdf_filename)
+#constructing model 
 
 model = Sequential()
-
 model.add(Dense(32, input_dim=3))
-model.add(LeakyReLU(alpha=0.0001))
+model.add(LeakyReLU(alpha=0.001))
 model.add(Dense(16))
-model.add(LeakyReLU(alpha=0.0001))
-model.add(Dense(16, activation=swish))  #swish works better
+model.add(LeakyReLU(alpha=0.001))
+model.add(Dense(16, activation=swish))
 model.add(Dropout(0.2))
 model.add(Dense(1, activation='linear'))
-model.compile(loss='mean_squared_error', optimizer=tf.keras.optimizers.Adam(learning_rate=0.01))
+model.compile(loss='mean_squared_error', optimizer=tf.keras.optimizers.Adam(learning_rate=0.001))
 
-loss_list = []
+# Lists to store epoch numbers and loss values
+epoch_numbers = []
+loss_values = []
 
+# Define the path to save the model
+model_filename = r'C:\Users\lauren\Documents\Simion_Simulation\simulation_files\EA_files\model_trained3.h5'
 
-for training_number, epochs in enumerate(epochs_list, start=1):
-    # Train the model 
-    model.fit(X_model_data, Y_model_data, epochs=epochs, batch_size=8, verbose=0)
+# Train the model in increments of 5 epochs and print updates
+total_epochs = 100
+epochs_per_update = 5
+for epoch in range(0, total_epochs, epochs_per_update):
+    epochs_to_train = min(epochs_per_update, total_epochs - epoch)
     
-    # Evaluate the model on the test_data
-    y0 = y0_NM(test_data['log2(Pass Energy)'])
-    loss = model.evaluate(X_test_data, Y_test_data - y0, verbose=0)
-    loss = np.float64(loss)
-    print(f'Training {training_number} - Mean Squared Error (MSE) on test data:', loss)
-    loss_list.append(loss)
-  
-# Plot loss_list vs. training number
-plt.plot(range(1, len(loss_list) + 1), loss_list, ".-")
-plt.xlabel('Training Number')
-plt.ylabel('Mean Squared Error (MSE)')
-plt.title('MSE vs. Training Number')
-plt.xticks(range(1, len(loss_list) + 1))
+    history = model.fit(X_model_data, Y_model_data, epochs=epochs_to_train, batch_size=16, verbose=1)
+    epoch_numbers.append(epoch + epochs_to_train)
+    loss_values.append(history.history['loss'][-1])
+    # Print update
+    print(f"Trained {epoch + epochs_to_train} epochs out of {total_epochs}, Loss: {history.history['loss'][-1]:.4f}")
+
+# Save the full trained model to the specified file path
+model.save(model_filename)
+print("Model training completed and saved.")
+
+
+# Plot the loss values against epoch numbers
+plt.plot(epoch_numbers, loss_values, marker='o')
+plt.xlabel('Epoch Number')
+plt.ylabel('Loss')
+plt.title('Training Loss vs. Epoch Number')
+plt.grid()
 plt.show()
-
-

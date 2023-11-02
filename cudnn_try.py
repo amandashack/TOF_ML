@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Created on Thu Aug  3 10:05:25 2023
+Created on Mon Aug  7 15:45:11 2023
 
 @author: lauren
 """
@@ -10,26 +10,36 @@ import numpy as np
 import re
 import os
 import tensorflow as tf
-import matplotlib.pyplot as plt
-from matplotlib.backends.backend_pdf import PdfPages
-from sklearn.model_selection import train_test_split
 from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Dense
+from tensorflow.compat.v1.keras.layers import CuDNNLSTM  # Import CuDNNLSTM
 from tensorflow.keras.layers import Dropout
 from tensorflow.keras.layers import LeakyReLU
+import tensorflow as tf
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import CuDNNLSTM, LeakyReLU, Dropout
 
-# Define Swish activation function
+# Configure GPU usage
+gpus = tf.config.experimental.list_physical_devices('GPU')
+if gpus:
+    try:
+        tf.config.experimental.set_memory_growth(gpus[0], True)
+    except RuntimeError as e:
+        print(e)
+        
+        
 def swish(x):
-    return x * tf.sigmoid(x)
+    return x * tf.nn.sigmoid(x)
+
 
 # Defining the Y0 from the regression line on the NM simulation datasets
 def y0_NM(x_value):
     y0 = -0.445 * x_value - 1.158
     return y0
 
+
 # Function to create the dataframe for given folder path
 def create_dataframe_from_files(folder_path):
-        file_list = [file for file in os.listdir(folder_path) if file.endswith('.csv')] #and (re.search('A0_E', file)) and not (re.search('R090', file))]
+        file_list = [file for file in os.listdir(folder_path) if file.endswith('grouped.csv')] #and (re.search('A0_E', file)) and not (re.search('R090', file))]
         data = []
 
         for fname in file_list:
@@ -66,7 +76,7 @@ def create_dataframe_from_files(folder_path):
    
 # Paths for model data and test data
 folder_path_model = r'C:\Users\lauren\Documents\Simion_Simulation\simulation_files\EA_files'
-folder_path_test =r'C:\Users\lauren\Documents\Simion_Simulation\simulation_files\test_files\model_testing_2'  #smaller data sets from before
+folder_path_test =r'C:\Users\lauren\Documents\Simion_Simulation\simulation_files\test_files\model_testing_small'  #smaller data sets from before
 
 # Create model_data and test_data dataframes
 model_data = create_dataframe_from_files(folder_path_model)
@@ -88,46 +98,37 @@ Y_model_data = model_data_residual.iloc[:, -1].values.astype(float)  # Use 'Resi
 X_test_data = test_data.iloc[:, 0:3].values.astype(float)
 Y_test_data = test_data.iloc[:, -1].values.astype(float)  # Use 'Residuals' column as the target (output) variable
 
-#%%
 
 # Define a list to store the results for different epochs
 epochs_list = [5] * 20
+#%%
 
-## Create a PDF to store the plots
-#pdf_filename = 'tof_prediction_plots_residual.pdf'
-#pdf_pages = PdfPages(pdf_filename)
+timesteps = X_model_data.shape[1]  # Number of time steps in your input data
+features = X_model_data.shape[2]    # Number of features at each time step
 
+
+# Create a Sequential model
 model = Sequential()
-
-model.add(Dense(32, input_dim=3))
+model.add(CuDNNLSTM(32, input_shape=(timesteps, features), return_sequences=True))
 model.add(LeakyReLU(alpha=0.0001))
-model.add(Dense(16))
+model.add(CuDNNLSTM(16, return_sequences=True))
 model.add(LeakyReLU(alpha=0.0001))
-model.add(Dense(16, activation=swish))  #swish works better
+model.add(CuDNNLSTM(16, return_sequences=True, activation=swish))  # swish works better
 model.add(Dropout(0.2))
-model.add(Dense(1, activation='linear'))
-model.compile(loss='mean_squared_error', optimizer=tf.keras.optimizers.Adam(learning_rate=0.01))
+model.add(CuDNNLSTM(1, return_sequences=False, activation='linear'))
+model.compile(loss='mean_squared_error', optimizer=tf.keras.optimizers.Adam(learning_rate=0.0001))
 
 loss_list = []
+loss_list = []
 
-
-for training_number, epochs in enumerate(epochs_list, start=1):
-    # Train the model 
+for epochs in epochs_list:
+    # Train the model with all data from model_data
     model.fit(X_model_data, Y_model_data, epochs=epochs, batch_size=8, verbose=0)
     
     # Evaluate the model on the test_data
-    y0 = y0_NM(test_data['log2(Pass Energy)'])
-    loss = model.evaluate(X_test_data, Y_test_data - y0, verbose=0)
-    loss = np.float64(loss)
-    print(f'Training {training_number} - Mean Squared Error (MSE) on test data:', loss)
+    loss = model.evaluate(X_test_data, Y_test_data - y0_NM(test_data['log2(Pass Energy)']), verbose=0)
+    print('Mean Squared Error (MSE) on test data:', loss)
     loss_list.append(loss)
-  
-# Plot loss_list vs. training number
-plt.plot(range(1, len(loss_list) + 1), loss_list, ".-")
-plt.xlabel('Training Number')
-plt.ylabel('Mean Squared Error (MSE)')
-plt.title('MSE vs. Training Number')
-plt.xticks(range(1, len(loss_list) + 1))
-plt.show()
-
-
+    
+    # Make predictions on test_data
+    predictions = model.predict(X_test_data)
