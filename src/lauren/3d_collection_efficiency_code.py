@@ -153,7 +153,7 @@ with PdfPages(pdf_file) as pdf_pages:
             ax.set_zticklabels(z_ticklabels, fontsize=8)
 
 
-#%% (needs to be debugged, the color bars are not consistent in every graph)
+# %% (needs to be debugged, the color bars are not consistent in every graph)
         # Create a colorbar legend
             cbar_ax = fig.add_axes([0.05, 0.2, 0.02, 0.6])  # Adjust the position and size of the colorbar
             cbar = fig.colorbar(scatter, cax=cbar_ax)
