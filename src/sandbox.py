@@ -2,14 +2,13 @@
 This file is a sandbox for testing/running functions
 """
 
-from loaders import multi_retardation_loader, MRCOLoader
+from loaders import MRCOLoader
 from plotter import one_plot_multi_scatter
 import matplotlib.pyplot as plt
 import xarray as xr
 import numpy as np
 import arpys
-from PyQt5.QtWidgets import QApplication, QWidget
-from pyimagetool import imagetool
+from model_gen import run_model
 
 
 def multi_scatter(spec):
@@ -24,5 +23,6 @@ if __name__ == '__main__':
     amanda_filepath = "C:/Users/proxi/Downloads/NM_simulations"
     multi_retardation_sim = MRCOLoader(amanda_filepath)
     multi_retardation_sim.load()
-    multi_retardation_sim.organize_data()
-    multi_scatter(multi_retardation_sim.spec_dict)
+    multi_retardation_sim.create_mask((402, np.inf), (0, 13.7), "make it")
+    #multi_scatter(multi_retardation_sim)
+    run_model(multi_retardation_sim.data_masked)
