@@ -101,11 +101,11 @@ def create_model():
     """
     
     model = Sequential()
-    model.add(Dense(32, input_shape=(3,)))
+    model.add(Dense(9, input_shape=(3,)))
     model.add(LeakyReLU(alpha=0.001))
-    model.add(Dense(16))
+    model.add(Dense(6))
     model.add(LeakyReLU(alpha=0.001))
-    model.add(Dense(16, activation=swish))
+    model.add(Dense(2, activation=swish))
     model.add(Dropout(0.2))
     model.add(Dense(1, activation='linear'))
     model.compile(loss='mean_squared_error',
@@ -136,7 +136,7 @@ def run_model(model_data):
     STEPS_PER_EPOCH = N_TRAIN // BATCH_SIZE
     history = model.fit(x_train, y_train, batch_size=BATCH_SIZE,
                         epochs=NUM_EPOCHS, validation_data=(x_val, y_val))
-    print(f"model hist is : \n {history.history}")
+    print(f"model history is : \n {history.history}")
     loss_train = history.history['loss']
     loss_val = history.history['val_loss']
     # get the highest validation accuracy of the training epochs
