@@ -40,3 +40,6 @@ def calculateVoltage_OneoverR(retardationValue):
 	
 
 	return voltageArray
+
+va = calculateVoltage_NelderMeade(200)
+print(va)
