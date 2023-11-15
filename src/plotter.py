@@ -1,6 +1,7 @@
 import math
 import matplotlib.pyplot as plt
 import numpy as np
+import collections
 
 def plot_opt(ax_nm):#lbl_x,lbl_y
     ax_nm.axhline(y = 0, color = 'b', label = 'E_F',linestyle='--'); ax_nm.axvline(0,color='black',linestyle = '--')
@@ -29,6 +30,19 @@ def multi_plot(spec_dict):
         ax.set_ylabel('hv', fontsize=18)
         ax.set_title(keys[i-1], fontsize=20)
     plt.tight_layout()
+    plt.show()
+
+
+def pass_versus_counts(spec, retardation):
+    cmap = get_cmap(len(retardation))
+    fig, ax = plt.subplots()
+    for i in range(len(retardation)):
+        c = cmap(i)
+        r = retardation[i]
+        counter_pass = collections.Counter(spec[r][0])
+        ax.scatter(counter_pass.keys(), counter_pass.values(), color=c)
+    ax.set_xlabel("pass_energy")
+    ax.set_ylabel("counts")
     plt.show()
 
 

@@ -43,6 +43,8 @@ class MRCOLoader(object):
         self.filepath = filepath
         self.dataframe = None
         self.data_masked = None
+        self.spec_dict = {}
+        self.spec_masked = {}
         self.mask = {}
         self.tof_values = []
         self.pass_energy = []
@@ -68,6 +70,7 @@ class MRCOLoader(object):
                     self.tof_values.append(tof_values.tolist())
                     self.x_tof.append(x_tof.tolist())
                     self.y_tof.append(y_tof.tolist())
+                    self.spec_dict[self.retardation[-1]] = [self.pass_energy[-1], self.tof_values[-1]]
             else:
                 pass
         self.organize_data()
@@ -88,12 +91,20 @@ class MRCOLoader(object):
         x_tof = [x_tof[i] for i in s]
         y_tof = [y_tof[i] for i in s]
         self.dataframe = self.gen_dataframe(pass_c, tof_c, r_c)
+        self.spec_dict = self.gen_spec(pass_c, tof_c, r_c)
         self.initial_ke = ke_c
         self.retardation = r_c
         self.pass_energy = pass_c
         self.tof_values = tof_c
         self.x_tof = x_tof
         self.y_tof = y_tof
+
+    @staticmethod
+    def gen_spec(pass_energy, tof, retardation):
+        spec = {}
+        for i in range(len(retardation)):
+            spec[retardation[i]] = [pass_energy[i], tof[i]]
+        return(spec)
 
     @staticmethod
     def gen_dataframe(pass_energy, tof, retardation):
@@ -132,6 +143,6 @@ class MRCOLoader(object):
                 # this does not currently apply multiple masks...
                 tof_c[i] = np.asarray(tof_c[i])[m[i]].tolist()
                 pass_c[i] = np.asarray(pass_c[i])[m[i]].tolist()
-        data = self.gen_dataframe(pass_c, tof_c, self.retardation)
-        self.data_masked = data
+        self.data_masked = self.gen_dataframe(pass_c, tof_c, self.retardation)
+        self.spec_masked = self.gen_spec(pass_c, tof_c, self.retardation)
 

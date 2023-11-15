@@ -3,7 +3,7 @@ This file is a sandbox for testing/running functions
 """
 
 from loaders import MRCOLoader
-from plotter import one_plot_multi_scatter
+from plotter import one_plot_multi_scatter, pass_versus_counts
 import matplotlib.pyplot as plt
 import xarray as xr
 import numpy as np
@@ -23,6 +23,8 @@ if __name__ == '__main__':
     amanda_filepath = "C:/Users/proxi/Downloads/NM_simulations"
     multi_retardation_sim = MRCOLoader(amanda_filepath)
     multi_retardation_sim.load()
-    multi_retardation_sim.create_mask((402, np.inf), (0, 13.7), "make it")
-    #multi_scatter(multi_retardation_sim)
+    multi_retardation_sim.create_mask((402, np.inf), (0, 17.7), "make it")
+    #pass_versus_counts(multi_retardation_sim.spec_masked,
+    #                   [multi_retardation_sim.retardation[0], multi_retardation_sim.retardation[-1]])
+    #multi_scatter(multi_retardation_sim.spec_masked)
     run_model(multi_retardation_sim.data_masked)
