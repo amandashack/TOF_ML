@@ -112,13 +112,25 @@ def create_model():
                   optimizer=tf.keras.optimizers.Adam(learning_rate=0.001))
     return(model)
 
+def convert_to_log(data):
+    pass_e = data[1, :]
+    tof = data[3, :]
+    log_pass = np.log2(pass_e)
+    log_tof = np.log2(tof)
+    data[1, :] = log_pass
+    data[3, :] = log_tof
+    return data
 
 def run_model(model_data):
     # Assign X and Y values
+    print(model_data.shape)
     data = copy.deepcopy(model_data)
+    #data = convert_to_log(data)
     # turn the tof column into a residuals column
-    residual = data[2, :] - y0_NM(data[1, :])
-    X = data
+    # actual TOF minus TOF for input pass energies
+    residual = data[3, :] - y0_NM(data[1, :])
+    X = data[0:3, :]
+    print(X.shape)
     Y = residual
     # Split the model_data into train and test data
     # Separate the test data
@@ -143,8 +155,8 @@ def run_model(model_data):
 
     fig, ax = plt.subplots()
     epochs = range(1, NUM_EPOCHS+1)
-    ax.plot(epochs, loss_train, 'g', label='Training loss')
-    ax.plot(epochs, loss_val, 'b', label='validation loss')
+    ax.plot(epochs[1:], loss_train[1:], 'g', label='Training loss')
+    ax.plot(epochs[1:], loss_val[1:], 'b', label='validation loss')
     ax.set_title('Training and Validation loss')
     ax.set_xlabel('Epochs')
     ax.set_ylabel('Loss')
