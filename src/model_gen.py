@@ -121,7 +121,7 @@ def convert_to_log(data):
     data[3, :] = log_tof
     return data
 
-def run_model(model_data):
+def run_model(model_data, epochs=10):
     # Assign X and Y values
     print(model_data.shape)
     data = copy.deepcopy(model_data)
@@ -147,14 +147,14 @@ def run_model(model_data):
     N_TRAIN = x_train.shape[0]
     STEPS_PER_EPOCH = N_TRAIN // BATCH_SIZE
     history = model.fit(x_train, y_train, batch_size=BATCH_SIZE,
-                        epochs=NUM_EPOCHS, validation_data=(x_val, y_val))
+                        epochs=epochs, validation_data=(x_val, y_val))
     print(f"model history is : \n {history.history}")
     loss_train = history.history['loss']
     loss_val = history.history['val_loss']
     # get the highest validation accuracy of the training epochs
 
     fig, ax = plt.subplots()
-    epochs = range(1, NUM_EPOCHS+1)
+    epochs = range(1, epochs+1)
     ax.plot(epochs[1:], loss_train[1:], 'g', label='Training loss')
     ax.plot(epochs[1:], loss_val[1:], 'b', label='validation loss')
     ax.set_title('Training and Validation loss')
@@ -168,7 +168,7 @@ def run_model(model_data):
 
     test_loss = model.evaluate(x_test, y_test, verbose=2)
     print('\nTest loss:', test_loss)
-
+    """
     # get the highest validation accuracy of the training epochs
     predictions = model.predict(x_test)
     fig, ax1 = plt.subplots()
@@ -180,3 +180,4 @@ def run_model(model_data):
     legend1 = ax1.legend(loc='upper right')
     plt.tight_layout()
     plt.show()
+    """
