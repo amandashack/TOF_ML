@@ -24,7 +24,7 @@ if __name__ == '__main__':
     multi_retardation_sim = MRCOLoader(amanda_filepath)
     multi_retardation_sim.load()
     multi_retardation_sim.create_mask((402, np.inf), (0, 17.7), "make it")
-    #pass_versus_counts(multi_retardation_sim.spec_masked,
-    #                   [multi_retardation_sim.retardation[0], multi_retardation_sim.retardation[-1]])
-    #multi_scatter(multi_retardation_sim.spec_masked)
+    # pass_versus_counts(multi_retardation_sim.spec_masked,
+    #                    [multi_retardation_sim.retardation[0], multi_retardation_sim.retardation[-1]])
+    # multi_scatter(multi_retardation_sim.spec_masked)
     run_model(multi_retardation_sim.data_masked)
