@@ -9,6 +9,7 @@ import xarray as xr
 import numpy as np
 import arpys
 from model_gen import run_model
+import sys
 
 
 def multi_scatter(spec):
@@ -19,7 +20,7 @@ def multi_scatter(spec):
     plt.show()
 
 
-if __name__ == '__main__':
+def run_sandbox(epochs):
     amanda_filepath = "C:/Users/proxi/Downloads/NM_simulations"
     multi_retardation_sim = MRCOLoader(amanda_filepath)
     multi_retardation_sim.load()
@@ -27,4 +28,9 @@ if __name__ == '__main__':
     # pass_versus_counts(multi_retardation_sim.spec_masked,
     #                    [multi_retardation_sim.retardation[0], multi_retardation_sim.retardation[-1]])
     # multi_scatter(multi_retardation_sim.spec_masked)
-    run_model(multi_retardation_sim.data_masked)
+    run_model(multi_retardation_sim.data_masked, epochs=int(epochs))
+
+
+if __name__ == '__main__':
+    epochs = sys.argv[1]
+    run_sandbox(epochs)
