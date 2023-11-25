@@ -5,9 +5,7 @@ This file is a sandbox for testing/running functions
 from loaders import MRCOLoader
 from plotter import one_plot_multi_scatter, pass_versus_counts
 import matplotlib.pyplot as plt
-import xarray as xr
 import numpy as np
-import arpys
 from model_gen import run_model
 import sys
 
@@ -21,7 +19,8 @@ def multi_scatter(spec):
 
 
 def run_sandbox(epochs):
-    amanda_filepath = "C:/Users/proxi/Downloads/NM_simulations"
+    #amanda_filepath = "C:/Users/proxi/Downloads/NM_simulations"
+    amanda_filepath = "/home/ajshack/TOF_ML/src/NM_simulations"
     multi_retardation_sim = MRCOLoader(amanda_filepath)
     multi_retardation_sim.load()
     multi_retardation_sim.create_mask((402, np.inf), (0, 17.7), "make it")
