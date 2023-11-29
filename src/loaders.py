@@ -30,6 +30,24 @@ def interpolator(tofs, pass_ens):
     return np.array([y for y in interp_y]), x_axis
 
 
+def train_test_val_loader(fp):
+    df = np.array([])
+    fp = os.path.abspath(fp)
+    for file in os.listdir(fp):
+        if file.endswith("h5"):
+            path1 = os.path.join(fp, file)
+            with h5py.File(path1, 'r') as f:
+                df = np.append(df, f['data1']['elevation'][:])
+                df = np.append(df, f['data1']['pass'][:])
+                df = np.append(df, f['data1']['retardation'][:])
+                df = np.append(df, f['data1']['ele*ret'][:])
+                df = np.append(df, f['data1']['ele*pass'][:])
+                df = np.append(df, f['data1']['pass*ret'][:])
+                df = np.append(df, f['data1']['residuals'][:])
+                df = np.reshape(df, (-1, len(f['data1']['elevation'][:])))
+    return df
+
+
 class MRCOLoader(object):
     """
     Implements data loading and storage for use plotting
@@ -158,4 +176,3 @@ class MRCOLoader(object):
                 ele_c[i] = np.asarray(ele_c[i])[m[i]].tolist()
         self.data_masked = self.gen_dataframe(ele_c, pass_c, self.retardation, tof_c)
         self.spec_masked = self.gen_spec(ele_c, pass_c, self.retardation, tof_c)
-

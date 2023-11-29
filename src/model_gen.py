@@ -12,9 +12,6 @@ import tqdm
 
 # make numpy values easier to read
 np.set_printoptions(precision=3, suppress=True)
-BUFFER_SIZE = 1500
-BATCH_SIZE = 80
-NUM_EPOCHS = 5
 
 
 # Define Swish activation function
@@ -88,7 +85,7 @@ def create_model1(X_train, Y_train, X_test, Y_test):
     pdf_pages.close()
 
 
-def create_model():
+def create_model(params):
     """
     Model providing function:
 
@@ -99,85 +96,47 @@ def create_model():
     The last one is optional, though recommended, namely:
         - model: specify the model just created so that we can later use it again.
     """
-    
+    dropout = params['dropout']
+    layer_size = params['layer_size']
+    alpha = params['alpha']
+
     model = Sequential()
-    model.add(Dense(9, input_shape=(3,)))
-    model.add(LeakyReLU(alpha=0.001))
-    model.add(Dense(6))
-    model.add(LeakyReLU(alpha=0.001))
-    model.add(Dense(2, activation=swish))
-    model.add(Dropout(0.2))
+    model.add(Dense(layer_size, input_shape=(6,)))
+    model.add(LeakyReLU(alpha=alpha))
+    model.add(Dense(layer_size))
+    model.add(LeakyReLU(alpha=alpha))
+    model.add(Dense(layer_size, activation=swish))
+    model.add(Dropout(dropout))
     model.add(Dense(1, activation='linear'))
     model.compile(loss='mean_squared_error',
                   optimizer=tf.keras.optimizers.Adam(learning_rate=0.001))
-    return(model)
+    return model
 
-def convert_to_log(data):
-    pass_e = data[1, :]
-    tof = data[3, :]
-    log_pass = np.log2(pass_e)
-    log_tof = np.log2(tof)
-    data[1, :] = log_pass
-    data[3, :] = log_tof
-    return data
 
-def run_model(model_data, epochs=10):
-    # Assign X and Y values
-    print(model_data.shape)
-    data = copy.deepcopy(model_data)
-    #data = convert_to_log(data)
-    # turn the tof column into a residuals column
-    # actual TOF minus TOF for input pass energies
-    residual = data[3, :] - y0_NM(data[1, :])
-    X = data[0:3, :]
-    print(X.shape)
-    Y = residual
-    # Split the model_data into train and test data
-    # Separate the test data
-    x, x_test, y, y_test = train_test_split(X.T, Y, test_size=0.15, shuffle=True)
-    # Split the remaining data to train and validation
-    x_train, x_val, y_train, y_val = train_test_split(x, y, test_size=0.15, shuffle=True)
-    # x_train_tensor = tf.data.Dataset.from_tensor_slices(X_train).batch(BATCH_SIZE)
-    # y_train_tensor = tf.data.Dataset.from_tensor_slices(Y_train).batch(BATCH_SIZE)
-    # x_test_tensor = tf.data.Dataset.from_tensor_slices(X_test).batch(BATCH_SIZE)
-    # y_test_tensor = tf.data.Dataset.from_tensor_slices(Y_test).batch(BATCH_SIZE)
-
-    model = create_model()
-
-    N_TRAIN = x_train.shape[0]
-    STEPS_PER_EPOCH = N_TRAIN // BATCH_SIZE
-    history = model.fit(x_train, y_train, batch_size=BATCH_SIZE,
+def run_model(x_train, y_train, x_val, y_val, params):
+    batch_size = params["batch_size"]
+    epochs = params["epochs"]
+    model = create_model(params)
+    model.fit(x_train, y_train, batch_size=batch_size,
                         epochs=epochs, validation_data=(x_val, y_val))
-    print(f"model history is : \n {history.history}")
-    loss_train = history.history['loss']
-    loss_val = history.history['val_loss']
+    return(model)
+    #print(f"model history is : \n {history.history}")
+    #loss_train = history.history['loss']
+    #loss_val = history.history['val_loss']
     # get the highest validation accuracy of the training epochs
 
-    fig, ax = plt.subplots()
-    epochs = range(1, epochs+1)
-    ax.plot(epochs[1:], loss_train[1:], 'g', label='Training loss')
-    ax.plot(epochs[1:], loss_val[1:], 'b', label='validation loss')
-    ax.set_title('Training and Validation loss')
-    ax.set_xlabel('Epochs')
-    ax.set_ylabel('Loss')
-    legend0 = ax.legend(loc='upper right')
-    plt.tight_layout()
-    plt.show()
+    #fig, ax = plt.subplots()
+    #epoch_list = range(1, epochs+1)
+    #ax.plot(epoch_list[1:], loss_train[1:], 'g', label='Training loss')
+    #ax.plot(epoch_list[1:], loss_val[1:], 'b', label='validation loss')
+    #ax.set_title('Training and Validation loss')
+    #ax.set_xlabel('Epochs')
+    #ax.set_ylabel('Loss')
+    #legend0 = ax.legend(loc='upper right')
+    #plt.tight_layout()
+    #plt.show()
 
-    print(x_test, y_test)
+    #print(x_test, y_test)
 
-    test_loss = model.evaluate(x_test, y_test, verbose=2)
-    print('\nTest loss:', test_loss)
-    """
-    # get the highest validation accuracy of the training epochs
-    predictions = model.predict(x_test)
-    fig, ax1 = plt.subplots()
-    ax1.plot(predictions, 'g', label='predictions')
-    #ax1.plot(y_test, 'b', label='actual')
-    ax1.set_title('prediction and test data')
-    ax1.set_xlabel('points')
-    ax1.set_ylabel('residual')
-    legend1 = ax1.legend(loc='upper right')
-    plt.tight_layout()
-    plt.show()
-    """
+    #test_loss = model.evaluate(x_test, y_test, verbose=2)
+    #print('\nTest loss:', test_loss)
