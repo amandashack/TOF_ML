@@ -1,23 +1,12 @@
 #!/bin/bash
-#SBATCH --account=<project>
-#SBATCH --partition=small
+#SBATCH --account=lcls
+#SBATCH --partition=milano
 
 # export TMPDIR=/scratch/<project>/tmp
-
+source /sdf/home/i/isele/ana/sw/conda2/manage/bin/psconda.sh
 DIR=$1
 PARAMS_OFFSET=$2
 
-if [ ! -d "${DIR}/params" ]; then
-  mkdir ${DIR}/params
-fi
-
-if [ ! -d "${DIR}/results" ]; then
-  mkdir ${DIR}/results
-fi
-
-if [ ! -d "${DIR}/runlog" ]; then
-  mkdir ${DIR}/runlog
-fi
 
 PARAMS_FILE="${DIR}/params"
 RESULTS_FILE="${DIR}/results"
@@ -42,19 +31,19 @@ echo "$PARAMS_ID|$JOB_NAME|$SLURM_SUBMIT_DIR" >> $RUNLOG_FILE
 
 PARAMS=$(tail -n +${PARAMS_ID} ${PARAMS_FILE} | head -n 1)
 
-echo "*** TRAIN ***"
-simion_train.py $MODEL_FILE $PARAMS
 
-# exit if training failed
-test $? -ne 0 && exit 1
-
-echo "*** TEST ***"
+echo "Setup tempfile"
 # we assembled the needed data to a single line in $TMPFILE
 TMPFILE=$(mktemp)
 echo -n "$PARAMS_ID|$PARAMS|$JOB_NAME|$BN|" > $TMPFILE
 
-myprog_eval.py ${MODEL_FILE} | tr '\n\t' '| ' >> $TMPFILE
+echo "*** TRAIN ***"
+MODEL_FILE="${DIR}/${PARAMS_ID}"
+./simion_train.py ${MODEL_FILE} ${PARAMS} | tr '\n\t' '| ' >> $TMPFILE
 echo >> $TMPFILE
+
+# exit if training failed
+test $? -ne 0 && exit 1
 
 # only at the end we append it to the results file
 cat $TMPFILE >> $RESULTS_FILE
