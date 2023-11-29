@@ -13,14 +13,7 @@ import tensorflow as tf
 from model_eval import evaluate
 
 
-def run_train(out_path):
-    params = {
-        "dropout": 0.2,
-        "layer_size": 6,
-        "alpha": 0.001,
-        "batch_size": 128,
-        "epochs": 5
-    }
+def run_train(out_path, params):
     dir_path = os.path.dirname(os.path.realpath(__file__))
     # change this slash for linux
     train_filepath = dir_path + "\\NM_simulations\\masked_data1\\train"
@@ -41,5 +34,7 @@ def run_train(out_path):
 
 if __name__ == '__main__':
     params = sys.argv[2]
+    print(params)
     output_file_path = sys.argv[1]
-    run_train(output_file_path)
+    print(out_file_path)
+    run_train(output_file_path, params)
