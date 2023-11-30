@@ -97,7 +97,7 @@ def create_model(params):
         - model: specify the model just created so that we can later use it again.
     """
     dropout = params['dropout']
-    layer_size = params['layer_size']
+    layer_size = int(params['layer_size'])
     alpha = params['alpha']
 
     model = Sequential()
@@ -114,12 +114,12 @@ def create_model(params):
 
 
 def run_model(x_train, y_train, x_val, y_val, params):
-    batch_size = params["batch_size"]
-    epochs = params["epochs"]
+    batch_size = int(params["batch_size"])
+    epochs = int(params["epochs"])
     model = create_model(params)
-    model.fit(x_train, y_train, batch_size=batch_size,
-                        epochs=epochs, validation_data=(x_val, y_val))
-    return(model)
+    history = model.fit(x_train, y_train, batch_size=batch_size,
+                        epochs=epochs, validation_data=(x_val, y_val), verbose=0)
+    return(model, history)
     #print(f"model history is : \n {history.history}")
     #loss_train = history.history['loss']
     #loss_val = history.history['val_loss']

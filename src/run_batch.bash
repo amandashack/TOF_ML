@@ -1,9 +1,16 @@
 #!/bin/bash
 #SBATCH --account=lcls
 #SBATCH --partition=milano
+#SBATCH --job-name=tofs
+#SBATCH --ntasks=3
+#SBATCH --cpus-per-task=1
+#SBATCH --mem-per-cpu=20g
+#SBATCH --time=0-24:00:00
 
 # export TMPDIR=/scratch/<project>/tmp
-source /sdf/home/i/isele/ana/sw/conda2/manage/bin/psconda.sh
+source /sdf/group/lcls/ds/ana/sw/conda2/manage/bin/psconda.sh
+conda deactivate
+conda activate tf-gpu 
 DIR=$1
 PARAMS_OFFSET=$2
 
@@ -31,7 +38,6 @@ echo "$PARAMS_ID|$JOB_NAME|$SLURM_SUBMIT_DIR" >> $RUNLOG_FILE
 
 PARAMS=$(tail -n +${PARAMS_ID} ${PARAMS_FILE} | head -n 1)
 
-
 echo "Setup tempfile"
 # we assembled the needed data to a single line in $TMPFILE
 TMPFILE=$(mktemp)
@@ -39,7 +45,10 @@ echo -n "$PARAMS_ID|$PARAMS|$JOB_NAME|$BN|" > $TMPFILE
 
 echo "*** TRAIN ***"
 MODEL_FILE="${DIR}/${PARAMS_ID}"
-./simion_train.py ${MODEL_FILE} ${PARAMS} | tr '\n\t' '| ' >> $TMPFILE
+if [[ ! -d $MODEL_FILE ]] ; then
+	mkdir $MODEL_FILE
+fi
+python3 simion_train.py ${MODEL_FILE} ${PARAMS} | tr '\n\t' '| ' >> $TMPFILE
 echo >> $TMPFILE
 
 # exit if training failed
@@ -50,4 +59,3 @@ cat $TMPFILE >> $RESULTS_FILE
 
 # cleanup
 rm $TMPFILE
-rm ${MODEL_FILE}
