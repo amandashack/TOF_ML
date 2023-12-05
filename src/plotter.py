@@ -2,6 +2,7 @@ import math
 import matplotlib.pyplot as plt
 import numpy as np
 import collections
+from sklearn.linear_model import LinearRegression
 
 def plot_opt(ax_nm):#lbl_x,lbl_y
     ax_nm.axhline(y = 0, color = 'b', label = 'E_F',linestyle='--'); ax_nm.axvline(0,color='black',linestyle = '--')
@@ -46,30 +47,35 @@ def pass_versus_counts(spec, retardation):
     plt.show()
 
 
-def one_plot_multi_scatter(ax, spec_dict, multi_title, xlabel, ylabel, logarithm=True, fit=True):
-    cmap = get_cmap(len(spec_dict.keys()))
-    for i in range(len(spec_dict.keys())):
-        dvals = list(spec_dict.keys())
-        xx = spec_dict[dvals[i]][0]
-        yy = spec_dict[dvals[i]][1]
+def one_plot_multi_scatter(ax, df, multi_title, xlabel, ylabel, logarithm=True, fit=True):
+    cmap = get_cmap(len(df.keys()))
+    params = {'mathtext.default': 'regular'}
+    plt.rcParams.update(params)
+    for i in range(len(df.keys())):
+        dvals = list(df.keys())
+        xx = df[dvals[i]][1]
+        yy = df[dvals[i]][2]
         if logarithm:
             ax.scatter(x=np.log2(xx), y=np.log2(yy), color = cmap(i), label=f'Retardation: {dvals[i]}')
         else:
             ax.scatter(x=xx, y=yy, color=cmap(i), label=f'Retardation: {dvals[i]}')
     if fit:
-        X1 = np.log2(spec_dict[0][0][5])
-        X2 = np.log2(spec_dict[0][0][-5])
-        Y1 = np.log2(spec_dict[0][1][5])
-        Y2 = np.log2(spec_dict[0][1][-5])
-        slope = (Y2 - Y1)/(X2 - X1)
-        b = Y1 - X1*slope
+        X_vals = np.log2(df[0][1][:]).reshape((-1, 1))
+        Y_vals = np.log2(df[0][2][:])
+        print(X_vals.shape, Y_vals.shape)
+        model = LinearRegression().fit(X_vals, Y_vals)
+        r_sq = "{:.5f}".format(model.score(X_vals, Y_vals))
+        slope = model.coef_[0]
+        intercept = model.intercept_
 
-        Xmin = np.log2(np.min(spec_dict[0][0]))
-        Xmax = np.log2(np.max(spec_dict[0][0]))
+        Xmin = np.log2(np.min(df[0][1]))
+        Xmax = np.log2(np.max(df[0][1]))
         XX = np.linspace(Xmin, Xmax, num = 10)
-        YY = slope*XX + b
-        ax.scatter(x=XX, y=YY, color="orange", label=f'Fit: y = {slope:.4g}x+{b:.4g}')
-    ax.set_title(multi_title, fontsize=18)
+        YY = slope*XX + intercept
+        ax.scatter(x=XX, y=YY, color="orange", label=f'Fit: y = {slope:.4g}x+{intercept:.4g}')
+        ax.set_title(multi_title + f", $R^{2}$ = {r_sq}", fontsize=18)
+    else:
+        ax.set_title(multi_title, fontsize=18)
     ax.set_xlabel(xlabel, fontsize=16)
     ax.set_ylabel(ylabel, fontsize=16)
     return(ax)

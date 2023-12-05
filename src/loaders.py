@@ -10,6 +10,7 @@ import h5py
 import os
 import re
 import copy
+from sklearn.preprocessing import KBinsDiscretizer
 
 
 def requires_invalid_indxs(func):
@@ -71,6 +72,7 @@ class MRCOLoader(object):
         self.elevation = []
         self.x_tof = []
         self.y_tof = []
+        self.p_bins = []
 
     def load(self):
         fp = os.path.abspath(self.filepath)
@@ -147,18 +149,20 @@ class MRCOLoader(object):
                          np.asarray(r_flat), np.log2(np.asarray(tof_flat))))
         return data
 
-    def create_mask(self, x, y, mask_name):
+    def create_mask(self, x, y, min_pass, mask_name):
         # used to generate a mask for a part of the data
         # x and y are tuples with the first value being the minimum and second the maximum
         m = []
         for i in range(len(self.retardation)):
             xtof = np.asarray(self.x_tof[i])[:].astype(float)
             ytof = np.abs(np.asarray(self.y_tof[i])[:].astype(float))
+            pass_en = np.asarray(self.pass_energy[i])[:].astype(float)
             xmin_mask = xtof > x[0]
             xmax_mask = xtof < x[1]
             ymin_mask = ytof > y[0]
             ymax_mask = ytof < y[1]
-            mask = xmin_mask & xmax_mask & ymin_mask & ymax_mask
+            pass_mask = pass_en > min_pass
+            mask = xmin_mask & xmax_mask & ymin_mask & ymax_mask & pass_mask
             m.append(mask)
         self.mask[mask_name] = m
         self.apply_mask()
@@ -176,3 +180,25 @@ class MRCOLoader(object):
                 ele_c[i] = np.asarray(ele_c[i])[m[i]].tolist()
         self.data_masked = self.gen_dataframe(ele_c, pass_c, self.retardation, tof_c)
         self.spec_masked = self.gen_spec(ele_c, pass_c, self.retardation, tof_c)
+
+    def check_rebalance(self):
+        hb = self.p_bins == 2
+        high_bin = np.count_nonzero(hb)
+        mb = self.p_bins == 1
+        mid_bin = np.count_nonzero(mb)
+        lb = self.p_bins == 0
+        low_bin = np.count_nonzero(lb)
+        print(high_bin, mid_bin, low_bin, high_bin + mid_bin + low_bin)
+
+    def rebalance(self):
+        pass_en = []
+        for key in self.spec_masked.keys():
+            pass_en += self.spec_masked[key][1]
+        p = np.log2(pass_en).reshape((-1, 1))
+        print(np.max(p), np.min(p))
+        #self.p_bins = np.digitize(p, np.array([np.min(p), 330, 660, np.max(p)]))
+        est = KBinsDiscretizer(n_bins=3, encode='ordinal', strategy='uniform',
+                               subsample=None)
+        est.fit(p)
+        self.p_bins = est.transform(p)
+        self.check_rebalance()
