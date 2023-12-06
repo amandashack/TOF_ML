@@ -202,9 +202,26 @@ class MRCOLoader(object):
         self.p_bins = est.transform(p)
         hb, mb, lb, total = self.check_rebalance()
         n_lb = (1-ratio) * lb
+        hb_mask = self.p_bins == 2
+        pass_en_hb = np.log2(np.asarray(pass_en)[hb_mask.flatten()]).reshape((-1, 1))
+        #est2 = KBinsDiscretizer(n_bins=10, encode='ordinal', strategy='uniform',
+        #                       subsample=None)
+        #est2.fit(pass_en_hb)
+        #p_bins_hb = est2.transform(pass_en_hb)
+        #unique, frequency = np.unique(p_bins_hb, return_counts=True)
+        #count = np.asarray(frequency)
+        #probs = count / count.sum()
+        #full_probs = np.zeros_like(p_bins_hb)
+
+        #for i in range(10):
+        #    full_probs = np.where(p_bins_hb==i, probs[i], full_probs)
+        # now construct the uniform distribution for training set
+        probs = pass_en_hb / pass_en_hb.sum()
+        print(probs.flatten(), np.flip(probs.flatten()))
+        hb_train = np.random.choice(pass_en_hb.flatten(), size=int(n_lb), replace=False)#, p=np.flip(probs.flatten()))
         fig, ax = plt.subplots(1, 1)
-        values, bins, bars = plt.hist(self.p_bins.astype(int), bins=[0, 1, 2, 3], edgecolor='white')
-        plt.title("3 bin discretized data")
+        values, bins, bars = plt.hist(hb_train, edgecolor='white')
+        plt.title("histogram of randomly selected values")
         ax.set_xlabel("Discretization")
         ax.set_ylabel("Number of values")
         ax.locator_params(axis='x', integer=True)
@@ -212,4 +229,5 @@ class MRCOLoader(object):
         plt.margins(x=0.01, y=0.1)
         plt.tight_layout()
         plt.show()
+
 
