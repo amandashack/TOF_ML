@@ -32,7 +32,7 @@ def run_train(out_path, params):
     loss_val = history.history['val_loss']
     loss_test = evaluate(model, x_test, y_test)
 
-    print(f"test_loss {loss_test}", f"train_loss {loss_train}", f"val_loss {loss_val}")
+    print(f"test_loss {loss_test}")
 
 
 if __name__ == '__main__':

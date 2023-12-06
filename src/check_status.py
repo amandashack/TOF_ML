@@ -50,6 +50,7 @@ def load_results(fn, measures=None, result_in_parts=False, safe_measure_names=Fa
             for p in parts[4:]:
                 if len(p) > 0:
                     pp = p.split()
+                    print(pp)
                     if len(pp) == 1:
                         if not measures:
                             print('ERROR: measure {} has no name in {}, '

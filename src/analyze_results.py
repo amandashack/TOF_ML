@@ -10,7 +10,7 @@ def main(args):
     in_dir = args.input
 
     results = []
-    results_fn = os.path.join(in_dir, 'results')
+    results_fn = os.path.join(in_dir, 'results2')
 
     results = load_results(results_fn, args.measures)
     print('Read {} which contained {} results.'.format(
@@ -68,7 +68,7 @@ def main(args):
         print('# Individual results for the five best ones')
         # best_param_id = ress.iloc[0]['param_id']
         # print(df[df['param_id'] == best_param_id])
-        for i in range(5):
+        for i in range(args.N):
             best_param_id = ress.iloc[i]['param_id']
             print(df[df['param_id'] == best_param_id])
 
