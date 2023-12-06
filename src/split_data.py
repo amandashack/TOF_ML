@@ -40,16 +40,16 @@ def run_datasplit():
     multi_retardation_sim = MRCOLoader(amanda_filepath)
     multi_retardation_sim.load()
     multi_retardation_sim.create_mask((402, np.inf), (0, 17.7), 5, "make it")
-    multi_retardation_sim.rebalance()
-    residual = multi_retardation_sim.data_masked[3, :] - y0_NM(multi_retardation_sim.data_masked[1, :])
-    X = np.append(multi_retardation_sim.data_masked[0:3, :], multi_retardation_sim.p_bins.T, axis=0)
-    print(X.shape)
-    Y = residual
+    multi_retardation_sim.rebalance(0.25)
+    #residual = multi_retardation_sim.data_masked[3, :] - y0_NM(multi_retardation_sim.data_masked[1, :])
+    #X = np.append(multi_retardation_sim.data_masked[0:3, :], multi_retardation_sim.p_bins.T, axis=0)
+    #print(X.shape)
+    #Y = residual
     # Split the model_data into train and test data
     # Separate the test data
-    x, x_test, y, y_test = train_test_split(X.T, Y, test_size=0.25, random_state=42,
-                                            shuffle=True, stratify=multi_retardation_sim.p_bins)
-    check_rebalance(x[:, 1].T)
+    #x, x_test, y, y_test = train_test_split(X.T, Y, test_size=0.25, random_state=42,
+    #                                        shuffle=True, stratify=multi_retardation_sim.p_bins)
+    #check_rebalance(x[:, 1].T)
     # Split the remaining data to train and validation
     #x_train, x_val, y_train, y_val = train_test_split(x, y, test_size=0.15, shuffle=True)
     #train_dir_path = dir_path + "\\NM_simulations\\masked_data1\\train"

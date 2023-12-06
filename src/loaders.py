@@ -4,7 +4,7 @@ this code opens .csv files or h5 files that have already been cleaned up
 
 @author: Amanda
 """
-
+import matplotlib.pyplot as plt
 import numpy as np
 import h5py
 import os
@@ -188,17 +188,28 @@ class MRCOLoader(object):
         mid_bin = np.count_nonzero(mb)
         lb = self.p_bins == 0
         low_bin = np.count_nonzero(lb)
-        print(high_bin, mid_bin, low_bin, high_bin + mid_bin + low_bin)
+        return high_bin, mid_bin, low_bin, high_bin + mid_bin + low_bin
 
-    def rebalance(self):
+    def rebalance(self, ratio):
         pass_en = []
         for key in self.spec_masked.keys():
             pass_en += self.spec_masked[key][1]
         p = np.log2(pass_en).reshape((-1, 1))
         print(np.max(p), np.min(p))
-        #self.p_bins = np.digitize(p, np.array([np.min(p), 330, 660, np.max(p)]))
         est = KBinsDiscretizer(n_bins=3, encode='ordinal', strategy='uniform',
                                subsample=None)
         est.fit(p)
         self.p_bins = est.transform(p)
-        self.check_rebalance()
+        hb, mb, lb, total = self.check_rebalance()
+        n_lb = (1-ratio) * lb
+        fig, ax = plt.subplots(1, 1)
+        values, bins, bars = plt.hist(self.p_bins.astype(int), bins=[0, 1, 2, 3], edgecolor='white')
+        plt.title("3 bin discretized data")
+        ax.set_xlabel("Discretization")
+        ax.set_ylabel("Number of values")
+        ax.locator_params(axis='x', integer=True)
+        plt.bar_label(bars, fontsize=20, color='navy')
+        plt.margins(x=0.01, y=0.1)
+        plt.tight_layout()
+        plt.show()
+
