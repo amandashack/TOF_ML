@@ -11,7 +11,9 @@ import os
 import re
 import copy
 from sklearn.preprocessing import KBinsDiscretizer
-
+from model_gen import y0_NM
+from sklearn.model_selection import train_test_split
+from sklearn.utils import shuffle
 
 def requires_invalid_indxs(func):
     def func_wrapper(*args, **kwargs):
@@ -181,29 +183,43 @@ class MRCOLoader(object):
         self.data_masked = self.gen_dataframe(ele_c, pass_c, self.retardation, tof_c)
         self.spec_masked = self.gen_spec(ele_c, pass_c, self.retardation, tof_c)
 
-    def check_rebalance(self):
-        hb = self.p_bins == 2
-        high_bin = np.count_nonzero(hb)
-        mb = self.p_bins == 1
-        mid_bin = np.count_nonzero(mb)
-        lb = self.p_bins == 0
-        low_bin = np.count_nonzero(lb)
-        return high_bin, mid_bin, low_bin, high_bin + mid_bin + low_bin
+    def check_rebalance(self, nbins):
+        bs = []
+        for i in range(nbins):
+            b = self.p_bins == i
+            bs.append(np.count_nonzero(b))
+        bs.append(sum(bs))
+        return bs
 
-    def rebalance(self, ratio):
+    def rebalance(self, ratio, nbins):
         pass_en = []
         for key in self.spec_masked.keys():
             pass_en += self.spec_masked[key][1]
         p = np.log2(pass_en).reshape((-1, 1))
         print(np.max(p), np.min(p))
-        est = KBinsDiscretizer(n_bins=3, encode='ordinal', strategy='uniform',
+        est = KBinsDiscretizer(n_bins=nbins, encode='ordinal', strategy='uniform',
                                subsample=None)
         est.fit(p)
+        # make a discrete mapping
         self.p_bins = est.transform(p)
-        hb, mb, lb, total = self.check_rebalance()
-        n_lb = (1-ratio) * lb
-        hb_mask = self.p_bins == 2
-        pass_en_hb = np.log2(np.asarray(pass_en)[hb_mask.flatten()]).reshape((-1, 1))
+        # get the length of each mapping
+        bs = self.check_rebalance(nbins)
+        n_lb = int((1-ratio) * bs[0])
+        training = []
+        val = []
+        test = []
+        for i in range(nbins):
+            #rng = np.random.default_rng()
+            mask = self.p_bins == i
+            df_masked = self.data_masked[:, mask.flatten()]
+            #df_masked_shuffled = rng.permuted(df_masked, axis=1)
+            df_masked_shuffled = shuffle(df_masked.T, random_state=i)
+            training.append(df_masked_shuffled[:n_lb, :])
+            the_rest = df_masked[:, n_lb:].T
+            v, t = train_test_split(the_rest, test_size=0.50, random_state=42, shuffle=True)
+            val.append(v)
+            test.append(t)
+        return training, val, test
         #est2 = KBinsDiscretizer(n_bins=10, encode='ordinal', strategy='uniform',
         #                       subsample=None)
         #est2.fit(pass_en_hb)
@@ -216,12 +232,13 @@ class MRCOLoader(object):
         #for i in range(10):
         #    full_probs = np.where(p_bins_hb==i, probs[i], full_probs)
         # now construct the uniform distribution for training set
-        probs = pass_en_hb / pass_en_hb.sum()
-        print(probs.flatten(), np.flip(probs.flatten()))
-        hb_train = np.random.choice(pass_en_hb.flatten(), size=int(n_lb), replace=False)#, p=np.flip(probs.flatten()))
+        #probs = pass_en_hb / pass_en_hb.sum()
+        #print(probs.flatten(), np.flip(probs.flatten()))
+        #hb_train = np.random.choice(pass_en_hb.flatten(), size=int(n_lb), replace=False)#, p=np.flip(probs.flatten()))
+        """
         fig, ax = plt.subplots(1, 1)
-        values, bins, bars = plt.hist(hb_train, edgecolor='white')
-        plt.title("histogram of randomly selected values")
+        values, bins, bars = plt.hist(training[2][:, 1], edgecolor='white')
+        plt.title("histogram of randomly selected values\n from high bin")
         ax.set_xlabel("Discretization")
         ax.set_ylabel("Number of values")
         ax.locator_params(axis='x', integer=True)
@@ -229,5 +246,6 @@ class MRCOLoader(object):
         plt.margins(x=0.01, y=0.1)
         plt.tight_layout()
         plt.show()
+        """
 
 
