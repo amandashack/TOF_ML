@@ -15,9 +15,9 @@ DIR=$1
 PARAMS_OFFSET=$2
 
 
-PARAMS_FILE="${DIR}/params2"
-RESULTS_FILE="${DIR}/results2"
-RUNLOG_FILE="${DIR}/runlog2"
+PARAMS_FILE="${DIR}/params"
+RESULTS_FILE="${DIR}/results"
+RUNLOG_FILE="${DIR}/runlog"
 
 if [ -z "$PARAMS_OFFSET" ]
 then

@@ -12,7 +12,7 @@ def main(args):
     out_dir = args.output
     os.makedirs(out_dir, exist_ok=True)
 
-    fn = os.path.join(out_dir, 'params2')
+    fn = os.path.join(out_dir, 'params')
 
     if args.n.lower() == 'all':
         ps = ParameterGrid(space)

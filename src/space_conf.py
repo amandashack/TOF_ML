@@ -28,9 +28,9 @@ import numpy as np
 
 
 space = {
-    'dropout': [0, 0.1, 0.15, 0.2, 0.25, 0.3],
-    'layer_size': [3, 4, 5, 6, 7, 8, 9],
+    'dropout': [0.1, 0.15, 0.2, 0.25, 0.3],
+    'layer_size': [5, 6, 7, 8, 9],
     'alpha' : [0.001, 0.05, 0.02, 0.1],
     'batch_size' : np.exp2(np.arange(5, 9)),
-    'epochs' : np.arange(5, 150, step=5)
+    'epochs' : np.arange(85, 200, step=5)
 }

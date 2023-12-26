@@ -10,7 +10,7 @@ def main(args):
     in_dir = args.input
 
     results = []
-    results_fn = os.path.join(in_dir, 'results2')
+    results_fn = os.path.join(in_dir, 'results')
 
     results = load_results(results_fn, args.measures)
     print('Read {} which contained {} results.'.format(

@@ -12,7 +12,6 @@ import sys
 def load_results(fn, measures=None, result_in_parts=False, safe_measure_names=False):
     results = []
     if measures:
-        print(measures)
         measures = measures.split(',')
 
     with open(fn, 'r') as fp:
@@ -29,7 +28,6 @@ def load_results(fn, measures=None, result_in_parts=False, safe_measure_names=Fa
                 'result_name': parts[3]
             }
             r_params = {}
-            print(parts)
             for p in parts[1].split('-'):
                 if len(p) > 0:
                     pp = re.split(r'\s|=', p.rstrip())
@@ -50,7 +48,6 @@ def load_results(fn, measures=None, result_in_parts=False, safe_measure_names=Fa
             for p in parts[4:]:
                 if len(p) > 0:
                     pp = p.split()
-                    print(pp)
                     if len(pp) == 1:
                         if not measures:
                             print('ERROR: measure {} has no name in {}, '
