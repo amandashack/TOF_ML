@@ -22,23 +22,30 @@ PARAMS_OFFSET=$2
 USE_EXISTING_DIR=${3:-0}
 N_HYPERPARAM_SETS=$4
 
+PARAMS_ID=$(( $SLURM_ARRAY_TASK_ID + $PARAMS_OFFSET ))
+JOB_NAME="${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}"
+BN="DEBUG"
+COMMON_JOB_NAME="${JOB_NAME%_*}"
+CURRENT_DATE=$(date +"%Y%m%d")
+
 
 # If USE_EXISTING_DIR is 0, create a new directory; otherwise, use the specified one
 if [ "$USE_EXISTING_DIR" -eq 0 ]; then
-    # Find the highest existing number in the directory names
-    HIGHEST_NUMBER=0
-    for DIR in "${BASE_DIR}/test_"*; do
-        # Extract the numeric part of the directory name
-        DIR_NUMBER="${DIR##*_}"
-        # Check if it's a number and greater than the current highest number
-        if [[ "$DIR_NUMBER" =~ ^[0-9]+$ && "$DIR_NUMBER" -gt "$HIGHEST_NUMBER" ]]; then
-            HIGHEST_NUMBER="$DIR_NUMBER"
-        fi
-    done
+    # Extract the common part of JOB_NAME (e.g., 36944267)
+    COMMON_JOB_NAME="${JOB_NAME%_*}"
 
-    # Increment the highest number to get the next directory name
-    NEXT_NUMBER=$((HIGHEST_NUMBER + 1))
-    DIR="${BASE_DIR}/test_$(printf "%04d" "$NEXT_NUMBER")"
+    # Get the current date in a format like YYYYMMDD
+    CURRENT_DATE=$(date +"%Y%m%d")
+
+    # Create the directory name with JOB_NAME and DATE
+    DIR_NAME="test_${COMMON_JOB_NAME}_${CURRENT_DATE}"
+    DIR="${BASE_DIR}/${DIR_NAME}"
+
+    # Check if the directory already exists
+    if [ ! -d "$DIR" ]; then
+        # If it doesn't exist, create the directory
+        mkdir -p "$DIR"
+    fi
 else
     DIR="${BASE_DIR}/test_$(printf "%04d" "$USE_EXISTING_DIR")"
 
@@ -49,9 +56,6 @@ else
         exit 1
     fi
 fi
-
-# Create the directory
-mkdir -p "$DIR"
 
 # Optional: Generate params file if N_HYPERPARAM_SETS is provided and it doesn't exist
 if [ -n "$N_HYPERPARAM_SETS" ] && [ ! -f "$PARAMS_FILE" ]; then
@@ -80,10 +84,6 @@ then
     echo "where DIR is a directory containing a file 'params' with the parameters."
     exit 1
 fi
-
-PARAMS_ID=$(( $SLURM_ARRAY_TASK_ID + $PARAMS_OFFSET ))
-JOB_NAME="${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}"
-BN="DEBUG"
 
 echo "$PARAMS_ID|$JOB_NAME|$SLURM_SUBMIT_DIR" >> $RUNLOG_FILE
 
