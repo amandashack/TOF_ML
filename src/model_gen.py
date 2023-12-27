@@ -2,6 +2,7 @@ import numpy as np
 import tensorflow as tf
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import Dense, Dropout, LeakyReLU, Activation
+from tensorflow.keras.callbacks import ReduceLROnPlateau, EarlyStopping
 
 # make numpy values easier to read
 np.set_printoptions(precision=3, suppress=True)
@@ -29,17 +30,15 @@ def create_model(params):
     The last one is optional, though recommended, namely:
         - model: specify the model just created so that we can later use it again.
     """
-    dropout = params['dropout']
     layer_size = int(params['layer_size'])
-    alpha = params['alpha']
 
     model = Sequential()
     model.add(Dense(layer_size, input_shape=(6,)))
-    model.add(LeakyReLU(alpha=alpha))
+    model.add(LeakyReLU(alpha=0.05))
     model.add(Dense(layer_size*2))
-    model.add(LeakyReLU(alpha=alpha))
+    model.add(LeakyReLU(alpha=0.05))
     model.add(Dense(layer_size, activation=swish))
-    model.add(Dropout(dropout))
+    model.add(Dropout(0.1))
     model.add(Dense(1, activation='linear'))
     model.compile(loss='mean_squared_error',
                   optimizer=tf.keras.optimizers.Adam(learning_rate=0.001))
@@ -48,8 +47,32 @@ def create_model(params):
 
 def run_model(x_train, y_train, x_val, y_val, params):
     batch_size = int(params["batch_size"])
-    epochs = int(params["epochs"])
+    epochs = 200
     model = create_model(params)
-    history = model.fit(x_train, y_train, batch_size=batch_size,
-                        epochs=epochs, validation_data=(x_val, y_val), verbose=0)
+
+    # Define ReduceLROnPlateau callback
+    reduce_lr = ReduceLROnPlateau(
+        monitor='val_loss',  # Monitor validation loss
+        factor=0.1,           # Factor by which the learning rate will be reduced (e.g., 0.5 means halving the LR)
+        patience=5,           # Number of epochs with no improvement after which learning rate will be reduced
+        min_lr=1e-7,          # Minimum learning rate
+        verbose=0,             # 1: Update messages, 0: No update messages
+    )
+
+    # Define EarlyStopping callback
+    early_stop = EarlyStopping(
+        monitor='val_loss',  # Monitor validation loss
+        patience=10,          # Number of epochs with no improvement after which training will be stopped
+        restore_best_weights=True  # Restore model weights to the best observed during training
+    )
+
+    # Train the model with callbacks
+    history = model.fit(
+        x_train, y_train,
+        batch_size=batch_size,
+        epochs=epochs,
+        validation_data=(x_val, y_val),
+        verbose=0,
+        callbacks=[reduce_lr, early_stop]  # Add callbacks here
+    )
     return model, history

@@ -28,8 +28,8 @@ def run_train(out_path, params):
     model.save(out_path)
     x_test = test_data[:-1, :].T
     y_test = test_data[-1, :]
-    loss_train = history.history['loss']
-    loss_val = history.history['val_loss']
+    # loss_train = history.history['loss']
+    # loss_val = history.history['val_loss']
     loss_test = evaluate(model, x_test, y_test)
 
     print(f"test_loss {loss_test}")
