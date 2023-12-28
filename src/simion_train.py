@@ -25,7 +25,7 @@ def run_train(out_path, params):
     test_data = train_test_val_loader(test_filepath)
     model, history = run_model(train_data[:-1, :].T, train_data[-1, :], 
             val_data[:-1, :].T, val_data[-1, :], params)
-    model.save(out_path)
+    #model.save(out_path)
     x_test = test_data[:-1, :].T
     y_test = test_data[-1, :]
     # loss_train = history.history['loss']
@@ -36,8 +36,9 @@ def run_train(out_path, params):
 
 
 if __name__ == '__main__':
-    p = ' '.join(sys.argv[2:])
-    p = re.findall(r'(\w+)=(\d+)', p)
-    params = dict((p[i][0], float(p[i][1])) for i in range(len(p)))
-    output_file_path = sys.argv[1]
-    run_train(output_file_path, params)
+    #p = ' '.join(sys.argv[2:])
+    #p = re.findall(r'(\w+)=(\d+)', p)
+    #params = dict((p[i][0], float(p[i][1])) for i in range(len(p)))
+    #output_file_path = sys.argv[1]
+    #run_train(output_file_path, params)
+    run_train("s", {"layer_size": 8, "batch_size": 32})
