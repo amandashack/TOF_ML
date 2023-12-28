@@ -41,41 +41,6 @@ def main(args):
 
         print(dfs.drop(columns='result_name'))
 
-    if args.overall_score:
-        def aggregate_results(x):
-            xm = x.mean()
-            v = {}
-            for rn in result_names:
-                v[rn] = 0.0
-            for index, row in x.iterrows():
-                rn = row['result_name']
-                assert rn in result_names
-                v[rn] = row[args.meas]/best_per_testset[rn]
-                # if rn.startswith('combo'):
-                #     v[rn] *= 1.2
-            assert len(v) == len(result_names)
-            xm['overall_score'] = reduce(lambda x, y: x * y, v.values())
-            return xm.drop(columns='slurm_id')
-
-        assert args.opt == 'max', 'min not implemented yet :-)'
-        print()
-        print('# Best overall score.')
-        res = df.groupby(['param_id']).apply(aggregate_results)
-        ress = res.nlargest(args.N, 'overall_score')
-        print(ress)
-
-        print()
-        print('# Individual results for the five best ones')
-        # best_param_id = ress.iloc[0]['param_id']
-        # print(df[df['param_id'] == best_param_id])
-        for i in range(args.N):
-            best_param_id = ress.iloc[i]['param_id']
-            print(df[df['param_id'] == best_param_id])
-
-        print("\n# Best {} per testset".format(args.meas))
-        for rn in result_names:
-            print('{:30} {:.5}'.format(rn, best_per_testset[rn]))
-
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -92,7 +57,6 @@ if __name__ == '__main__':
     parser.add_argument('--measures', type=str,
                         help='names of measures if missing from results, '
                         'e.g., --measures=P@1,P@3,P@5')
-    parser.add_argument('--overall_score', action='store_true')
     args = parser.parse_args()
 
     main(args)

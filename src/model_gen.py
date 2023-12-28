@@ -75,4 +75,6 @@ def run_model(x_train, y_train, x_val, y_val, params):
         verbose=0,
         callbacks=[reduce_lr, early_stop]  # Add callbacks here
     )
+    print(f"early_stop {early_stop.stopped_epoch}")
+    print(f"best_epoch {np.argmin(history.history['val_loss'])+1}")
     return model, history
