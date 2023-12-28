@@ -26,11 +26,16 @@ import numpy as np
 # for hidden layers should be about the mean number of
 # input + output layers
 
+#space = {
+#    'dropout': [0.1, 0.15, 0.2, 0.25, 0.3],
+#    'layer_size': [5, 6, 7, 8, 9],
+#    'alpha' : [0.001, 0.05, 0.02, 0.1],
+#    'batch_size' : np.exp2(np.arange(5, 9)),
+#    'epochs' : np.arange(85, 200, step=5)
+#}
+
 
 space = {
-    'dropout': [0.1, 0.15, 0.2, 0.25, 0.3],
-    'layer_size': [5, 6, 7, 8, 9],
-    'alpha' : [0.001, 0.05, 0.02, 0.1],
+    'layer_size': [8, 16, 32, 64],
     'batch_size' : np.exp2(np.arange(5, 9)),
-    'epochs' : np.arange(85, 200, step=5)
-}
+    }
