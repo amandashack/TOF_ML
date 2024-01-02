@@ -5,13 +5,15 @@ import pandas as pd
 from check_status import load_results
 from functools import reduce
 from plotter import heatmap_plot
+import matplotlib.pyplot as plt
+import seaborn as sns
+
 
 def main(args):
     in_dir = args.input
 
     results = []
-    results_fn = os.path.join(in_dir, 'results')
-    print(args.measures)
+    results_fn = in_dir + '/results' #os.path.join(in_dir, 'results')
     results = load_results(results_fn, args.measures)
     print('Read {} which contained {} results.'.format(
         results_fn, len(results)))
@@ -24,7 +26,6 @@ def main(args):
 
     best_per_testset = {}
     result_names = df.result_name.unique()
-    print(result_names)
     for testset in sorted(result_names):
         idx = df['result_name'] == testset
         dft = df[idx]
@@ -43,7 +44,19 @@ def main(args):
         print(dfs.drop(columns='result_name'))
     if args.heatmap:
         m = args.heatmap.split(',')
-        heatplot_plot(m)
+        heatmap_data = df.pivot_table(index=m[0], columns=m[1], values=m[2], aggfunc='mean')
+
+        # Create a heatmap using Seaborn
+        plt.figure(figsize=(8, 6))
+        sns.heatmap(heatmap_data, annot=True, cmap='viridis', fmt='.5f', linewidths=0.5)
+
+        # Customize the labels and title
+        plt.xlabel('Layer Size')
+        plt.ylabel('Batch Size')
+        plt.title('Hyperparameter Tuning Heatmap')
+
+        # Show the heatmap
+        plt.show()
 
 
 if __name__ == '__main__':

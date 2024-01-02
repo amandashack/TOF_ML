@@ -196,7 +196,6 @@ class MRCOLoader(object):
         for key in self.spec_masked.keys():
             pass_en += self.spec_masked[key][1]
         p = np.log2(pass_en).reshape((-1, 1))
-        print(np.max(p), np.min(p))
         est = KBinsDiscretizer(n_bins=nbins, encode='ordinal', strategy='uniform',
                                subsample=None)
         est.fit(p)
@@ -209,32 +208,14 @@ class MRCOLoader(object):
         val = []
         test = []
         for i in range(nbins):
-            #rng = np.random.default_rng()
             mask = self.p_bins == i
             df_masked = self.data_masked[:, mask.flatten()]
-            #df_masked_shuffled = rng.permuted(df_masked, axis=1)
             df_masked_shuffled = shuffle(df_masked.T, random_state=i)
             training.append(df_masked_shuffled[:n_lb, :])
             the_rest = df_masked[:, n_lb:].T
             v, t = train_test_split(the_rest, test_size=0.50, random_state=42, shuffle=True)
             val.append(v)
             test.append(t)
-        return training, val, test
-        #est2 = KBinsDiscretizer(n_bins=10, encode='ordinal', strategy='uniform',
-        #                       subsample=None)
-        #est2.fit(pass_en_hb)
-        #p_bins_hb = est2.transform(pass_en_hb)
-        #unique, frequency = np.unique(p_bins_hb, return_counts=True)
-        #count = np.asarray(frequency)
-        #probs = count / count.sum()
-        #full_probs = np.zeros_like(p_bins_hb)
-
-        #for i in range(10):
-        #    full_probs = np.where(p_bins_hb==i, probs[i], full_probs)
-        # now construct the uniform distribution for training set
-        #probs = pass_en_hb / pass_en_hb.sum()
-        #print(probs.flatten(), np.flip(probs.flatten()))
-        #hb_train = np.random.choice(pass_en_hb.flatten(), size=int(n_lb), replace=False)#, p=np.flip(probs.flatten()))
         """
         fig, ax = plt.subplots(1, 1)
         values, bins, bars = plt.hist(training[2][:, 1], edgecolor='white')
@@ -247,5 +228,7 @@ class MRCOLoader(object):
         plt.tight_layout()
         plt.show()
         """
+        return training, val, test
+
 
 

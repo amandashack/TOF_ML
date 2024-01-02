@@ -41,13 +41,12 @@ def run_datasplit():
     multi_retardation_sim.load()
     multi_retardation_sim.create_mask((402, np.inf), (0, 17.7), 5, "make it")
     training, val, test = multi_retardation_sim.rebalance(0.25, 3)
-    #residual = multi_retardation_sim.data_masked[3, :] - y0_NM(multi_retardation_sim.data_masked[1, :])
     x_train = training[0][:, 0:3]
     y_train = training[0][:, 3].T - y0_NM(training[0][:, 1].T)
     x_val = val[0][:, 0:3]
     y_val = val[0][:, 3].T - y0_NM(val[0][:, 1].T)
     x_test = test[0][:, 0:3]
-    y_test = test[0][:-1, 3].T - y0_NM(val[0][:, 1].T)
+    y_test = test[0][:, 3].T - y0_NM(test[0][:, 1].T)
     for i in range(1, 3):
         x_train = np.append(x_train, training[i][:, 0:3], axis=0)
         y_train = np.append(y_train, training[i][:, 3].T - y0_NM(training[i][:, 1].T), axis=0)
@@ -55,19 +54,9 @@ def run_datasplit():
         y_val = np.append(y_val, val[i][:, 3].T - y0_NM(val[i][:, 1].T), axis=0)
         x_test = np.append(x_test, test[i][:, 0:3], axis=0)
         y_test = np.append(y_test, test[i][:, 3].T - y0_NM(test[i][:, 1].T), axis=0)
-
-    #print(X.shape)
-    #Y = residual
-    # Split the model_data into train and test data
-    # Separate the test data
-    #x, x_test, y, y_test = train_test_split(X.T, Y, test_size=0.25, random_state=42,
-    #                                        shuffle=True, stratify=multi_retardation_sim.p_bins)
-    #check_rebalance(x[:, 1].T)
-    # Split the remaining data to train and validation
-    #x_train, x_val, y_train, y_val = train_test_split(x, y, test_size=0.15, shuffle=True)
-    train_dir_path = dir_path + "\\NM_simulations\\masked_data2\\train"
-    test_dir_path = dir_path + "\\NM_simulations\\masked_data2\\test"
-    validate_dir_path = dir_path + "\\NM_simulations\\masked_data2\\validate"
+    train_dir_path = dir_path + "\\NM_simulations\\masked_data3\\train"
+    test_dir_path = dir_path + "\\NM_simulations\\masked_data3\\test"
+    validate_dir_path = dir_path + "\\NM_simulations\\masked_data3\\validate"
     generate_files(x_train, y_train, train_dir_path, "train_data.h5")
     generate_files(x_test, y_test, test_dir_path, "test_data.h5")
     generate_files(x_val, y_val, validate_dir_path, "validate_data.h5")

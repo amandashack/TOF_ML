@@ -16,11 +16,11 @@ import re
 
 def run_train(out_path, params):
     dir_path = os.path.dirname(os.path.realpath(__file__))
-    train_filepath = dir_path + "/NM_simulations/masked_data1/train"
+    train_filepath = dir_path + "/NM_simulations/masked_data3/train"
     train_data = train_test_val_loader(train_filepath)
-    val_filepath = dir_path + "/NM_simulations/masked_data1/validate"
+    val_filepath = dir_path + "/NM_simulations/masked_data3/validate"
     val_data = train_test_val_loader(val_filepath)
-    test_filepath = dir_path + "/NM_simulations/masked_data1/test"
+    test_filepath = dir_path + "/NM_simulations/masked_data3/test"
     test_data = train_test_val_loader(test_filepath)
     model, history = run_model(train_data[:-1, :].T, train_data[-1, :], 
             val_data[:-1, :].T, val_data[-1, :], params)

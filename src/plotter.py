@@ -80,4 +80,5 @@ def one_plot_multi_scatter(ax, df, multi_title, xlabel, ylabel, logarithm=True, 
     ax.set_ylabel(ylabel, fontsize=16)
     return(ax)
 
-
+def heatmap_plot(m):
+    print(m)
