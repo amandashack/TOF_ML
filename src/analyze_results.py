@@ -4,14 +4,14 @@ import pandas as pd
 
 from check_status import load_results
 from functools import reduce
-
+from plotter import heatmap_plot
 
 def main(args):
     in_dir = args.input
 
     results = []
     results_fn = os.path.join(in_dir, 'results')
-
+    print(args.measures)
     results = load_results(results_fn, args.measures)
     print('Read {} which contained {} results.'.format(
         results_fn, len(results)))
@@ -24,6 +24,7 @@ def main(args):
 
     best_per_testset = {}
     result_names = df.result_name.unique()
+    print(result_names)
     for testset in sorted(result_names):
         idx = df['result_name'] == testset
         dft = df[idx]
@@ -40,6 +41,9 @@ def main(args):
         best_per_testset[testset] = best
 
         print(dfs.drop(columns='result_name'))
+    if args.heatmap:
+        m = args.heatmap.split(',')
+        heatplot_plot(m)
 
 
 if __name__ == '__main__':
@@ -57,6 +61,8 @@ if __name__ == '__main__':
     parser.add_argument('--measures', type=str,
                         help='names of measures if missing from results, '
                         'e.g., --measures=P@1,P@3,P@5')
+    parser.add_argument('--heatmap', type=str, 
+                        help='make a heatmap from param1,param2,result')
     args = parser.parse_args()
 
     main(args)

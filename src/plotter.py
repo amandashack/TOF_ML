@@ -79,3 +79,5 @@ def one_plot_multi_scatter(ax, df, multi_title, xlabel, ylabel, logarithm=True, 
     ax.set_xlabel(xlabel, fontsize=16)
     ax.set_ylabel(ylabel, fontsize=16)
     return(ax)
+
+
