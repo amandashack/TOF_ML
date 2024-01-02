@@ -3,10 +3,12 @@ import os
 import pandas as pd
 
 from check_status import load_results
-from functools import reduce
 from plotter import heatmap_plot
 import matplotlib.pyplot as plt
 import seaborn as sns
+import tensorflow as tf
+from loaders import train_test_val_loader
+from sklearn.metrics import confusion_matrix
 
 
 def main(args):
@@ -57,6 +59,25 @@ def main(args):
 
         # Show the heatmap
         plt.show()
+    if args.confusion:
+        if args.confusion == 0:
+            # this should select the best model
+            pass
+        else:
+            model_num = args.confusion
+            model_path = in_dir + f'/{model_num}'
+            model = tf.saved_model.load(model_path)
+            dir_path = os.path.dirname(os.path.realpath(__file__))
+            test_filepath = dir_path + "/NM_simulations/masked_data3/test"
+            test_data = train_test_val_loader(test_filepath)
+            y_pred = model.predict(test_data)
+            y_pred_labels = np.argmax(y_pred, axis=1)
+            plt.figure(figsize=(8, 6))
+            sns.heatmap(confusion_mat, annot=True, fmt='d', cmap='Blues')
+            plt.xlabel('Predicted Labels')
+            plt.ylabel('True Labels')
+            plt.title('Confusion Matrix')
+            plt.show()
 
 
 if __name__ == '__main__':
@@ -76,6 +97,8 @@ if __name__ == '__main__':
                         'e.g., --measures=P@1,P@3,P@5')
     parser.add_argument('--heatmap', type=str, 
                         help='make a heatmap from param1,param2,result')
+    parser.add_argument('--confusion', type=int,
+                        help='make a confusion matrix for the selected model number')
     args = parser.parse_args()
 
     main(args)
