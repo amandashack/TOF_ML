@@ -40,4 +40,5 @@ if __name__ == '__main__':
     params = dict((p[i][0], float(p[i][1])) for i in range(len(p)))
     output_file_path = sys.argv[1]
     run_train(output_file_path, params)
-    #run_train("s", {"layer_size": 8, "batch_size": 32})
+    #run_train("/Users/proxi/Documents/coding/TOF_ML/stored_models/test_001/9",
+    #          {"layer_size": 64, "batch_size": 256, 'dropout_rate': 0.2})

@@ -1,9 +1,9 @@
 import numpy as np
 import tensorflow as tf
 from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Dense, Dropout, LeakyReLU, Activation
+from tensorflow.keras.layers import Dense, Dropout, LeakyReLU, Activation, BatchNormalization, ELU
 from tensorflow.keras.callbacks import ReduceLROnPlateau, EarlyStopping
-
+from tensorflow.keras.optimizers import Adam
 # make numpy values easier to read
 np.set_printoptions(precision=3, suppress=True)
 
@@ -31,17 +31,34 @@ def create_model(params):
         - model: specify the model just created so that we can later use it again.
     """
     layer_size = int(params['layer_size'])
+    dropout_rate = float(params['dropout_rate'])
 
     model = Sequential()
+
+    # Input layer
     model.add(Dense(layer_size, input_shape=(6,)))
-    model.add(LeakyReLU(alpha=0.05))
-    model.add(Dense(layer_size*2))
-    model.add(LeakyReLU(alpha=0.05))
-    model.add(Dense(layer_size, activation=swish))
-    model.add(Dropout(0.1))
+    model.add(LeakyReLU(alpha=0.02))
+    model.add(BatchNormalization())
+    model.add(Dropout(dropout_rate))
+
+    # Hidden layers
+    model.add(Dense(layer_size * 2))
+    model.add(LeakyReLU(alpha=0.02))
+    model.add(BatchNormalization())
+    model.add(Dropout(dropout_rate))
+
+    model.add(Dense(layer_size))
+    model.add(Activation('swish'))
+    model.add(BatchNormalization())
+    model.add(Dropout(dropout_rate))
+
+    # Output layer
     model.add(Dense(1, activation='linear'))
-    model.compile(loss='mean_squared_error',
-                  optimizer=tf.keras.optimizers.Adam(learning_rate=0.001))
+
+    # Learning rate scheduling
+    optimizer = Adam(learning_rate=0.001)
+    model.compile(loss='mean_squared_error', optimizer=optimizer)
+
     return model
 
 
@@ -56,7 +73,7 @@ def run_model(x_train, y_train, x_val, y_val, params):
         factor=0.1,           # Factor by which the learning rate will be reduced (e.g., 0.5 means halving the LR)
         patience=5,           # Number of epochs with no improvement after which learning rate will be reduced
         min_lr=1e-7,          # Minimum learning rate
-        verbose=0,             # 1: Update messages, 0: No update messages
+        verbose=1,             # 1: Update messages, 0: No update messages
     )
 
     # Define EarlyStopping callback
@@ -72,7 +89,7 @@ def run_model(x_train, y_train, x_val, y_val, params):
         batch_size=batch_size,
         epochs=epochs,
         validation_data=(x_val, y_val),
-        verbose=0,
+        verbose=1,
         callbacks=[reduce_lr, early_stop]  # Add callbacks here
     )
     print(f"early_stop {early_stop.stopped_epoch}")
