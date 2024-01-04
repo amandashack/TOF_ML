@@ -27,12 +27,13 @@ def fig_to_pdf_page(fig):
 
 def main(args):
     in_dir = args.input
-    if args.meas:
+    if not args.err_analysis:
         results = []
         results_fn = in_dir + '/results' #os.path.join(in_dir, 'results')
         results = load_results(results_fn, args.measures)
-        print('Read {} which contained {} results.'.format(
-            results_fn, len(results)))
+        if not args.param_id:
+            print('Read {} which contained {} results.'.format(
+                results_fn, len(results)))
 
         df = pd.DataFrame.from_records(results)
 
@@ -45,19 +46,21 @@ def main(args):
         for testset in sorted(result_names):
             idx = df['result_name'] == testset
             dft = df[idx]
-            print()
-            print('# {}, {} results'.format(testset, len(dft)))
+            if not args.param_id:
+                print('# {}, {} results'.format(testset, len(dft)))
 
-            print('Best {} results so far according to {} {}.'.format(
-                args.N, args.opt, args.meas))
+                print('Best {} results so far according to {} {}.'.format(
+                    args.N, args.opt, args.meas))
             if args.opt == 'max':
                 dfs = dft.nlargest(args.N, args.meas)
             else:
                 dfs = dft.nsmallest(args.N, args.meas)
             best = dfs.iloc[0][args.meas]
             best_per_testset[testset] = best
-
-            print(dfs.drop(columns='result_name'))
+            if not args.param_id:
+                print(dfs.drop(columns='result_name'))
+            if args.param_id:
+                print(" ".join(map(str, dfs.get('param_id').tolist())))
         if args.heatmap:
             m = args.heatmap.split(',')
             heatmap_data = df.pivot_table(index=m[0], columns=m[1], values=m[2], aggfunc='mean')
@@ -73,7 +76,7 @@ def main(args):
 
             # Show the heatmap
             plt.show()
-    if args.err_analysis:
+    elif args.err_analysis:
         if args.err_analysis == 0:
             # this should select the best model
             pass
@@ -111,7 +114,7 @@ def main(args):
                 # Scatter plot with regression line
                 fig, ax = plt.subplots(figsize=(8, 6))
                 sns.regplot(x='y_pred', y='y_test', data=df, ci=95,
-                            scatter_kws={"s": 80, "alpha": 0.7, "edgecolor": 'k', "linewidth": 0.5},
+                            scatter_kws={"s": 80, "alpha": 0.7, "edgecolor": 'k', "linewidths": 0.5},
                             line_kws={"color": "red"})
                 plt.xlabel('True Values', fontsize=12)
                 plt.ylabel('Predicted Values', fontsize=12)
@@ -178,7 +181,7 @@ if __name__ == '__main__':
     parser.add_argument('input', type=str,
                         help='directory with the results file')
     parser.add_argument('--output', '-O', type=str)
-    parser.add_argument('--measure', type=str, required=False,
+    parser.add_argument('--measure', type=str, default='P@5', required=False,
                         help='measure to optimize', dest='meas')
     parser.add_argument('-N', type=int, default=5,
                         help='number of top results to show')
@@ -194,6 +197,8 @@ if __name__ == '__main__':
                         help='make a plots based on the selected model')
     parser.add_argument('--pdf_filename', type=str,
                         help='indicate the filename you would like to give the pdf')
+    parser.add_argument('--param_id', action='store_true',
+                        help='print the top -N param_ids if this flag is set')
     args = parser.parse_args()
 
     main(args)

@@ -36,6 +36,9 @@ import numpy as np
 
 
 space = {
-    'layer_size': [8, 16, 32, 64],
+    'layer_size': [16, 32, 64, 128],
     'batch_size' : np.exp2(np.arange(5, 9)),
+    'dropout': [0.1, 0.2, 0.3, 0.4],
+    'optimizer': ['Adam', 'SGD', 'RMSprop'],
+    'learning_rate': [0.1, 0.01, 0.001, 0.0001]
     }

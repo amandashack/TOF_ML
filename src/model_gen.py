@@ -3,7 +3,7 @@ import tensorflow as tf
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import Dense, Dropout, LeakyReLU, Activation, BatchNormalization, ELU
 from tensorflow.keras.callbacks import ReduceLROnPlateau, EarlyStopping
-from tensorflow.keras.optimizers import Adam
+from tensorflow.keras.optimizers import Adam, SGD, RMSprop
 # make numpy values easier to read
 np.set_printoptions(precision=3, suppress=True)
 
@@ -31,7 +31,9 @@ def create_model(params):
         - model: specify the model just created so that we can later use it again.
     """
     layer_size = int(params['layer_size'])
-    dropout_rate = float(params['dropout_rate'])
+    dropout_rate = float(params['dropout'])
+    learning_rate = float(params['learning_rate'])
+    optimizer = params['optimizer']
 
     model = Sequential()
 
@@ -56,14 +58,19 @@ def create_model(params):
     model.add(Dense(1, activation='linear'))
 
     # Learning rate scheduling
-    optimizer = Adam(learning_rate=0.001)
+    if optimizer=="Adam":
+        optimizer = Adam(learning_rate=learning_rate)
+    if optimizer=="SGD":
+        optimizer = SGD(learning_rate=learning_rate)
+    if optimizer=="RMSprop":
+        optimizer = RMSprop(learning_rate=learning_rate)
     model.compile(loss='mean_squared_error', optimizer=optimizer)
 
     return model
 
 
 def run_model(x_train, y_train, x_val, y_val, params):
-    batch_size = int(params["batch_size"])
+    batch_size = int(float(params["batch_size"]))
     epochs = 200
     model = create_model(params)
 
@@ -73,7 +80,7 @@ def run_model(x_train, y_train, x_val, y_val, params):
         factor=0.1,           # Factor by which the learning rate will be reduced (e.g., 0.5 means halving the LR)
         patience=5,           # Number of epochs with no improvement after which learning rate will be reduced
         min_lr=1e-7,          # Minimum learning rate
-        verbose=1,             # 1: Update messages, 0: No update messages
+        verbose=0,             # 1: Update messages, 0: No update messages
     )
 
     # Define EarlyStopping callback
@@ -89,7 +96,7 @@ def run_model(x_train, y_train, x_val, y_val, params):
         batch_size=batch_size,
         epochs=epochs,
         validation_data=(x_val, y_val),
-        verbose=1,
+        verbose=0,
         callbacks=[reduce_lr, early_stop]  # Add callbacks here
     )
     print(f"early_stop {early_stop.stopped_epoch}")

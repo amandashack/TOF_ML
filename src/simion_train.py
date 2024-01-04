@@ -36,8 +36,8 @@ def run_train(out_path, params):
 
 if __name__ == '__main__':
     p = ' '.join(sys.argv[2:])
-    p = re.findall(r'(\w+)=(\d+)', p)
-    params = dict((p[i][0], float(p[i][1])) for i in range(len(p)))
+    p = re.findall(r'(\w+)=(\S+)', p)
+    params = dict((p[i][0], p[i][1]) for i in range(len(p)))
     output_file_path = sys.argv[1]
     run_train(output_file_path, params)
     #run_train("/Users/proxi/Documents/coding/TOF_ML/stored_models/test_001/9",
