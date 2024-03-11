@@ -1,11 +1,11 @@
-from loaders import MRCOLoader
+from loaders import MRCOLoader, train_test_val_loader
 import os
-from sklearn.model_selection import train_test_split
 import numpy as np
 from model_gen import y0_NM
 import h5py
 import plotter
 import matplotlib.pyplot as plt
+import pandas as pd
 
 
 def generate_files(x_data, y_data, output_dir, filename):
@@ -73,23 +73,113 @@ def multi_scatter(df):
 def plot_rebalanced_data():
     dir_path = os.path.dirname(os.path.realpath(__file__))
     # change this slash for linux
+    train_filepath = dir_path + "/NM_simulations/masked_data3/train"
+    train_data = train_test_val_loader(train_filepath)
+    fig, ax = plt.subplots()
+    df = pd.DataFrame(data=train_data[[1,2,-1], :].T, columns=['pass', 'retardation', 'residuals'])
+    vals = df.retardation.unique()
+    for val in vals:
+        plot_df = pd.DataFrame(df.loc[df['retardation'] == 0])
+    plotter.plot_residuals(ax, df, "Train Data", '$log_{2}$(Pass Energy)', "Residuals")
+    fig.tight_layout()
+    plt.legend(prop={'size': 6})
+    plt.show()
+    #multi_scatter([X, Y])
+
+
+def plot_energy_resolutions(resolution):
+    plt.figure(figsize=(10, 6))  # Set the figure size
+
+    for idx, (pes, res) in enumerate(resolution):
+        # Each pes, res pair corresponds to a different retardation
+        # 'idx' can be used to differentiate them in the plot
+        plt.scatter(pes, res, label=f'Retardation {idx + 1}')
+
+    plt.xlabel('Pass Energy (eV)')  # X-axis label
+    plt.ylabel('Energy Resolution (ΔE)')  # Y-axis label
+    plt.title('Energy Resolution vs. Pass Energy for Different Retardations')  # Plot title
+    plt.legend()  # Show legend to differentiate between retardations
+    plt.grid(True)  # Add a grid for better readability
+    plt.show()  # Display the plot
+
+
+def calculate_delta_E(tof_e1, tof_e2, delta_t, delta_e):
+    """
+    Calculate ΔE using the given formula:
+    ΔE = Δt [δE / (TOF(E) - TOF(E + δE))]
+
+    Parameters:
+    tof_e1 (float): Time of flight at energy E
+    tof_e2 (float): Time of flight at energy E + delta_e
+    delta_t (float): spread in time of flight for energy E
+    delta_e (float): energy step between E1 and E2
+
+    Returns:
+    float: Calculated energy resolution ΔE
+    """
+    # TOF(E) is the time of flight at energy E (tof_e)
+
+    delta_E = delta_t * (delta_e / (tof_e1 - tof_e2))
+    return delta_E
+
+
+def plot_energy_resolution():
+    dir_path = os.path.dirname(os.path.realpath(__file__))
+    # change this slash for linux
     amanda_filepath = dir_path + "\\NM_simulations"
-    print(amanda_filepath)
     multi_retardation_sim = MRCOLoader(amanda_filepath)
     multi_retardation_sim.load()
     multi_retardation_sim.create_mask((402, np.inf), (0, 17.7), 5, "make it")
-    multi_retardation_sim.rebalance()
-    #residual = multi_retardation_sim.data_masked[3, :] - y0_NM(multi_retardation_sim.data_masked[1, :])
-    #X = multi_retardation_sim.data_masked[1, :]
-    #Y = residual
-    #fig, ax = plt.subplots()
-    #plotter.one_plot_multi_scatter(ax, multi_retardation_sim.spec_masked, "Masked Data",
-    #                               '$log_{2}$(Pass Energy)', "$log_{2}(TOF)$",
-    #                               logarithm=True, fit=True)
-    #fig.tight_layout()
-    #plt.legend(prop={'size': 6})
-    #plt.show()
-    #multi_scatter([X, Y])
+    # get the dictionary based on the retardations
+    spec_dict = multi_retardation_sim.spec_masked
+    # generate the energy resolution for each retardation
+    resolution = []
+    for r in spec_dict.keys():
+        # Find the unique energies and their indices
+        initial_pe = np.array(spec_dict[r][1])
+        tof_values = np.array(spec_dict[r][2])
+        unique_pe, indices, counts = np.unique(initial_pe, return_inverse=True, return_counts=True)
+
+        # Filtering energies based on occurrence
+        unique_pe_filtered = unique_pe[counts > 1]
+        # Getting indices for filtered energies
+        indices_filtered = np.where(np.isin(initial_pe, unique_pe_filtered))[0]
+
+        avg_tof = []
+        spread_tof = []
+        for pe in unique_pe_filtered:
+            idxs = np.where(initial_pe == pe)[0]
+            avg_tof.append(np.mean(tof_values[idxs]))
+            spread_tof.append(np.ptp(tof_values[idxs]))
+
+        # Get indices that would sort unique_pe_filtered
+        sort_indices = np.argsort(unique_pe_filtered)
+        # Use these indices to sort both unique_pe_filtered and spread_tof_values_filtered
+        sorted_unique_pe_filtered = np.array(unique_pe_filtered)[sort_indices].tolist()
+        sorted_spread_tof = np.array(spread_tof)[sort_indices].tolist()
+        # Sorting the avg_tof alongside the sorted_unique_pe_filtered and sorted_spread_tof_values_filtered
+        sorted_avg_tof = np.array(avg_tof)[sort_indices].tolist()
+        # Calculate delta_e for each pair of adjacent energies in the sorted_unique_pe_filtered list
+        delta_e_list = np.diff(sorted_unique_pe_filtered)
+        # Calculate ΔE for each pair of adjacent energies using the corresponding delta_e
+        dE = []
+        filtered_pes = []
+        for i in range(len(delta_e_list)):
+            delta_E = calculate_delta_E(sorted_avg_tof[i], sorted_avg_tof[i + 1], sorted_spread_tof[i], delta_e_list[i])
+            if 0.01 <= delta_E <= 5:
+                dE.append(delta_E)
+                filtered_pes.append(sorted_unique_pe_filtered[i])
+
+        # Ensure that the last pass energy is also included if its delta_E is within the specified range
+        last_delta_E = calculate_delta_E(sorted_avg_tof[-1], sorted_avg_tof[-1] + delta_e_list[-1],
+                                         sorted_spread_tof[-1], delta_e_list[-1])
+        if 0.01 <= last_delta_E <= 5:
+            dE.append(last_delta_E)
+            filtered_pes.append(sorted_unique_pe_filtered[-1])
+
+        resolution.append([filtered_pes[:100], dE[:100]])
+    plot_energy_resolutions(resolution)
+
 
 if __name__ == '__main__':
-    run_datasplit()
+    plot_energy_resolution()

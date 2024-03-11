@@ -35,10 +35,11 @@ def run_train(out_path, params):
 
 
 if __name__ == '__main__':
-    p = ' '.join(sys.argv[2:])
-    p = re.findall(r'(\w+)=(\S+)', p)
-    params = dict((p[i][0], p[i][1]) for i in range(len(p)))
-    output_file_path = sys.argv[1]
-    run_train(output_file_path, params)
-    #run_train("/Users/proxi/Documents/coding/TOF_ML/stored_models/test_001/9",
-    #          {"layer_size": 64, "batch_size": 256, 'dropout_rate': 0.2})
+    #p = ' '.join(sys.argv[2:])
+    #p = re.findall(r'(\w+)=(\S+)', p)
+    #params = dict((p[i][0], p[i][1]) for i in range(len(p)))
+    #output_file_path = sys.argv[1]
+    #run_train(output_file_path, params)
+    run_train("/Users/proxi/Documents/coding/TOF_ML/stored_models/test_001/12",
+              {"layer_size": 64, "batch_size": 256, 'dropout': 0.2,
+               'learning_rate': 0.1, 'optimizer': 'RMSprop'})

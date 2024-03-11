@@ -53,7 +53,7 @@ def one_plot_multi_scatter(ax, df, multi_title, xlabel, ylabel, logarithm=True, 
     plt.rcParams.update(params)
     for i in range(len(df.keys())):
         dvals = list(df.keys())
-        xx = df[dvals[i]][1]
+        xx = df[dvals[i]]
         yy = df[dvals[i]][2]
         if logarithm:
             ax.scatter(x=np.log2(xx), y=np.log2(yy), color = cmap(i), label=f'Retardation: {dvals[i]}')
@@ -78,7 +78,20 @@ def one_plot_multi_scatter(ax, df, multi_title, xlabel, ylabel, logarithm=True, 
         ax.set_title(multi_title, fontsize=18)
     ax.set_xlabel(xlabel, fontsize=16)
     ax.set_ylabel(ylabel, fontsize=16)
-    return(ax)
+    return ax
+
+
+def plot_residuals(ax, df, multi_title, xlabel, ylabel):
+    params = {'mathtext.default': 'regular'}
+    plt.rcParams.update(params)
+    dvals = list(df.keys())
+    xx = df[dvals[0]]
+    yy = df[dvals[1]]
+    ax.scatter(x=xx, y=yy)
+    ax.set_title(multi_title, fontsize=18)
+    ax.set_xlabel(xlabel, fontsize=16)
+    ax.set_ylabel(ylabel, fontsize=16)
+
 
 def heatmap_plot(m):
     print(m)

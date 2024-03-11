@@ -82,15 +82,15 @@ def main(args):
             pass
         else:
             if args.pdf_filename:
-                pdf_writer = PdfWriter()
-                pdf_filename = in_dir + f'/{args.pdf_filename}'
+                #pdf_writer = PdfWriter()
+                #pdf_filename = in_dir + f'/{args.pdf_filename}'
                 # Check if the PDF file already exists
-                if os.path.exists(pdf_filename):
+                #if os.path.exists(pdf_filename):
                     # Open the existing PDF and add its pages to the writer
-                    with open(pdf_filename, "rb") as existing_pdf:
-                        pdf_reader = PdfReader(existing_pdf)
-                        for page in range(len(pdf_reader.pages)):
-                            pdf_writer.add_page(pdf_reader.pages[page])
+                #    with open(pdf_filename, "rb") as existing_pdf:
+                #        pdf_reader = PdfReader(existing_pdf)
+                #        for page in range(len(pdf_reader.pages)):
+                #            pdf_writer.add_page(pdf_reader.pages[page])
                 model_num = args.err_analysis
                 model_path = in_dir + f'/{model_num}'
                 model = tf.keras.models.load_model(model_path)
@@ -98,13 +98,19 @@ def main(args):
                 dir_path = os.path.dirname(os.path.realpath(__file__))
                 test_filepath = dir_path + "/NM_simulations/masked_data3/test"
                 test_data = train_test_val_loader(test_filepath)
+                retardation_values = test_data[2, :].flatten()
                 x_test = test_data[:-1, :].T
                 y_test = test_data[-1, :]
                 y_test = y_test.flatten()
                 y_pred = model.predict(x_test)
                 y_pred = y_pred.flatten()
                 residuals = y_test - y_pred
-                df = pd.DataFrame(data={'y_pred': y_pred.tolist(), 'y_test': y_test.tolist()})
+                df = pd.DataFrame({
+                    'y_pred': y_pred.tolist(),
+                    'y_test': y_test.tolist(),
+                    'residuals': residuals.tolist(),
+                    'retardation': retardation_values.tolist()
+                })
 
                 # Calculate metrics
                 mae = mean_absolute_error(y_test, y_pred)
@@ -113,41 +119,47 @@ def main(args):
 
                 # Scatter plot with regression line
                 fig, ax = plt.subplots(figsize=(8, 6))
+                sns.scatterplot(x='y_pred', y='y_test', data=df,
+                                hue='retardation', palette='viridis',
+                                alpha=0.7, edgecolor='k', linewidth=0.5, s=80)
                 sns.regplot(x='y_pred', y='y_test', data=df, ci=95,
-                            scatter_kws={"s": 80, "alpha": 0.7, "edgecolor": 'k', "linewidths": 0.5},
+                            scatter_kws={'alpha': 0},  # Hide the original scatter to show the colored one
                             line_kws={"color": "red"})
-                plt.xlabel('True Values', fontsize=12)
-                plt.ylabel('Predicted Values', fontsize=12)
-                plt.title('True vs. Predicted Values', fontsize=14)
+                plt.xlabel('True Values', fontsize=16)
+                plt.ylabel('Predicted Values', fontsize=16)
+                #plt.title('True vs. Predicted Values with Retardation Color Coding', fontsize=14)
 
                 # Inset for metrics
                 axins = inset_axes(plt.gca(), width="40%", height="30%", loc='lower right')
-                axins.text(0.05, 0.7, f'MAE = {mae:.3f}', fontsize=10)
-                axins.text(0.05, 0.5, f'RMSE = {rmse:.3f}', fontsize=10)
-                axins.text(0.05, 0.3, f'$R^2 = {r_squared:.3f}$', fontsize=10)
+                axins.text(0.05, 0.7, f'MAE = {mae:.3f}', fontsize=14)
+                axins.text(0.05, 0.5, f'RMSE = {rmse:.3f}', fontsize=14)
+                axins.text(0.05, 0.3, f'$R^2 = {r_squared:.3f}$', fontsize=14)
                 axins.axis('off')
                 plt.tight_layout()
-                pdf_writer.add_page(fig_to_pdf_page(fig))
-                plt.close(fig)
+                plt.show()
+                #pdf_writer.add_page(fig_to_pdf_page(fig))
+                #plt.close(fig)
 
                 # Residual plot
                 fig, ax = plt.subplots(figsize=(8, 6))
-                sns.scatterplot(x=y_pred, y=residuals, alpha=0.7,
-                                edgecolor='k', linewidth=0.5, s=80)
-                plt.xlabel('Predicted Values', fontsize=12)
-                plt.ylabel('Residuals', fontsize=12)
-                plt.title('Residual Plot', fontsize=14)
-                pdf_writer.add_page(fig_to_pdf_page(fig))
-                plt.close(fig)
+                sns.scatterplot(x='y_pred', y='residuals', data=df,
+                                hue='retardation', palette='viridis',
+                                alpha=0.7, edgecolor='k', linewidth=0.5, s=80)
+                plt.xlabel('Predicted Values', fontsize=16)
+                plt.ylabel('Residuals', fontsize=16)
+                #plt.title('Residual Plot with Retardation Color Coding', fontsize=16)
+                #pdf_writer.add_page(fig_to_pdf_page(fig))
+                #plt.close(fig)
+                plt.show()
 
                 # Histogram of residuals with fitted normal distribution
                 residual_kurtosis, residual_skewness = kurtosis(residuals), skew(residuals)
                 fig, ax = plt.subplots(figsize=(8, 6))
                 sns.histplot(residuals, bins=30, kde=True, color='skyblue',
                              edgecolor='k', linewidth=0.5)
-                plt.xlabel('Residuals', fontsize=12)
-                plt.ylabel('Frequency', fontsize=12)
-                plt.title('Histogram of Residuals', fontsize=14)
+                plt.xlabel('Residuals', fontsize=16)
+                plt.ylabel('Frequency', fontsize=16)
+                #plt.title('Histogram of Residuals', fontsize=16)
 
                 # Fit a normal distribution to residuals
                 mu, std = norm.fit(residuals)
@@ -164,17 +176,18 @@ def main(args):
                 fwhm = 2 * np.sqrt(2 * np.log(2)) * std
 
                 # Inset for kurtosis, skewness, center, and FWHM, with grid and axes removed
-                axins_hist = inset_axes(plt.gca(), width="40%", height="40%", loc='upper right')
-                axins_hist.text(0.3, 0.7, f'Kurtosis = {residual_kurtosis:.2f}', fontsize=10)
-                axins_hist.text(0.3, 0.5, f'Skewness = {residual_skewness:.2f}', fontsize=10)
-                axins_hist.text(0.3, 0.3, f'Center = {mu:.2f}', fontsize=10)
-                axins_hist.text(0.3, 0.1, f'FWHM = {fwhm:.2f}', fontsize=10)
+                axins_hist = inset_axes(plt.gca(), width="40%", height="40%", loc='upper left')
+                axins_hist.text(0.3, 0.7, f'Kurtosis = {residual_kurtosis:.2f}', fontsize=12)
+                axins_hist.text(0.3, 0.5, f'Skewness = {residual_skewness:.2f}', fontsize=12)
+                axins_hist.text(0.3, 0.3, f'Center = {mu:.2f}', fontsize=12)
+                axins_hist.text(0.3, 0.1, f'FWHM = {fwhm:.2f}', fontsize=12)
                 axins_hist.axis('off')  # This turns off the axis labels and grid
-                pdf_writer.add_page(fig_to_pdf_page(fig))
-                plt.close(fig)
+                plt.show()
+                #pdf_writer.add_page(fig_to_pdf_page(fig))
+                #plt.close(fig)
 
-                with open(pdf_filename, "wb") as out:
-                    pdf_writer.write(out)
+                #with open(pdf_filename, "wb") as out:
+                #    pdf_writer.write(out)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()

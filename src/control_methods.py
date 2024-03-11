@@ -16,23 +16,74 @@ import numpy as np
 # simion is done running, and can then be loaded in and parsed with python to convert the simion output
 # into a more useful array.  This file may be accessed by multiple different functions,
 # and it is helpful to establish it in the main script's scope.
-outputFile = "C:/Users/robaid/Documents/MRCO_Simulation/simionSimultionFiles/SimionRunFiles/flightOutputLog.txt"
+baseDir = "C:/Users/proxi/Documents/SimionRunFiles"
+outputFile = baseDir + "/flightOutputLog.txt"
 #denote where the potential array file is
-potArrLoc = "C:/Users/robaid/Documents/MRCO_Simulation/simionSimultionFiles/SimionRunFiles/copiedArray.PA0"
+potArrLoc = baseDir + "/copiedArray.PA0"
 #"C:/Users/andre/Documents/GitHub/kamalovSimionLearning/runFiles/LCL5005-010580_TOF_HighRes.PA0"
 #select the .REC file to dictate recording options
-recordingFile = "C:/Users/robaid/Documents/MRCO_Simulation/simionSimultionFiles/SimionRunFiles/recordingOptions.rec"
+recordingFile = baseDir + "/recordingOptions.rec"
 #select the .IOB file to dictate the interactive bench to use for this simion call
-iobFileLoc = "C:/Users/robaid/Documents/MRCO_Simulation/simionSimultionFiles/SimionRunFiles/workbench.iob"
+iobFileLoc = baseDir + "/workbench.iob"
 #specify the directory for the .fly2 file.  The fly2 file defines the particles that will be flown in the simulation.
-fly2FileLoc = "C:/Users/robaid/Documents/MRCO_Simulation/simionSimultionFiles/SimionRunFiles/ionsToFly.fly2"
+fly2FileLoc = baseDir + "/ionsToFly.fly2"
+# specify the location for the .lua file which sets the scale parameter
+luaFileLoc = baseDir + "/set_scale.lua"
 
 #%%
 
-#generate a .fly2 file type.  file name must be provided as directory string INCLUDING the .FLY2 post-fix
+
+def generate_lognormal_energies(num_particles, median, sigma):
+    # median and sigma are the parameters for the lognormal distribution
+    # Note: np.exp(median) is the scale parameter (exp(mean of the underlying normal distribution))
+    return np.random.lognormal(mean=np.log(median), sigma=sigma, size=num_particles)
+
+
+# generate a .fly2 file type.  file name must be provided as directory string INCLUDING the .FLY2 post-fix
+def generate_fly2File_lognorm(filenameToWriteTo, numParticles=500, medianEnergy=10, energySigma=1):
+	# Generate lognormal distributed energies
+	energies = generate_lognormal_energies(numParticles, medianEnergy, energySigma)
+	# check if .fly2 file with this name already exists.
+	os.chdir("../simulations/simionSimulationFiles")
+	fileExists = os.path.isfile(filenameToWriteTo)
+	# delete previous copy, if there is one
+	if fileExists:
+		os.remove(filenameToWriteTo)
+
+	# open up file to write to
+	with open(filenameToWriteTo, "w") as fileOut:
+		# Write out the .fly2 scripts
+		fileOut.write("particles {\n")
+		fileOut.write("  coordinates = 0,\n")
+		fileOut.write("  standard_beam {\n")
+		fileOut.write("    n = " + str(numParticles) + ",\n")
+		fileOut.write("    tob = 0,\n")
+		fileOut.write("    mass = 0.000548579903,\n")
+		fileOut.write("    charge = -1,\n")
+		fileOut.write("    ke = " + str(energies) + "\n")
+		fileOut.write("    az =  uniform_distribution {\n")
+		fileOut.write("      min = -2.5,\n")
+		fileOut.write("      max = 2.5\n")
+		fileOut.write("    },\n")
+		fileOut.write("    el =  uniform_distribution {\n")
+		fileOut.write("      min = -5,\n")
+		fileOut.write("      max = 5\n")
+		fileOut.write("    },\n")
+		fileOut.write("    cwf = 1,\n")
+		fileOut.write("    color = 0,\n")
+		fileOut.write("    position =  sphere_distribution {\n")
+		fileOut.write("      center = vector(244, 0, 0),\n")
+		fileOut.write("      radius = 0,\n")
+		fileOut.write("      fill = true")
+		fileOut.write("    }\n")
+		fileOut.write("  }\n")
+		fileOut.write("}")
+
+
+# generate a .fly2 file type.  file name must be provided as directory string INCLUDING the .FLY2 post-fix
 def generate_fly2File(filenameToWriteTo, numParticles=500, meanEnergy=10, energySTD=0):
 	#check if .fly2 file with this name already exists.
-	os.chdir("C:/Users/robaid/Documents/MRCO_Simulation/simionSimultionFiles")
+	os.chdir("/simulations/simionSimulationFiles")
 	fileExists = os.path.isfile(filenameToWriteTo)
 	#delete previous copy, if there is one
 	if fileExists == True:
@@ -109,19 +160,26 @@ def fastAdj(voltageArray, potArrayFile):
 # it is a binary file that has a bunch of flags to tell the program what to record during simulation.
 # the iobFileLoc is directory to the .IOB file, which is the ion bench file.  I am not fully sure I understand what
 # this is, but I think it is a file that links the potential arrays to the simulation.
-def runSimion(fly2FileDir, outputFile, recordingFile, iobFileLoc):
-	fileExists = os.path.isfile(outputFile)
-	# delete previous copy, if there is one
-	if fileExists == True:
+def runSimion(fly2FileDir, luaFile, outputFile, recordingFile, iobFileLoc):
+	# Check if outputFile exists and delete it if it does
+	if os.path.isfile(outputFile):
 		os.remove(outputFile)
-		
-	# go to simion's working directory and call simion
-	os.chdir("C:/Users/robaid/Documents/MRCO_Simulation/simionSimultionFiles/Simion_8-1/")
-	os.system("simion.exe --nogui fly --recording-output=" + outputFile + " --recording=" + recordingFile +
-			  " --particles=" + fly2FileDir + " --restore-potentials=0 " + iobFileLoc)
 
+	# Command parts may need to be individually quoted if they contain spaces
+	luaCommand = f"--lua @{luaFile}"
+	flyCommand = f"fly --recording-output=\"{outputFile}\" --recording=\"{recordingFile}\" " \
+				 f"--particles=\"{fly2FileDir}\" --restore-potentials=0 \"{iobFileLoc}\""
+
+	# Construct the full command
+	fullCommand = f"simion.exe --nogui {luaCommand} {flyCommand}"
+
+	# Change to the SIMION working directory
+	os.chdir(r"C:\Users\proxi\Downloads\Simion_8-1-20230825T223627Z-001\Simion_8-1")
+
+	# Execute the command
+	os.system(fullCommand)
 	# delete the temporary files
-	os.chdir("C:/Users/robaid/Documents/MRCO_Simulation/simionSimultionFiles/SimionRunFiles/")
+	os.chdir(baseDir)
 	os.system('del *.tmp')
 
 
@@ -477,29 +535,11 @@ def runMultipleEnergies(voltageArray, energiesToRun, numParticles=500, energySTD
 		for E in energiesToRun:
 			print("Currently running energy: " + str(E))
 			# for each energy, specify the .fy2 file to tell simion what electrons to fly
-			generate_fly2File(fly2FileLoc, numParticles=numParticles, meanEnergy=E, energySTD=energySTD)
+			generate_fly2File_lognorm(fly2FileLoc, numParticles=numParticles, medianEnergy=E, energySigma=1)
 			# run simion
 			runSimion(fly2FileLoc, outputFile, recordingFile, iobFileLoc)
 			# retrieve results from simion's .txt log
 			runResults = postProcessSimionOutputLog(outputFile)
-			# clean up the results to filter for hits that get to MCP front
-			selectedHits, numGoodHits = resultFilter(runResults)
-			# calculate the time of flight associated with this energy run
-			timeThisEnergy = calculateToF_forSingleRun(selectedHits)
-			simulatedToF_list.append(timeThisEnergy)
-	else:
-		# only one energy was supplied
-		generate_fly2File(fly2FileLoc, numParticles=numParticles, meanEnergy=energiesToRun, energySTD=energySTD)
-		# run simion
-		runSimion(fly2FileLoc, outputFile, recordingFile, iobFileLoc)
-		# retrieve results from simion's .txt log
-		runResults = postProcessSimionOutputLog(outputFile)
-		# clean up the results to filter for hits that get to MCP front
-		selectedHits, numGoodHits = resultFilter(runResults)
-		# calculate the time of flight associated with this energy run
-		timeThisEnergy = calculateToF_forSingleRun(selectedHits)
-		simulatedToF_list.append(timeThisEnergy)
-	return simulatedToF_list
 
 
 # This is a bit of an outdated methof.  It was initially built to help plot the results of a completed run,
