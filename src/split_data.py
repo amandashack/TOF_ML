@@ -6,7 +6,7 @@ import h5py
 import plotter
 import matplotlib.pyplot as plt
 import pandas as pd
-
+from scipy.optimize import curve_fit
 
 def generate_files(x_data, y_data, output_dir, filename):
     output_file_path = os.path.join(output_dir, filename)
@@ -181,5 +181,81 @@ def plot_energy_resolution():
     plot_energy_resolutions(resolution)
 
 
+def gaussian(x, A, mu, sigma):
+    return A * np.exp(-(x - mu) ** 2 / (2 * sigma ** 2))
+
+
+# Function to fit Gaussians to y_data vs. x_data within histogram bins
+def fit_gaussian_to_bins(y_data, x_data, bins='auto'):
+    # Generating histogram to determine bin edges
+    counts, bin_edges = np.histogram(y_data, bins=bins)
+
+    # Container for fit results
+    fit_params = []
+
+    # Fit a Gaussian for each bin
+    for i in range(len(bin_edges) - 1):
+        # Identifying points within the current bin
+        bin_mask = (y_data >= bin_edges[i]) & (y_data < bin_edges[i + 1])
+        x_in_bin = x_data[bin_mask]
+        y_in_bin = y_data[bin_mask]
+
+        if len(x_in_bin) < 3:  # Need at least 3 points to fit a model
+            fit_params.append(None)
+            continue
+
+        # Initial guesses: A = max count, mu = mean of x_in_bin, sigma = std of x_in_bin
+        initial_guess = [max(y_in_bin), np.mean(x_in_bin), np.std(x_in_bin)]
+
+        try:
+            # Fitting the Gaussian model
+            popt, _ = curve_fit(gaussian, x_in_bin, y_in_bin, p0=initial_guess)
+            fit_params.append([x_in_bin, y_in_bin, popt])
+        except RuntimeError:
+            # In case the fit fails
+            print(f"Fit failed for bin {i}")
+            fit_params.append(None)
+
+    return fit_params, bin_edges
+
+def plot_energy_v_splat():
+    dir_path = os.path.dirname(os.path.realpath(__file__))
+    # change this slash for linux
+    amanda_filepath = dir_path + "\\NM_simulations"
+    multi_retardation_sim = MRCOLoader(amanda_filepath)
+    multi_retardation_sim.load()
+    multi_retardation_sim.create_mask((402, np.inf), (0, 17.7), 5, "make it")
+    # get the dictionary based on the retardations
+    spec_dict = multi_retardation_sim.spec_masked
+    r = list(spec_dict.keys())
+    initial_pe = np.array(spec_dict[r[3]][1])
+    tof_values = np.array(spec_dict[r[3]][2])
+
+    fit_results, bin_edges = fit_gaussian_to_bins(tof_values, initial_pe, bins='auto')
+    plt.figure(figsize=(12, 8))
+    # Plotting Gaussian fits for each bin
+    print(len(fit_results))
+    for i, result in enumerate(fit_results[100:105]):
+        if result is not None:
+            # Extracting the Gaussian parameters
+            A, mu, sigma = result[2]
+            # Generating Gaussian curve for the current bin
+            y_gaussian = gaussian(result[0], A, mu, sigma)
+            plt.scatter(result[0], result[1], alpha=0.5, label='Original Data')
+            plt.plot(result[0], y_gaussian, label=f'Bin {i + 1} Fit, sigma = {sigma}')
+
+    plt.xlabel('X Data')
+    plt.ylabel('Y Data')
+    plt.title('Gaussian Fits to Data in Each Bin')
+    plt.legend()
+    plt.show()
+
+def plot_raw_data():
+    dir_path = os.path.dirname(os.path.realpath(__file__))
+    # change this slash for linux
+    amanda_filepath = dir_path + "\\NM_simulations"
+    multi_retardation_sim = MRCOLoader(amanda_filepath)
+    multi_retardation_sim.load()
+
 if __name__ == '__main__':
-    plot_energy_resolution()
+    plot_raw_data()

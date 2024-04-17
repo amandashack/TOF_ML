@@ -4,7 +4,8 @@ import numpy as np
 import collections
 from sklearn.linear_model import LinearRegression
 
-def plot_opt(ax_nm):#lbl_x,lbl_y
+def plot_opt(ax_nm):
+    # sets the plot options so that all plots have the same style
     ax_nm.axhline(y = 0, color = 'b', label = 'E_F',linestyle='--'); ax_nm.axvline(0,color='black',linestyle = '--')
     ax_nm.yaxis.set_ticks_position('both'); ax_nm.xaxis.set_ticks_position('both')
     ax_nm.set_xlabel('Kx (deg)',fontsize=16); ax_nm.set_ylabel('Kz (deg)',fontsize=16)
