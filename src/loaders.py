@@ -11,9 +11,23 @@ import os
 import re
 import copy
 from sklearn.preprocessing import KBinsDiscretizer
-from model_gen import y0_NM
+from scipy.optimize import curve_fit, fsolve
 from sklearn.model_selection import train_test_split
 from sklearn.utils import shuffle
+
+
+def gaussian(x, amplitude, mean, stddev):
+    return amplitude * np.exp(-((x - mean) / 4 / stddev) ** 2)
+
+
+def inverse_gaussian(tof_value, amplitude, mean, stddev):
+    # The Gaussian function
+    gaussian = lambda x: amplitude * np.exp(-((x - mean) / (4 * stddev)) ** 2) - tof_value
+
+    # Numerically solve for the energy
+    energy_predicted, = fsolve(gaussian, mean)
+
+    return energy_predicted
 
 
 def requires_invalid_indxs(func):
@@ -276,6 +290,19 @@ class DataStructure:
 
         return data
 
+    @staticmethod
+    def append_or_create(data_list, r, new_data):
+        # Check if a dict with the current retardation already exists
+        existing_data = next((d for d in data_list if d['retardation'] == r), None)
+        if existing_data is not None:
+            # Append the new data to the existing arrays
+            existing_data['elevation'] = np.concatenate((existing_data['elevation'], new_data['elevation']))
+            existing_data['pass_energy'] = np.concatenate((existing_data['pass_energy'], new_data['pass_energy']))
+            existing_data['tof_values'] = np.concatenate((existing_data['tof_values'], new_data['tof_values']))
+        else:
+            # Create a new dictionary for the retardation and append it to the list
+            data_list.append(new_data)
+
     def load(self):
         """
         Loads data from all HDF5 files in the specified directory that match the naming pattern.
@@ -351,18 +378,6 @@ class DataStructure:
         """
         # Reset the data lists
 
-        def append_or_create(data_list, r, new_data):
-            # Check if a dict with the current retardation already exists
-            existing_data = next((d for d in data_list if d['retardation'] == r), None)
-            if existing_data is not None:
-                # Append the new data to the existing arrays
-                existing_data['elevation'] = np.concatenate((existing_data['elevation'], new_data['elevation']))
-                existing_data['pass_energy'] = np.concatenate((existing_data['pass_energy'], new_data['pass_energy']))
-                existing_data['tof_values'] = np.concatenate((existing_data['tof_values'], new_data['tof_values']))
-            else:
-                # Create a new dictionary for the retardation and append it to the list
-                data_list.append(new_data)
-
         df = self.gen_dataframe(self.retardation, [d['elevation'] for d in self.data],
                                 [d['pass_energy'] for d in self.data],
                                 [d['tof_values'] for d in self.data])
@@ -415,9 +430,9 @@ class DataStructure:
                 }
 
                 # Append or create new data entry for training, validation, and test
-                append_or_create(self.training_data, r, data_train)
-                append_or_create(self.validation_data, r, data_val)
-                append_or_create(self.test_data, r, data_test)
+                self.append_or_create(self.training_data, r, data_train)
+                self.append_or_create(self.validation_data, r, data_val)
+                self.append_or_create(self.test_data, r, data_test)
 
         # Optional plotting of the distribution of pass energy across bins
         if plot:
@@ -475,6 +490,103 @@ class DataStructure:
         plt.grid(True)
         plt.show()
 
+    def plot_resolution(self, ds, specific_retardations=None, verbose=False):
+
+        if specific_retardations is not None:
+            data_to_plot = [item for item in ds if item['retardation'] in specific_retardations]
+        else:
+            data_to_plot = ds
+
+        predicted_energies = []
+        fwhm_values = []
+        mean_energy_values = []
+        for i in range(len(data_to_plot)):
+            r = data_to_plot[i]['retardation']
+            tof = data_to_plot[i]['tof_values']
+            energy = data_to_plot[i]['pass_energy']
+            predicted_energies.append({'retardation': r, 'predicted': [], 'actual': []})
+            fwhm_values.append({'retardation': r, 'fwhm': []})
+            mean_energy_values.append({'retardation': r, 'mean_energy': []})
+
+            # Define the number of bins for TOF data
+            n_bins = 600
+            bin_edges = np.linspace(tof.min(), tof.max(), n_bins + 1)
+            bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
+
+            # Fit a Gaussian to the energy distribution within each TOF bin
+            fit_params = []
+            for j in range(n_bins):
+                # Get the indices of the points within the current bin
+                bin_indices = np.where((tof >= bin_edges[j]) & (tof < bin_edges[j + 1]))[0]
+
+                # Continue only if there are enough points to fit the Gaussian
+                if len(bin_indices) > 3:  # At least 3 points to fit a Gaussian
+                    tof_bin = tof[bin_indices]
+                    energy_bin = energy[bin_indices]
+
+                    # Use the mean and standard deviation of the energy values as initial fitting parameters
+                    initial_guess = [tof_bin.max(), energy_bin.mean(), energy_bin.std()]
+
+                    try:
+                        # Fit a Gaussian to the TOF values
+                        popt, _ = curve_fit(gaussian, energy_bin, tof_bin, p0=initial_guess, maxfev=800)
+                        fit_params.append(popt)
+                        fwhm = 2 * np.sqrt(2 * np.log(2)) * abs(popt[2])
+                        fwhm_values[i]["fwhm"] += [fwhm]
+                        mean_energy_values[i]['mean_energy'] += [energy_bin.mean()]
+
+                        # Generate x values for the fitted curve
+                        energy_fit = np.linspace(energy_bin.min(), energy_bin.max(), 100)
+                        tof_fit = gaussian(energy_fit, *popt)
+
+
+                        # Plot the fitted curve
+                        plt.plot(energy_fit, tof_fit)
+                    except RuntimeError as e:
+                        fit_params.append([np.nan, np.nan, np.nan])
+                        # Skip if the fit did not converge (indicated by NaNs)
+                    if np.isnan(fit_params[-1]).any():
+                        continue
+                    predicted_energy = []
+                    for tof_value in tof_bin:
+                        amplitude, mean, stddev = fit_params[-1]
+                        predicted_energy.append(inverse_gaussian(tof_value, amplitude, mean, stddev))
+                    predicted_energies[i]['predicted'] += predicted_energy
+                    predicted_energies[i]['actual'] += energy_bin.flatten().tolist()
+                else:
+                    energy_bin = energy[bin_indices]
+                    predicted_energies[i]['predicted'] += ([np.nan]*len(bin_indices))
+                    predicted_energies[i]['actual'] += energy_bin.flatten().tolist()
+
+        for item in data_to_plot:
+            plt.scatter(item['pass_energy'], item['tof_values'], alpha=0.6,
+                        label=f"R={item['retardation']}")
+        plt.xlabel('TOF')
+        plt.ylabel('Energy')
+        plt.title('Gaussian Fits to Binned TOF vs. Energy Data')
+        plt.legend()
+        plt.show()
+
+        # Now plot FWHM vs Mean Energy for each bin
+        plt.figure()
+        for i in range(len(mean_energy_values)):
+            plt.scatter(mean_energy_values[i]['mean_energy'], fwhm_values[i]['fwhm'],
+                        label=f"R={fwhm_values[i]['retardation']}")
+        plt.title('FWHM vs Mean Energy')
+        plt.xlabel('Mean Energy (eV)')
+        plt.ylabel('FWHM')
+        plt.grid(True)
+        plt.show()
+
+        plt.figure()
+        for item in predicted_energies:
+            plt.scatter(item['actual'], item['predicted'], alpha=0.6, label=f"R={item['retardation']}")
+        plt.title('Actual vs Predicted Energy')
+        plt.xlabel('Actual Energy (eV)')
+        plt.ylabel('Predicted Energy (eV)')
+        plt.grid(True)
+        plt.show()
+
     def get_data(self):
         """
         Returns the loaded data.
@@ -488,8 +600,9 @@ dir_path = os.path.dirname(os.path.realpath(__file__))
 amanda_filepath = dir_path + "\\NM_simulations"
 data_loader = DataStructure(filepath=amanda_filepath)
 data_loader.load()
-data_loader.plot_tof_vs_pass_energy(data_loader.data, verbose=True)
+#data_loader.plot_tof_vs_pass_energy(data_loader.data, verbose=True)
 data_loader.create_mask(x_tof_range=(402, np.inf), y_tof_range=(0, 17.7), min_pass=5)
-data_loader.rebalance(ratio=0.2, nbins=3, plot=True, verbose=True, plot_training=True)
-data_loader.plot_tof_vs_pass_energy(data_loader.data, verbose=True)
+data_loader.rebalance(ratio=0.2, nbins=3, plot=False, verbose=False, plot_training=False)
+#data_loader.plot_tof_vs_pass_energy(data_loader.data, verbose=True)
+data_loader.plot_resolution(data_loader.data)
 

@@ -1,24 +1,34 @@
 import subprocess
 import re
+
 from PyLTSpice import RawRead
 import os
-import sys
+import argparse
 from voltage_generator import *
 
 
 # Function to modify the .cir file with new voltage values
 def modify_cir_file(cir_file_path, new_voltages):
+    voltages = [-new_voltages[22], -new_voltages[25], -new_voltages[27]]
+    # Open the file and read the lines
     with open(cir_file_path, 'r') as file:
         lines = file.readlines()
 
-    # Regex pattern to find voltage source lines
-    pattern = re.compile(r'V\d+\s+n\d+\s+\d+\s+.*')
+    # Regex pattern to find voltage source lines specifically for V22, V25, and V1
+    pattern = re.compile(r'(V22|V25|V1)\s+0\s+N\d+\s+.*')
+
+    # Mapping voltage source names to new_voltages indices
+    voltage_mapping = {'V22': 0, 'V25': 1, 'V1': 2}
 
     # Replace the voltage values in the file
     for i, line in enumerate(lines):
-        if pattern.match(line):
-            source_num = line.split()[0][1:]
-            lines[i] = f"V{source_num} n{source_num} 0 {new_voltages[int(source_num) - 1]}\n"
+        match = pattern.match(line)
+        if match:
+            source_name = match.group(1)
+            # Extract the node number from the line
+            node_num = line.split()[2]
+            # Replace the line with the new voltage value
+            lines[i] = f"{source_name} 0 {node_num} {voltages[voltage_mapping[source_name]]}\n"
 
     # Write the modified lines back to the file
     with open(cir_file_path, 'w') as file:
@@ -32,60 +42,60 @@ def run_simulation(ltspice_path, cir_file_path):
 
 # Function to read the .raw file and check current values
 def check_currents(raw_file_path):
-    def extract_largest_number(lst):
-        largest_number = float('-inf')  # Initialize with negative infinity
-
+    def extract_resistor_current_names(lst):
+        resistor_current_names = []
         for item in lst:
             if item.startswith("I(R"):
-                # Extract the numeric part after "I(R"
-                try:
-                    number = int(item[3:-1])  # Assuming the format is "I(RX)"
-                    largest_number = max(largest_number, number)
-                except ValueError:
-                    # Handle cases where the numeric part is not a valid integer
-                    pass
+                resistor_current_names.append(item)
+        return resistor_current_names
 
-        return largest_number
     ltr = RawRead(raw_file_path)
     names = ltr.get_trace_names()
     # Assume that the currents are labeled as I(R1), I(R2), etc.
-    n = extract_largest_number(names)
-    for i in range(1, n+1):  # dividing by 2 assumes half are voltage traces
-        current_trace = ltr.get_trace(f"I(R{i})")
+    resistor_current_names = extract_resistor_current_names(names)
+
+    # Check each current trace
+    max_val = float(-np.Inf)
+    for name in resistor_current_names:
+        current_trace = ltr.get_trace(name)
         if current_trace is None:
             continue
-        current_values = current_trace.get_wave(0)  # 0 for DC operating point analysis
-        if any(abs(val) > 0.01 for val in current_values):
-            return False
-        else:
-            return True
+        current_value = current_trace.data[-1]  # 0 for DC operating point analysis
+        if current_value > max_val: max_val = current_value
+    if abs(max_val) > 0.01:
+        return False, max_val
+    else:
+        return True, max_val
 
 
 # Example usage
 if __name__ == "__main__":
     # Check if the retardation value is passed as a command-line argument
-    if len(sys.argv) > 1:
-        retardationValue = float(sys.argv[1])
-    else:
-        # If not provided, set a default value or exit the script
-        print("Please provide a retardation value as a command-line argument.")
-        sys.exit(1)
+    parser = argparse.ArgumentParser(description='code for running LTSpice simulations')
 
+    # Add arguments
+    parser.add_argument('retardation', metavar='N', type=int, help='Required retardation value')
+    parser.add_argument('--front_voltage', type=float, help='Optional front voltage value')
+    parser.add_argument('--back_voltage', type=float, help='Optional back voltage value')
 
-    ltspice_path = "C:\\Users\\proxi\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\LTspice.exe"
+    args = parser.parse_args()
+
+    ltspice_path = "C:\\Users\\proxi\\AppData\\Local\\Programs\\ADI\\LTspice\\LTspice.exe"
     dir_path = os.path.dirname(os.path.realpath(__file__))
     # change this slash for linux
     cir_file_path = dir_path + "\\voltage_divider.cir"
     raw_file_path = dir_path + "\\voltage_divider.raw"
 
     # Modify the .cir file with new voltages
-    #new_voltages, resistor_values = calculateVoltage_NelderMeade(retardationValue)
-    #modify_cir_file(cir_file_path, new_voltages)
+    new_voltages, resistor_values = calculateVoltage_NelderMeade(args.retardation,
+                                                                 args.front_voltage,
+                                                                 args.back_voltage)
+    modify_cir_file(cir_file_path, new_voltages)
 
     # Run the LTspice simulation
-    #run_simulation(ltspice_path, cir_file_path)
+    run_simulation(ltspice_path, cir_file_path)
 
     # Read the .raw file and check current values
-    ok = check_currents(raw_file_path)
+    ok, max_val = check_currents(raw_file_path)
 
-    print(ok)
+    print(ok, max_val)

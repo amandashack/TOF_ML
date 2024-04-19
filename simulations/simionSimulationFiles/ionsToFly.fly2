@@ -1,0 +1,25 @@
+particles {
+  coordinates = 0,
+  standard_beam {
+    n = 10,
+    tob = 0,
+    mass = 0.000548579903,
+    charge = -1,
+    ke = [20.40759973  6.68259133  7.09562802 14.31277269  5.54402115 46.73766657
+ 24.21073828  3.13008767 12.69438235 37.12927317]
+    az =  uniform_distribution {
+      min = -2.5,
+      max = 2.5
+    },
+    el =  uniform_distribution {
+      min = -5,
+      max = 5
+    },
+    cwf = 1,
+    color = 0,
+    position =  sphere_distribution {
+      center = vector(244, 0, 0),
+      radius = 0,
+      fill = true    }
+  }
+}

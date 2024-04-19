@@ -103,26 +103,6 @@ def plot_energy_resolutions(resolution):
     plt.show()  # Display the plot
 
 
-def calculate_delta_E(tof_e1, tof_e2, delta_t, delta_e):
-    """
-    Calculate ΔE using the given formula:
-    ΔE = Δt [δE / (TOF(E) - TOF(E + δE))]
-
-    Parameters:
-    tof_e1 (float): Time of flight at energy E
-    tof_e2 (float): Time of flight at energy E + delta_e
-    delta_t (float): spread in time of flight for energy E
-    delta_e (float): energy step between E1 and E2
-
-    Returns:
-    float: Calculated energy resolution ΔE
-    """
-    # TOF(E) is the time of flight at energy E (tof_e)
-
-    delta_E = delta_t * (delta_e / (tof_e1 - tof_e2))
-    return delta_E
-
-
 def plot_energy_resolution():
     dir_path = os.path.dirname(os.path.realpath(__file__))
     # change this slash for linux
@@ -250,12 +230,6 @@ def plot_energy_v_splat():
     plt.legend()
     plt.show()
 
-def plot_raw_data():
-    dir_path = os.path.dirname(os.path.realpath(__file__))
-    # change this slash for linux
-    amanda_filepath = dir_path + "\\NM_simulations"
-    multi_retardation_sim = MRCOLoader(amanda_filepath)
-    multi_retardation_sim.load()
 
 if __name__ == '__main__':
-    plot_raw_data()
+    pass

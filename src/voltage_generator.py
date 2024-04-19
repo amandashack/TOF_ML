@@ -90,33 +90,44 @@ def voltageArrayGeneratorWrapperNM(voltageFront, voltageBack, midOneVoltage, mid
     return voltageArray, resistor_values
 
 
-def calculateVoltage_NelderMeade(retardationValue):
+def calculateVoltage_NelderMeade(retardationValue, voltageMidOne=None, voltageMidTwo=None):
     # setup fast adjust voltages
     voltageFront = 0
     voltageBack = -1 * retardationValue
-    voltageMidOne = 0.11248 * (voltageFront - voltageBack) + voltageBack
-    voltageMidTwo = 0.1354 * (voltageFront - voltageBack) + voltageBack
+    if not voltageMidOne and not voltageMidTwo:
+        voltageMidOne = 0.11248 * (voltageFront - voltageBack) + voltageBack
+        voltageMidTwo = 0.1354 * (voltageFront - voltageBack) + voltageBack
     # #run for NM
     voltageArray, resistor_values = voltageArrayGeneratorWrapperNM(voltageFront, voltageBack, voltageMidOne, voltageMidTwo)
-
+    print(voltageArray)
     return voltageArray, resistor_values
 
 
 def generate_netlist(voltage_array, resistor_values, filename="voltage_divider.cir"):
-    print(voltage_array, resistor_values)
     # Begin netlist with comments for readability
     netlist = "* Auto-generated netlist for an LTspice simulation\n\n"
 
-    # Add voltage source at the start of the netlist
-    netlist += "V1 n001 0 {0}\n".format(voltage_array[0])
+    # Add resistor R1, which starts from node 0
+    netlist += "R1 0 N003 {0}Meg\n".format(resistor_values[0])
 
-    # Add resistors to the netlist
-    for i, resistor_value in enumerate(resistor_values, start=1):
-        netlist += "R{0} n{1:03d} n{2:03d} {3}k\n".format(i, i, i + 1, resistor_value)
+    # Add resistors R2 to R21 in the chain from N003 to N024
+    for i, resistor_value in enumerate(resistor_values[1:21], start=2):  # resistors R2 to R21
+        netlist += "R{0} N{1:03d} N{2:03d} {3}Meg\n".format(i, i + 1, i + 2, resistor_value)
 
-    # Add the rest of the voltages from the array
-    for i, voltage in enumerate(voltage_array[1:], start=2):
-        netlist += "V{0} n{1:03d} 0 {2}\n".format(i, i, voltage)
+    # Add resistors R22, R23, and R25 which are connected to N001 and N002
+    netlist += "R22 N023 N001 {0}Meg\n".format(resistor_values[21])
+    netlist += "R23 N001 N024 {0}Meg\n".format(resistor_values[22])
+    netlist += "R25 N025 N002 {0}Meg\n".format(resistor_values[24])
+
+    # Add resistor R26 which connects N026 to N002
+    netlist += "R26 N026 N002 {0}Meg\n".format(resistor_values[25])
+
+    # Add voltage sources V22 and V25
+    netlist += "V22 0 N001 {0}\n".format(-voltage_array[22])
+    netlist += "V25 0 N002 {0}\n".format(-voltage_array[25])
+
+    # Add voltage source V1 at node N026
+    netlist += "V1 0 N026 {0}\n".format(-voltage_array[27])
 
     # Add simulation command
     netlist += "\n.op\n"
