@@ -36,8 +36,20 @@ def modify_cir_file(cir_file_path, new_voltages):
 
 
 # Function to run the LTspice simulation
-def run_simulation(ltspice_path, cir_file_path):
-    subprocess.run([ltspice_path, "-b", "-Run", cir_file_path])
+def run_simulation(ltspice_path, cir_file_path, output_dir):
+    # Save the current directory
+    original_cwd = os.getcwd()
+
+    # Change the current directory to the desired output directory
+    os.chdir(output_dir)
+
+    try:
+        subprocess.run([ltspice_path, "-b", "-Run", cir_file_path])
+    except FileNotFoundError as e:
+        print(f"An error occurred: {e}")
+    finally:
+        # Change back to the original directory
+        os.chdir(original_cwd)
 
 
 # Function to read the .raw file and check current values
@@ -75,6 +87,7 @@ if __name__ == "__main__":
 
     # Add arguments
     parser.add_argument('retardation', metavar='N', type=int, help='Required retardation value')
+    parser.add_argument('output_dir', metavar='N', type=int, help='Required output directory')
     parser.add_argument('--front_voltage', type=float, help='Optional front voltage value')
     parser.add_argument('--back_voltage', type=float, help='Optional back voltage value')
 
@@ -93,7 +106,7 @@ if __name__ == "__main__":
     modify_cir_file(cir_file_path, new_voltages)
 
     # Run the LTspice simulation
-    run_simulation(ltspice_path, cir_file_path)
+    run_simulation(ltspice_path, cir_file_path, args.output_dir)
 
     # Read the .raw file and check current values
     ok, max_val = check_currents(raw_file_path)
