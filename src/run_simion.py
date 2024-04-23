@@ -13,26 +13,6 @@ import h5py
 from ltspice_runner import modify_cir_file, run_simulation, check_currents
 from voltage_generator import calculateVoltage_NelderMeade
 
-###########define file locations here
-
-# define the directory for the text file that will serve as the output log.  This file is created by simion when
-# simion is done running, and can then be loaded in and parsed with python to convert the simion output
-# into a more useful array.  This file may be accessed by multiple different functions,
-# and it is helpful to establish it in the main script's scope.
-baseDir = "C:/Users/proxi/Documents/SimionRunFiles"
-outputFile = baseDir + "/flightOutputLog.txt"
-#denote where the potential array file is
-potArrLoc = baseDir + "/copiedArray.PA0"
-#"C:/Users/andre/Documents/GitHub/kamalovSimionLearning/runFiles/LCL5005-010580_TOF_HighRes.PA0"
-#select the .REC file to dictate recording options
-recordingFile = baseDir + "/recordingOptions.rec"
-#select the .IOB file to dictate the interactive bench to use for this simion call
-iobFileLoc = baseDir + "/workbench.iob"
-#specify the directory for the .fly2 file.  The fly2 file defines the particles that will be flown in the simulation.
-fly2FileLoc = baseDir + "/ionsToFly.fly2"
-# specify the location for the .lua file which sets the scale parameter
-luaFileLoc = baseDir + "/set_scale.lua"
-
 
 def generate_files(data, output_dir):
     with h5py.File(output_dir, "w") as f:
@@ -50,7 +30,7 @@ def generate_files(data, output_dir):
 
 
 # Function to parse the log file and extract required information into CSV
-def parse_log_to_csv(input_file_path, output_file_path):
+def parse_log_to_csv(input_file_path):
     with open(input_file_path, 'r') as file:
         lines = file.readlines()
 
@@ -85,51 +65,12 @@ def parse_log_to_csv(input_file_path, output_file_path):
             current_ion['KE_final'].append(float(ke.group(1)))
             ke = re.search(r'KE_Error\(([\d\.]+)', lines[i+6])
             current_ion['KE_final_error'].append(float(ke.group(1)))
+    base_name = os.path.basename(input_file_path)
+    name, ext = os.path.splitext(base_name)
+    output_filename = f"{name}.h5"
+    output_file_path = os.path.join(os.path.dirname(input_file_path), output_filename)
     generate_files(current_ion, output_file_path)
     return
-
-
-def generate_lognormal_energies(num_particles, median, sigma):
-    # median and sigma are the parameters for the lognormal distribution
-    # Note: np.exp(median) is the scale parameter (exp(mean of the underlying normal distribution))
-    return np.random.lognormal(mean=np.log(median), sigma=sigma, size=num_particles)
-
-
-def generate_fly2_file2(filename, num_particles, mean, sigma, charge=1, mass=1):
-    """
-    Generates a .fly2 file for SIMION with particles having velocities
-    distributed according to a lognormal distribution.
-
-    Parameters:
-    - filename: Name of the .fly2 file to create.
-    - num_particles: Number of particles to simulate.
-    - mean: Mean of the lognormal distribution.
-    - sigma: Standard deviation of the lognormal distribution.
-    - charge: Charge of the particles (default is 1).
-    - mass: Mass of the particles (default is 1).
-    """
-    os.chdir("../simulations/simionSimulationFiles")
-    fileExists = os.path.isfile(filename)
-    if fileExists:
-        os.remove(filename)
-    velocities = np.random.lognormal(mean, sigma, num_particles)
-
-    with open(filename, 'w') as file:
-        # Write the header
-        file.write("SIMION8.1\n")
-        file.write(f"{num_particles}\n")  # Number of particles
-
-        # Write the particle data
-        for i, velocity in enumerate(velocities, start=1):
-            # Initial position (x, y, z), initial velocity (vx, vy, vz),
-            # mass, charge, and other parameters can be adjusted as needed
-            file.write(f"{i}\t"          # Particle ID
-                       f"0.0\t0.0\t0.0\t"  # Initial position (x, y, z)
-                       f"{velocity}\t0.0\t0.0\t"  # Initial velocity (vx, vy, vz)
-                       f"{mass}\t{charge}\t"  # Mass, Charge
-                       "0\t0\t0\t0\t0\t0\t0\t0\t0\n")  # Additional parameters (optional)
-
-    print(f"{filename} has been created with {num_particles} particles.")
 
 
 # generate a .fly2 file type.  file name must be provided as directory string INCLUDING the .FLY2 post-fix
@@ -205,12 +146,13 @@ def runSimion(fly2FileDir, luaFile, voltage_array, outputFile, recordingFile, io
     # Command parts may need to be individually quoted if they contain spaces
     luaCommand = f"--lua @{luaFile} {voltage_string}"
     flyCommand = f"fly --recording-output=\"{outputFile}\" --recording=\"{recordingFile}\" " \
-                 f"--particles=\"{fly2FileDir}\" --restore-potentials=0 \"{iobFileLoc}\""
+                 f"--particles=\"{fly2FileDir}\" --restore-potentials=1 \"{iobFileLoc}\""
 
     # Construct the full command
-    fullCommand = f"simion.exe --nogui {luaCommand} {flyCommand}"
+    fullCommand = f"simion.exe --nogui {flyCommand} {luaCommand}"
 
     # Change to the SIMION working directory
+    original_cwd = os.getcwd()
     os.chdir(r"C:\Users\proxi\Downloads\Simion_8-1-20230825T223627Z-001\Simion_8-1")
 
     # Execute the command
@@ -218,37 +160,48 @@ def runSimion(fly2FileDir, luaFile, voltage_array, outputFile, recordingFile, io
     # Go back to the base directory and delete temporary files
     os.chdir(baseDir)
     os.system('del *.tmp')
+    os.chdir(original_cwd)
 
 
 if __name__ == '__main__':
     ltspice_path = "C:\\Users\\proxi\\AppData\\Local\\Programs\\ADI\\LTspice\\LTspice.exe"
+    baseDir = "C:/Users/proxi/Documents/SimionRunFiles"
+    iobFileLoc = baseDir + "/workbench.iob"
+    recordingFile = baseDir + "/recordingOptions.rec"
     dir_path = os.path.dirname(os.path.realpath(__file__))
+    lua_path = dir_path + "\\lua_script.lua"
 
     parser = argparse.ArgumentParser(description='code for running LTSpice simulations')
 
     # Add arguments
     parser.add_argument('retardation', metavar='N', type=int, help='Required retardation value')
-    parser.add_argument('ltspice_dir', metavar='N', type=int, help='Required output directory')
+    parser.add_argument('simulation_dir', metavar='N', type=int, help='Required output directory')
     parser.add_argument('--front_voltage', type=float, help='Optional front voltage value')
     parser.add_argument('--back_voltage', type=float, help='Optional back voltage value')
 
     args = parser.parse_args()
 
-    cir_file_path = dir_path + "\\voltage_divider.cir"
-    raw_file_path = dir_path + "\\voltage_divider.raw"
+    Fly2File = args.simulation_dir + "\\particles.fly2"
+    simion_output_path = args.simulation_dir + "\\simion_output\\flightOutputLog.txt"
+
+    cir_filepath = dir_path + "\\voltage_divider.cir"
+    new_cir_filepath = args.simulation_dir + f"\\ltspice\\voltage_divider_{args.retardation}.cir"
+    raw_file_path = args.simulation_dir + f"\\ltspice\\voltage_divider_{args.retardation}.raw"
+
+    ltspice_out_dir = args.simulation_dir + "\\ltspice"
 
     # Modify the .cir file with new voltages
     new_voltages, resistor_values = calculateVoltage_NelderMeade(args.retardation,
                                                                  args.front_voltage,
                                                                  args.back_voltage)
-    modify_cir_file(cir_file_path, new_voltages)
+    modify_cir_file(cir_filepath, new_voltages, new_cir_filepath)
 
     # Run the LTspice simulation
-    run_simulation(ltspice_path, cir_file_path, args.ltspice_dir)
+    run_simulation(ltspice_path, new_cir_filepath, ltspice_out_dir)
 
     # Read the .raw file and check current values
     ok, max_val = check_currents(raw_file_path)
     if ok:
-
-    args = parser.parse_args()
+        runSimion(Fly2File, lua_path, new_voltages, simion_output_path, recordingFile, iobFileLoc, baseDir)
+        parse_log_to_csv(simion_output_path)
 

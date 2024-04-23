@@ -8,7 +8,7 @@ from voltage_generator import *
 
 
 # Function to modify the .cir file with new voltage values
-def modify_cir_file(cir_file_path, new_voltages):
+def modify_cir_file(cir_file_path, new_voltages, output_dir):
     voltages = [-new_voltages[22], -new_voltages[25], -new_voltages[27]]
     # Open the file and read the lines
     with open(cir_file_path, 'r') as file:
@@ -30,8 +30,11 @@ def modify_cir_file(cir_file_path, new_voltages):
             # Replace the line with the new voltage value
             lines[i] = f"{source_name} 0 {node_num} {voltages[voltage_mapping[source_name]]}\n"
 
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+
     # Write the modified lines back to the file
-    with open(cir_file_path, 'w') as file:
+    with open(output_dir, 'w') as file:
         file.writelines(lines)
 
 
@@ -87,7 +90,7 @@ if __name__ == "__main__":
 
     # Add arguments
     parser.add_argument('retardation', metavar='N', type=int, help='Required retardation value')
-    parser.add_argument('output_dir', metavar='N', type=int, help='Required output directory')
+    parser.add_argument('ltspice_dir', metavar='N', type=int, help='Required output directory')
     parser.add_argument('--front_voltage', type=float, help='Optional front voltage value')
     parser.add_argument('--back_voltage', type=float, help='Optional back voltage value')
 
@@ -96,17 +99,18 @@ if __name__ == "__main__":
     ltspice_path = "C:\\Users\\proxi\\AppData\\Local\\Programs\\ADI\\LTspice\\LTspice.exe"
     dir_path = os.path.dirname(os.path.realpath(__file__))
     # change this slash for linux
-    cir_file_path = dir_path + "\\voltage_divider.cir"
-    raw_file_path = dir_path + "\\voltage_divider.raw"
+    cir_filepath = dir_path + "\\voltage_divider.cir"
+    new_cir_filepath = args.ltspice_dir + f"\\voltage_divider_{args.retardation}.cir"
+    raw_file_path = args.ltspice_dir + f"\\voltage_divider_{args.retardation}.raw"
 
     # Modify the .cir file with new voltages
     new_voltages, resistor_values = calculateVoltage_NelderMeade(args.retardation,
                                                                  args.front_voltage,
                                                                  args.back_voltage)
-    modify_cir_file(cir_file_path, new_voltages)
+    modify_cir_file(cir_filepath, new_voltages, new_cir_filepath)
 
     # Run the LTspice simulation
-    run_simulation(ltspice_path, cir_file_path, args.output_dir)
+    run_simulation(ltspice_path, new_cir_filepath, args.ltspice_dir)
 
     # Read the .raw file and check current values
     ok, max_val = check_currents(raw_file_path)
