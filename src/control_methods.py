@@ -145,7 +145,7 @@ def fastAdj(voltageArray, potArrayFile):
 		voltArgString = voltArgString + stringToAdd
 
 	# go to simion's working directory and call simion
-	os.chdir("C:/Users/robaid/Documents/MRCO_Simulation/simionSimultionFiles/Simion_8-1/")
+	os.chdir(r"C:\Users\proxi\Downloads\Simion_8-1-20230825T223627Z-001\Simion_8-1")
 	os.system("simion.exe --nogui fastadj " + potArrLoc + " " + voltArgString)
 
 

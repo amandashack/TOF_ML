@@ -8,7 +8,11 @@ from voltage_generator import *
 
 
 # Function to modify the .cir file with new voltage values
-def modify_cir_file(cir_file_path, new_voltages, output_dir):
+def modify_cir_file(cir_file_path, new_voltages, output_dir, retardation):
+    base_name = os.path.basename(cir_file_path)
+    name, ext = os.path.splitext(base_name)
+    new_filename = f"{name}_{retardation}{ext}"
+    new_file_path = os.path.join(output_dir, new_filename)
     voltages = [-new_voltages[22], -new_voltages[25], -new_voltages[27]]
     # Open the file and read the lines
     with open(cir_file_path, 'r') as file:
@@ -30,12 +34,15 @@ def modify_cir_file(cir_file_path, new_voltages, output_dir):
             # Replace the line with the new voltage value
             lines[i] = f"{source_name} 0 {node_num} {voltages[voltage_mapping[source_name]]}\n"
 
-        if not os.path.exists(output_dir):
-            os.makedirs(output_dir)
+    # Create the output directory if it doesn't exist
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
 
-    # Write the modified lines back to the file
-    with open(output_dir, 'w') as file:
+    # Write the modified lines to the new file in the different directory
+    with open(new_file_path, 'w') as file:
         file.writelines(lines)
+
+    return new_file_path  # Return the path to the new file for further processing
 
 
 # Function to run the LTspice simulation

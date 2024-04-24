@@ -6,6 +6,7 @@ simion.workbench_program()
 function apply_voltages(voltages)
     for i, v in ipairs(voltages) do
         simion.wb.instances[i].adjustable_voltage = tonumber(v)
+        print
     end
 end
 
