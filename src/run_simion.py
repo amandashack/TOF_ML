@@ -10,9 +10,12 @@ import os
 import argparse
 import re
 import h5py
+import matplotlib.pyplot as plt
+
 from ltspice_runner import modify_cir_file, run_simulation, check_currents
-from voltage_generator import calculateVoltage_NelderMeade
+from voltage_generator import calculateVoltage_NelderMeade, calculateVoltage_OneoverR
 import time
+import numpy as np
 
 
 def check_h5(file):
@@ -31,7 +34,7 @@ def generate_files(data, output_dir):
         g1 = f.create_group("data1")
         g1.create_dataset("ion_number", data=data['Ion number'])
         g1.create_dataset("initial_ke", data=data['KE_initial'])
-        g1.create_dataset("initial_ke_error", data=data['KE_initial_error'])
+        #g1.create_dataset("initial_ke_error", data=data['KE_initial_error'])
         g1.create_dataset("x", data=data['X'])
         g1.create_dataset("y", data=data['Y'])
         g1.create_dataset("tof", data=data['TOF'])
@@ -56,8 +59,8 @@ def parse_log_to_csv(input_file_path):
             current_ion['Ion number'].append(int(ion_number.group(1)))
             ke = re.search(r'KE\(([\d\.]+)', lines[i+1])
             current_ion['KE_initial'].append(float(ke.group(1)))
-            ke = re.search(r'KE_Error\(([\d\.]+)', lines[i + 2])
-            current_ion['KE_initial_error'].append(float(ke.group(1)))
+            #ke = re.search(r'KE_Error\(([\d\.]+)', lines[i + 2])
+            #current_ion['KE_initial_error'].append(float(ke.group(1)))
             TOF = re.search(r'TOF\((-?[\d\.]+)', lines[i+4])
             x_pos = re.search(r'X\((-?[\d\.]+)', lines[i+5])
             y_pos = re.search(r'Y\((-?[\d\.]+)', lines[i+5])
@@ -92,8 +95,52 @@ def parse_log_to_csv(input_file_path):
     return
 
 
+def generate_fly2File(filenameToWriteTo, numParticles=500, minEnergy=10, maxEnergy=0):
+    #check if .fly2 file with this name already exists.
+    fileExists = os.path.isfile(filenameToWriteTo)
+    #delete previous copy, if there is one
+    if fileExists == True:
+        os.remove(filenameToWriteTo)
+
+    #open up file to write to
+    fileOut = open(filenameToWriteTo, "w")
+
+    #write out the .fly2 scripts
+    fileOut.write("particles {\n")
+    fileOut.write("  coordinates = 0,\n")
+    fileOut.write("  standard_beam {\n")
+    fileOut.write("    n = " + str(numParticles) + ",\n")
+    fileOut.write("    tob = 0,\n")
+    fileOut.write("    mass = 0.000548579903,\n")
+    fileOut.write("    charge = -1,\n")
+    fileOut.write("    ke =  uniform_distribution {\n")
+    fileOut.write("      min = " + str(minEnergy) + ",\n")
+    fileOut.write("      max = " + str(maxEnergy) + "\n")
+    fileOut.write("    },\n")
+    fileOut.write("    az =  uniform_distribution {\n")
+    fileOut.write("      min = -2.5,\n")
+    fileOut.write("      max = 2.5\n")
+    fileOut.write("    },\n")
+    fileOut.write("    el =  uniform_distribution {\n")
+    fileOut.write("      min = -5,\n")
+    fileOut.write("      max = 5\n")
+    fileOut.write("    },\n")
+    fileOut.write("    cwf = 1,\n")
+    fileOut.write("    color = 0,\n")
+    fileOut.write("    position =  sphere_distribution {\n")
+    fileOut.write("      center = vector(12.2, 0, 0),\n")
+    fileOut.write("      radius = 0,\n")
+    fileOut.write("      fill = true")
+    fileOut.write("    }\n")
+    fileOut.write("  }\n")
+    fileOut.write("}")
+
+    #close file
+    fileOut.close()
+
 # generate a .fly2 file type.  file name must be provided as directory string INCLUDING the .FLY2 post-fix
-def generate_fly2File_lognorm(filenameToWriteTo, numParticles=100, medianEnergy=10, energySigma=1):
+def generate_fly2File_lognorm(filenameToWriteTo, min_energy, max_energy, numParticles=100, medianEnergy=10.,
+                              energySigma=1., shift=0.):
 
     # Check if .fly2 file with this name already exists
     fileExists = os.path.isfile(filenameToWriteTo)
@@ -107,11 +154,15 @@ def generate_fly2File_lognorm(filenameToWriteTo, numParticles=100, medianEnergy=
         # Write the Lua function for lognormal distribution at the beginning of the file
         fileOut.write("-- Define lognormal distribution function\n")
         fileOut.write("local math = require('math')\n")
-        fileOut.write("function lognormal(median, sigma)\n")
+        fileOut.write("function lognormal(median, sigma, shift, min, max)\n")
         fileOut.write("  return function()\n")
-        fileOut.write("    local z = math.log(median) - 0.5 * sigma^2\n")
-        fileOut.write("    local x = z + sigma * math.sqrt(-2 * math.log(math.random()))\n")
-        fileOut.write("    return math.exp(x)\n")
+        fileOut.write("    local value\n")
+        fileOut.write("    repeat\n")
+        fileOut.write("      local z = math.log(median)\n")
+        fileOut.write("      local x = z + sigma * math.sqrt(-2 * math.log(math.random()))\n")
+        fileOut.write("      value = math.exp(x) + shift\n")
+        fileOut.write("    until value >= min and value <= max\n")
+        fileOut.write("    return value\n")
         fileOut.write("  end\n")
         fileOut.write("end\n\n")
 
@@ -123,7 +174,7 @@ def generate_fly2File_lognorm(filenameToWriteTo, numParticles=100, medianEnergy=
         fileOut.write("    tob = 0,\n")
         fileOut.write("    mass = 0.000548579903,\n")
         fileOut.write("    charge = -1,\n")
-        fileOut.write(f"    ke = distribution(lognormal({medianEnergy}, {energySigma})),\n")
+        fileOut.write(f"    ke = distribution(lognormal({medianEnergy}, {energySigma}, {shift}, {min_energy}, {max_energy})),\n")
         fileOut.write("    az =  single_value{0},\n")
         fileOut.write("    el =  uniform_distribution {\n")
         fileOut.write("      min = -5,\n")
@@ -132,7 +183,7 @@ def generate_fly2File_lognorm(filenameToWriteTo, numParticles=100, medianEnergy=
         fileOut.write("    cwf = 1,\n")
         fileOut.write("    color = 0,\n")
         fileOut.write("    position =  sphere_distribution {\n")
-        fileOut.write("      center = vector(244, 0, 0),\n")
+        fileOut.write("      center = vector(11.6, 0, 0),\n")
         fileOut.write("      radius = 0,\n")
         fileOut.write("      fill = true")
         fileOut.write("    }\n")
@@ -214,7 +265,6 @@ def runSimion(fly2File, voltage_array, outputFile, recordingFile, iobFileLoc, po
     #voltage_string = ' '.join(map(str, voltage_array))
     fastAdj(voltage_array, potArrLoc)
 
-    sim = r'simion.exe --nogui '
     flyCommand = f"fly --recording-output=\"{outputFile}\" --recording=\"{recordingFile}\" " \
                  f"--particles=\"{fly2File}\" --restore-potentials=0 \"{iobFileLoc}\""
 
@@ -251,21 +301,24 @@ if __name__ == '__main__':
     parser.add_argument('--back_voltage', type=float, help='Optional back voltage value')
 
     args = parser.parse_args()
+    print(args.front_voltage, args.back_voltage)
 
     Fly2File = args.simulation_dir + "\\TOF_simulation\\TOF_simulation.fly2"
-    simion_output_path = args.simulation_dir + "\\TOF_simulation\\simion_output\\test1.txt"
+    simion_output_path = args.simulation_dir + \
+                         f"\\TOF_simulation\\simion_output\\test_R{args.retardation}.txt"
 
     cir_filepath = current_dir + "\\voltage_divider.cir"
-    raw_file_path = args.simulation_dir + f"\\ltspice\\voltage_divider_{args.retardation}.raw"
+    raw_file_path = args.simulation_dir + f"\\ltspice\\voltage_divider_R{args.retardation}.raw"
 
     ltspice_out_dir = args.simulation_dir + "\\ltspice"
 
     # Modify the .cir file with new voltages
-    generate_fly2File_lognorm(Fly2File, numParticles=500, medianEnergy=args.retardation+50, energySigma=1)
-    new_voltages, resistor_values = calculateVoltage_NelderMeade(args.retardation,
-                                                                 args.front_voltage,
-                                                                 args.back_voltage)
-    new_cir_filepath = modify_cir_file(cir_filepath, new_voltages, args.simulation_dir + "\\ltspice", args.retardation)
+    #generate_fly2File_lognorm(Fly2File, args.retardation-100, args.retardation+1200, numParticles=5000,
+    #                          medianEnergy=np.exp(2), energySigma=2.5, shift=args.retardation-20)
+    generate_fly2File(Fly2File, numParticles=1000, minEnergy=args.retardation-100, maxEnergy=1400)
+    new_voltages, resistor_values = calculateVoltage_NelderMeade(args.retardation)
+    new_cir_filepath = modify_cir_file(cir_filepath, new_voltages,
+                                       args.simulation_dir + "\\ltspice", args.retardation)
 
     # Run the LTspice simulation
     run_simulation(ltspice_path, new_cir_filepath, ltspice_out_dir)
@@ -274,5 +327,5 @@ if __name__ == '__main__':
     ok, max_val = check_currents(raw_file_path)
     if ok:
         runSimion(Fly2File, new_voltages, simion_output_path, recordingFile, iobFileLoc, potArrLoc, baseDir)
-        parse_log_to_csv(simion_output_path)
+        #parse_log_to_csv(simion_output_path)
 

@@ -327,7 +327,7 @@ def calculateOneOverRVoltageBridge(voltageFront, voltageBack):
 	voltageDifference = voltageFront - voltageBack
 	voltages = voltageDifference*voltageValuesRelative + voltageBack
 
-	return voltages
+	return voltages, resistorValues
 
 
 # return the voltages for the NM configuration, given a user supplied front, blade22, blade25, and rear voltages.
@@ -502,8 +502,8 @@ def voltageArrayGeneratorWrapperOneOverR(voltageFront, voltageBack):
 	voltageArray = np.zeros(37)
 
 	# call a helper method to get voltage settings of 1/R lens stack, given a front and back mesh voltage
-	lensVoltages = calculateOneOverRVoltageBridge(voltageFront, voltageBack)
-
+	lensVoltages, resistor_values = calculateOneOverRVoltageBridge(voltageFront, voltageBack)
+	print(lensVoltages)
 	voltageArray[1:26] = lensVoltages[1:26] # control lens stack voltages
 	voltageArray[27] = lensVoltages[26] # set back mesh voltage to be same as final electric lens voltage
 	voltageArray[26] = lensVoltages[0]  # set front mesh voltage to be same as first lens voltage
@@ -516,7 +516,7 @@ def voltageArrayGeneratorWrapperOneOverR(voltageFront, voltageBack):
 	voltageArray[35] = lensVoltages[0] # control voltage of mesh near electron generation point, to define voltage near
 	# area where electrons are created
 
-	return voltageArray
+	return voltageArray, resistor_values
 
 
 # run the simulation for a number of different energies, as listed in energiesToRun array.

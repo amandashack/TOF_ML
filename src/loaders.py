@@ -14,6 +14,7 @@ from sklearn.preprocessing import KBinsDiscretizer
 from scipy.optimize import curve_fit, fsolve
 from sklearn.model_selection import train_test_split
 from sklearn.utils import shuffle
+from plotter import get_cmap
 
 
 def gaussian(x, amplitude, mean, stddev):
@@ -96,7 +97,7 @@ class MRCOLoader(object):
         for file in os.listdir(fp):
             if file.endswith("h5"):
                 path1 = os.path.join(fp, file)
-                self.retardation.append(int(re.findall(r'_R(\d+)_', file)[0]))
+                self.retardation.append(int(re.findall(r'_R(\d+)', file)[0]))
                 with h5py.File(path1, 'r') as f:
                     x_tof = f['data1']['x'][:]
                     y_tof = f['data1']['y'][:]
@@ -134,7 +135,7 @@ class MRCOLoader(object):
         ke_c = [ke_c[i] for i in s]
         x_tof = [x_tof[i] for i in s]
         y_tof = [y_tof[i] for i in s]
-        self.dataframe = self.gen_dataframe(ele_c, pass_c, r_c, tof_c)
+        #self.dataframe = self.gen_dataframe(ele_c, pass_c, r_c, tof_c)
         self.spec_dict = self.gen_spec(ele_c, pass_c, r_c, tof_c)
         self.initial_ke = ke_c
         self.retardation = r_c
@@ -195,7 +196,7 @@ class MRCOLoader(object):
                 tof_c[i] = np.asarray(tof_c[i])[m[i]].tolist()
                 pass_c[i] = np.asarray(pass_c[i])[m[i]].tolist()
                 ele_c[i] = np.asarray(ele_c[i])[m[i]].tolist()
-        self.data_masked = self.gen_dataframe(ele_c, pass_c, self.retardation, tof_c)
+        #self.data_masked = self.gen_dataframe(ele_c, pass_c, self.retardation, tof_c)
         self.spec_masked = self.gen_spec(ele_c, pass_c, self.retardation, tof_c)
 
     def check_rebalance(self, nbins):
@@ -303,7 +304,7 @@ class DataStructure:
             # Create a new dictionary for the retardation and append it to the list
             data_list.append(new_data)
 
-    def load(self):
+    def load(self, retardation_value=None):
         """
         Loads data from all HDF5 files in the specified directory that match the naming pattern.
         Assumes the HDF5 files have specific datasets within them.
@@ -313,8 +314,14 @@ class DataStructure:
             if file.endswith("h5"):
                 path1 = os.path.join(fp, file)
                 # Extract retardation value from the file name
-                retardation_value = int(re.findall(r'_R(\d+)_', file)[0])
-                self.retardation.append(retardation_value)
+                if not retardation_value:
+                    try:
+                        rv = int(re.findall(r'_R(\d+)', file)[0])
+                    except Exception as e:
+                        print(e)
+                else:
+                    rv = retardation_value
+                self.retardation.append(rv)
 
                 with h5py.File(path1, 'r') as f:
                     # Extracting the necessary datasets
@@ -325,7 +332,7 @@ class DataStructure:
                     elevation = f['data1']['elevation'][:]
 
                     # Calculate the pass energy
-                    pass_energy = np.array([ke - retardation_value for ke in initial_ke])
+                    pass_energy = np.array([ke - self.retardation[-1] for ke in initial_ke])
 
                     # Append the loaded data in a structured way
                     self.data.append({
@@ -335,7 +342,7 @@ class DataStructure:
                         'initial_ke': initial_ke,
                         'elevation': elevation,
                         'pass_energy': pass_energy,
-                        'retardation': retardation_value
+                        'retardation': self.retardation[-1]
                     })
 
     def apply_mask(self, mask):
@@ -463,7 +470,8 @@ class DataStructure:
             print(f"Validation set: {len(val[0])} points")
             print(f"Test set: {len(test[0])} points")
 
-    def plot_tof_vs_pass_energy(self, ds, specific_retardations=None, verbose=False):
+    def plot_relation(self, ax, ds, x_param, y_param, x_label, y_label, title=None,
+                      plot_log=False, specific_retardations=None, verbose=False):
         """
         Plots TOF versus Pass Energy for all or specified retardation values.
         :param ds: data structure you would like to plot, assumed to be a list of dictionaries where
@@ -474,21 +482,32 @@ class DataStructure:
             data_to_plot = [item for item in ds if item['retardation'] in specific_retardations]
         else:
             data_to_plot = ds
-
-        plt.figure(figsize=(10, 6))
-
         for item in data_to_plot:
-            plt.scatter(item['pass_energy'], item['tof_values'], alpha=0.6, label=f"R={item['retardation']}")
-
+            if not plot_log:
+                ax.scatter(item[x_param], item[y_param], alpha=0.6, label=f"R={item['retardation']}")
+            else:
+                ax.scatter(np.log2(item[x_param]), np.log2(item[y_param]), alpha=0.5, label=f"R={item['retardation']}")
         if verbose:
-            tot = sum([len(d['tof_values']) for d in ds])
+            tot = sum([len(d[y_param]) for d in ds])
             print(tot)
-        plt.title("TOF vs Pass Energy")
-        plt.xlabel("Pass Energy (eV)")
-        plt.ylabel("Time-of-Flight (TOF)")
-        plt.legend()
-        plt.grid(True)
-        plt.show()
+        if title:
+            ax.set_title(title)
+        ax.set_xlabel(x_label)
+        ax.set_ylabel(y_label)
+        ax.legend()
+        ax.grid(True)
+
+    def plot_histogram(self, ax, parameter, x_label, title=None, nbins=50):
+        cmap = get_cmap(len(self.data))
+        for i in range(len(self.data)):
+            ax.hist(self.data[i][parameter], bins=nbins, color=cmap(i),
+                     edgecolor='black', alpha=0.5, label=f"R={self.data[i]['retardation']}")
+        if title:
+            ax.set_title(title)
+        ax.set_xlabel(x_label)
+        ax.set_ylabel('Frequency')
+        ax.legend()
+        ax.grid(True)
 
     def plot_resolution(self, ds, specific_retardations=None, verbose=False):
 
@@ -593,16 +612,61 @@ class DataStructure:
         """
         return self.data
 
+def plot_relation2(ax, ds, x_label, y_label, title=None, plot_log=False):
+    """
+    Plots TOF versus Pass Energy for all or specified retardation values.
+    :param ds: data structure you would like to plot, assumed to be a list of dictionaries where
+    each list corresponds to a different retardation
+    :param specific_retardations: List of retardation values to plot. If None, plots for all retardation values.
+    """
+    for item in ds:
+        if not plot_log:
+            ax.scatter(ds[item][1], ds[item][2], alpha=0.6, label=f"R={item}")
+        else:
+            ax.scatter(np.log2(ds[item][1]), np.log2(ds[item][2]), alpha=0.5, label=f"R={item}")
+    if title:
+        ax.set_title(title)
+    ax.set_xlabel(x_label)
+    ax.set_ylabel(y_label)
+    ax.legend()
+    ax.grid(True)
 
-# Example usage
-# Assuming the files are located in a directory named 'data_files' in the current working directory.
-dir_path = os.path.dirname(os.path.realpath(__file__))
-amanda_filepath = dir_path + "\\NM_simulations"
-data_loader = DataStructure(filepath=amanda_filepath)
-data_loader.load()
-#data_loader.plot_tof_vs_pass_energy(data_loader.data, verbose=True)
-data_loader.create_mask(x_tof_range=(402, np.inf), y_tof_range=(0, 17.7), min_pass=5)
-data_loader.rebalance(ratio=0.2, nbins=3, plot=False, verbose=False, plot_training=False)
-#data_loader.plot_tof_vs_pass_energy(data_loader.data, verbose=True)
-data_loader.plot_resolution(data_loader.data)
+if __name__ == '__main__':
+    # Example usage
+    # Assuming the files are located in a directory named 'data_files' in the current working directory.
+    #dir_path = os.path.dirname(os.path.realpath(__file__))
+    #amanda_filepath = dir_path + "\\NM_simulations"
+    dir_path = "C:/Users/proxi/Documents/coding/TOF_ML/simulations/TOF_simulation"
+    amanda_filepath = dir_path + "/simion_output"
+    data_loader = MRCOLoader(amanda_filepath)
+    data_loader.load()
+    data_loader.create_mask((102, np.inf), (-17.7, 17.7), -100, "make it")
+    fig, ax = plt.subplots()
+    plot_relation2(ax, data_loader.spec_masked, "log(Pass Energy)","log(Time of Flight)", plot_log=True)
+    plt.show()
+    #data_loader.plot_histogram(ax, "initial_ke", "Kinetic Energy (eV)")
+    #plt.show()
+    #print(data_loader.data[0]['initial_ke'].tolist(), '\n\n', data_loader.data[0]['pass_energy'].tolist())
+    #data_loader.plot_tof_vs_pass_energy(data_loader.data, verbose=True)
+    #data_loader.create_mask(x_tof_range=(200, np.inf), y_tof_range=(0, 16), min_pass=0)
+    #data_loader.rebalance(ratio=0.2, nbins=3, plot=False, verbose=False, plot_training=False)
+    #data_loader.plot_tof_vs_pass_energy(data_loader.data, verbose=True)
+    #data_loader.plot_resolution(data_loader.data)
+
+
+    # Example of using the function
+    """
+    fig, axes = plt.subplots(2, 2, figsize=(14, 10))  # Create a figure with multiple subplots
+    ax = axes.flatten()
+    data_loader.plot_histogram(ax[0], "pass_energy", "Pass Energy (eV)", title=None, nbins=50)
+    data_loader.plot_histogram(ax[1], "initial_ke", "initial", title=None, nbins=50)
+    data_loader.plot_histogram(ax[2], "y_tof", "y position", title=None, nbins=50)
+    data_loader.plot_histogram(ax[3], "elevation", "final elevation", title=None, nbins=50)
+    plt.show()
+
+    fig, ax = plt.subplots()
+    data_loader.plot_relation(ax, data_loader.data, "pass_energy", "tof_values", "log(Pass Energy)",
+                              "log(Time of Flight)", plot_log=True)
+    plt.show()
+    """
 

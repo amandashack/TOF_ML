@@ -11,7 +11,7 @@ from voltage_generator import *
 def modify_cir_file(cir_file_path, new_voltages, output_dir, retardation):
     base_name = os.path.basename(cir_file_path)
     name, ext = os.path.splitext(base_name)
-    new_filename = f"{name}_{retardation}{ext}"
+    new_filename = f"{name}_R{retardation}{ext}"
     new_file_path = os.path.join(output_dir, new_filename)
     voltages = [-new_voltages[22], -new_voltages[25], -new_voltages[27]]
     # Open the file and read the lines

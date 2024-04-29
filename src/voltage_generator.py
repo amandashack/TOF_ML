@@ -1,6 +1,6 @@
 import sys
 import numpy as np
-
+from control_methods import voltageArrayGeneratorWrapperOneOverR
 
 def calculateNMVoltageBridge(voltageFront, voltageBack, midOneVoltage, midTwoVoltage):
     # denote the locations along the voltage node of the mid voltage sources.
@@ -100,6 +100,17 @@ def calculateVoltage_NelderMeade(retardationValue, voltageMidOne=None, voltageMi
     # #run for NM
     voltageArray, resistor_values = voltageArrayGeneratorWrapperNM(voltageFront, voltageBack, voltageMidOne, voltageMidTwo)
     print(voltageArray)
+    return voltageArray, resistor_values
+
+
+def calculateVoltage_OneoverR(retardationValue):
+    # setup fast adjust voltages
+    voltageFront = 0
+    voltageBack = -1 * retardationValue
+
+    # #run for NM
+    voltageArray, resistor_values = voltageArrayGeneratorWrapperOneOverR(voltageFront, voltageBack)
+
     return voltageArray, resistor_values
 
 

@@ -1,21 +1,14 @@
--- Define lognormal distribution function
-local math = require('math')
-function lognormal(median, sigma)
-  return function()
-    local z = math.log(median) - 0.5 * sigma^2
-    local x = z + sigma * math.sqrt(-2 * math.log(simion.rand()))
-    return math.exp(x)
-  end
-end
-
 particles {
   coordinates = 0,
   standard_beam {
-    n = 300,
+    n = 1000,
     tob = 0,
     mass = 0.000548579903,
     charge = -1,
-    ke =  distribution(lognormal(5, 1)),
+    ke =  uniform_distribution {
+      min = 200,
+      max = 1400
+    },
     az =  uniform_distribution {
       min = -2.5,
       max = 2.5
@@ -27,7 +20,7 @@ particles {
     cwf = 1,
     color = 0,
     position =  sphere_distribution {
-      center = vector(244, 0, 0),
+      center = vector(12.2, 0, 0),
       radius = 0,
       fill = true    }
   }
