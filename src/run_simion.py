@@ -11,6 +11,7 @@ import argparse
 import re
 import h5py
 import matplotlib.pyplot as plt
+import csv
 
 from ltspice_runner import modify_cir_file, run_simulation, check_currents
 from voltage_generator import calculateVoltage_NelderMeade, calculateVoltage_OneoverR
@@ -29,7 +30,7 @@ def check_h5(file):
             print(initial_ke)
 
 
-def generate_files(data, output_dir):
+def generate_files_old(data, output_dir):
     with h5py.File(output_dir, "w") as f:
         g1 = f.create_group("data1")
         g1.create_dataset("ion_number", data=data['Ion number'])
@@ -44,55 +45,48 @@ def generate_files(data, output_dir):
         print("Data exported to:", output_dir)
 
 
-# Function to parse the log file and extract required information into CSV
-def parse_log_to_csv(input_file_path):
-    with open(input_file_path, 'r') as file:
-        lines = file.readlines()
+def generate_files(data, output_dir):
+    output_file, ext = os.path.splitext(output_dir)
+    output_file = output_file + ".h5"
+    with h5py.File(output_file, "w") as f:
+        g1 = f.create_group("data1")
+        for key, values in data.items():
+            g1.create_dataset(key, data=values)
+        print("Data exported to:", output_dir)
 
-    # Relevant information starts from line 12 (index 11)
-    current_ion = {"Ion number": [], "KE_initial": [], "KE_initial_error": [],
-                   "TOF": [], "X": [], "Y": [],
-                   "Elv": [], "KE_final": [], "KE_final_error": []}
-    for i, line in enumerate(lines[11:], 11):
-        if 'Event(Ion Created)' in line:
-            ion_number = re.search(r'Ion\((\d+)\)', line)
-            current_ion['Ion number'].append(int(ion_number.group(1)))
-            ke = re.search(r'KE\(([\d\.]+)', lines[i+1])
-            current_ion['KE_initial'].append(float(ke.group(1)))
-            #ke = re.search(r'KE_Error\(([\d\.]+)', lines[i + 2])
-            #current_ion['KE_initial_error'].append(float(ke.group(1)))
-            TOF = re.search(r'TOF\((-?[\d\.]+)', lines[i+4])
-            x_pos = re.search(r'X\((-?[\d\.]+)', lines[i+5])
-            y_pos = re.search(r'Y\((-?[\d\.]+)', lines[i+5])
-            try:
-                elv = re.search(r'Elv\((-?[\d\.]+)', lines[i+6])
-                current_ion['Elv'].append(float(elv.group(1)))
-            except AttributeError as e:
-                try:
-                    elv = re.search(r'Elv\((-?[\d\.]+)', lines[i+5])
-                    current_ion['Elv'].append(float(elv.group(1)))
-                except AttributeError as e:
-                    print("could not find elevation on either line!")
-            current_ion['TOF'].append(float(TOF.group(1)))
-            current_ion['X'].append(float(x_pos.group(1)))
-            current_ion['Y'].append(float(y_pos.group(1)))
-            try:
-                ke = re.search(r'KE\((-?[\d\.]+)', lines[i + 6])
-                current_ion['KE_final'].append(float(ke.group(1)))
-            except AttributeError as e:
-                try:
-                    ke = re.search(r'KE\((-?[\d\.]+)', lines[i + 5])
-                    current_ion['KE_final'].append(float(ke.group(1)))
-                except AttributeError as e:
-                    print("could not find elevation on either line!")
-            ke = re.search(r'KE_Error\(([\d\.]+)', lines[i + 6])
-            current_ion['KE_final_error'].append(float(ke.group(1)))
-    base_name = os.path.basename(input_file_path)
-    name, ext = os.path.splitext(base_name)
-    output_filename = f"{name}.h5"
-    output_file_path = os.path.join(os.path.dirname(input_file_path), output_filename)
-    generate_files(current_ion, output_file_path)
-    return
+
+def parse_and_process_data(input_file_path):
+    with open(input_file_path, 'r') as file:
+        reader = csv.reader(file)
+        next(reader)  # Skip the header line if there is one, or adjust if data starts immediately
+
+        data = {
+            "ion_number": [], "initial_azimuth": [], "initial_elevation": [], "initial_ke": [],
+            "tof": [], "x": [], "y": [], "z": [], "final_azimuth": [], "final_elevation": [], "final_ke": []
+        }
+
+        for start_line in reader:
+            if not start_line:
+                continue
+            splat_line = next(reader, None)  # Read the subsequent line for 'splat' data
+
+            # Start line processing (initial conditions)
+            data["ion_number"].append(int(start_line[0]))
+            data["initial_azimuth"].append(float(start_line[8]))
+            data["initial_elevation"].append(float(start_line[9]))
+            data["initial_ke"].append(float(start_line[10]))
+
+            # Splat line processing (final conditions)
+            if splat_line:
+                data["tof"].append(float(splat_line[2]))
+                data["x"].append(float(splat_line[5]))
+                data["y"].append(float(splat_line[6]))
+                data["z"].append(float(splat_line[7]))
+                data["final_azimuth"].append(float(splat_line[8]))
+                data["final_elevation"].append(float(splat_line[9]))
+                data["final_ke"].append(float(splat_line[10]))
+
+        generate_files(data, simion_output_path)
 
 
 def generate_fly2File(filenameToWriteTo, numParticles=500, minEnergy=10, maxEnergy=0):
@@ -117,19 +111,16 @@ def generate_fly2File(filenameToWriteTo, numParticles=500, minEnergy=10, maxEner
     fileOut.write("      min = " + str(minEnergy) + ",\n")
     fileOut.write("      max = " + str(maxEnergy) + "\n")
     fileOut.write("    },\n")
-    fileOut.write("    az =  uniform_distribution {\n")
-    fileOut.write("      min = -2.5,\n")
-    fileOut.write("      max = 2.5\n")
-    fileOut.write("    },\n")
+    fileOut.write("    az =  single_value {0},\n")
     fileOut.write("    el =  uniform_distribution {\n")
-    fileOut.write("      min = -5,\n")
-    fileOut.write("      max = 5\n")
+    fileOut.write("      min = 0,\n")
+    fileOut.write("      max = 3\n")
     fileOut.write("    },\n")
     fileOut.write("    cwf = 1,\n")
     fileOut.write("    color = 0,\n")
     fileOut.write("    position =  sphere_distribution {\n")
-    fileOut.write("      center = vector(12.2, 0, 0),\n")
-    fileOut.write("      radius = 0,\n")
+    fileOut.write("      center = vector(24.4, 0, 0),\n")
+    fileOut.write("      radius = 2,\n")
     fileOut.write("      fill = true")
     fileOut.write("    }\n")
     fileOut.write("  }\n")
@@ -140,7 +131,7 @@ def generate_fly2File(filenameToWriteTo, numParticles=500, minEnergy=10, maxEner
 
 # generate a .fly2 file type.  file name must be provided as directory string INCLUDING the .FLY2 post-fix
 def generate_fly2File_lognorm(filenameToWriteTo, min_energy, max_energy, numParticles=100, medianEnergy=10.,
-                              energySigma=1., shift=0.):
+                              energySigma=1., shift=0., max_angle=3):
 
     # Check if .fly2 file with this name already exists
     fileExists = os.path.isfile(filenameToWriteTo)
@@ -166,6 +157,19 @@ def generate_fly2File_lognorm(filenameToWriteTo, min_energy, max_energy, numPart
         fileOut.write("  end\n")
         fileOut.write("end\n\n")
 
+        fileOut.write("function generate_radial_distribution(theta_max)\n")
+        fileOut.write("  local d = 406.7-24.4\n")
+        fileOut.write("  return function()\n")
+        fileOut.write("    local angle\n")
+        fileOut.write("    local radius_max = d * math.tan(theta_max * math.pi / 180)\n")
+        fileOut.write("    repeat\n")
+        fileOut.write("      local random_value = math.random() * radius_max\n")
+        fileOut.write("      angle = math.acos(random_value/radius_max) * theta_max^2 \n")
+        fileOut.write("    until angle >= 0 and angle <= theta_max\n")
+        fileOut.write("    return angle\n")
+        fileOut.write("  end\n")
+        fileOut.write("end\n\n")
+
         # Now define the particle distribution using the lognormal function
         fileOut.write("particles {\n")
         fileOut.write("  coordinates = 0,\n")
@@ -175,16 +179,13 @@ def generate_fly2File_lognorm(filenameToWriteTo, min_energy, max_energy, numPart
         fileOut.write("    mass = 0.000548579903,\n")
         fileOut.write("    charge = -1,\n")
         fileOut.write(f"    ke = distribution(lognormal({medianEnergy}, {energySigma}, {shift}, {min_energy}, {max_energy})),\n")
-        fileOut.write("    az =  single_value{0},\n")
-        fileOut.write("    el =  uniform_distribution {\n")
-        fileOut.write("      min = -5,\n")
-        fileOut.write("      max = 5\n")
-        fileOut.write("    },\n")
+        fileOut.write("    az =  single_value {0},\n")
+        fileOut.write(f"    el =  distribution(generate_radial_distribution({max_angle})), \n")
         fileOut.write("    cwf = 1,\n")
         fileOut.write("    color = 0,\n")
         fileOut.write("    position =  sphere_distribution {\n")
-        fileOut.write("      center = vector(11.6, 0, 0),\n")
-        fileOut.write("      radius = 0,\n")
+        fileOut.write("      center = vector(24.4, 0, 0),\n")
+        fileOut.write("      radius = 2,\n")
         fileOut.write("      fill = true")
         fileOut.write("    }\n")
         fileOut.write("  }\n")
@@ -256,6 +257,7 @@ def runSimion(fly2File, voltage_array, outputFile, recordingFile, iobFileLoc, po
     # Check if outputFile exists and delete it if it does
     if os.path.isfile(outputFile):
         os.remove(outputFile)
+    print("flying!")
 
     # Change to the SIMION working directory
     original_cwd = os.getcwd()
@@ -313,19 +315,23 @@ if __name__ == '__main__':
     ltspice_out_dir = args.simulation_dir + "\\ltspice"
 
     # Modify the .cir file with new voltages
-    #generate_fly2File_lognorm(Fly2File, args.retardation-100, args.retardation+1200, numParticles=5000,
-    #                          medianEnergy=np.exp(2), energySigma=2.5, shift=args.retardation-20)
-    generate_fly2File(Fly2File, numParticles=1000, minEnergy=args.retardation-100, maxEnergy=1400)
+    generate_fly2File_lognorm(Fly2File, args.retardation, args.retardation+1200, numParticles=30000,
+                              medianEnergy=np.exp(2), energySigma=2, shift=args.retardation-10, max_angle=3)
+    #generate_fly2File(Fly2File, numParticles=5000, minEnergy=args.retardation-100,
+    #                  maxEnergy=args.retardation+1200)
     new_voltages, resistor_values = calculateVoltage_NelderMeade(args.retardation)
-    new_cir_filepath = modify_cir_file(cir_filepath, new_voltages,
-                                       args.simulation_dir + "\\ltspice", args.retardation)
+    print(new_voltages)
+    #new_cir_filepath = modify_cir_file(cir_filepath, new_voltages,
+    #                                   args.simulation_dir + "\\ltspice", args.retardation)
 
     # Run the LTspice simulation
-    run_simulation(ltspice_path, new_cir_filepath, ltspice_out_dir)
+    #run_simulation(ltspice_path, new_cir_filepath, ltspice_out_dir)
 
     # Read the .raw file and check current values
-    ok, max_val = check_currents(raw_file_path)
+    #ok, max_val = check_currents(raw_file_path)
+    ok = True
     if ok:
+        start = time.time()
         runSimion(Fly2File, new_voltages, simion_output_path, recordingFile, iobFileLoc, potArrLoc, baseDir)
-        #parse_log_to_csv(simion_output_path)
-
+        print(f"simion took: {time.time() - start}")
+        parse_and_process_data(simion_output_path)

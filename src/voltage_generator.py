@@ -90,16 +90,17 @@ def voltageArrayGeneratorWrapperNM(voltageFront, voltageBack, midOneVoltage, mid
     return voltageArray, resistor_values
 
 
-def calculateVoltage_NelderMeade(retardationValue, voltageMidOne=None, voltageMidTwo=None):
+def calculateVoltage_NelderMeade(retardationValue, voltageMidOne=None, voltageMidTwo=None, voltageFront=None):
     # setup fast adjust voltages
-    voltageFront = 0
-    voltageBack = -1 * retardationValue
-    if not voltageMidOne and not voltageMidTwo:
-        voltageMidOne = 0.11248 * (voltageFront - voltageBack) + voltageBack
-        voltageMidTwo = 0.1354 * (voltageFront - voltageBack) + voltageBack
+    if not voltageFont:
+        voltageFront = 0
+    voltageBack = -1 * abs(retardationValue)  # only talking about electrons
+    if not voltageMidOne:
+        voltageMidOne = voltageBack + 0.11248 * (voltageFront - voltageBack)
+    if not voltageMidTwo:
+        voltageMidTwo = voltageBack + 0.1354 * (voltageFront - voltageBack)
     # #run for NM
     voltageArray, resistor_values = voltageArrayGeneratorWrapperNM(voltageFront, voltageBack, voltageMidOne, voltageMidTwo)
-    print(voltageArray)
     return voltageArray, resistor_values
 
 

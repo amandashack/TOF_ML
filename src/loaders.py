@@ -15,6 +15,7 @@ from scipy.optimize import curve_fit, fsolve
 from sklearn.model_selection import train_test_split
 from sklearn.utils import shuffle
 from plotter import get_cmap
+import math
 
 
 def gaussian(x, amplitude, mean, stddev):
@@ -322,27 +323,39 @@ class DataStructure:
                 else:
                     rv = retardation_value
                 self.retardation.append(rv)
+                print(self.retardation)
 
                 with h5py.File(path1, 'r') as f:
                     # Extracting the necessary datasets
+                    initial_ke = f['data1']['initial_ke'][:]
+                    initial_elevation = f['data1']['initial_elevation'][:]
+                    initial_azimuth = f['data1']['initial_azimuth'][:]
+
                     x_tof = f['data1']['x'][:]
                     y_tof = f['data1']['y'][:]
+                    z_tof = f['data1']['z'][:]
                     tof_values = f['data1']['tof'][:]
-                    initial_ke = f['data1']['initial_ke'][:]
-                    elevation = f['data1']['elevation'][:]
+                    final_elevation = f['data1']['final_elevation'][:]
+                    final_azimuth = f['data1']['final_azimuth'][:]
+                    final_ke = f['data1']['final_ke'][:]
 
                     # Calculate the pass energy
                     pass_energy = np.array([ke - self.retardation[-1] for ke in initial_ke])
 
                     # Append the loaded data in a structured way
                     self.data.append({
+                        'initial_ke': initial_ke,
+                        'initial_elevation': initial_elevation,
+                        'initial_azimuth': initial_azimuth,
+                        'pass_energy': pass_energy,
+                        'retardation': self.retardation[-1],
                         'x_tof': x_tof,
                         'y_tof': y_tof,
+                        'z_tof': z_tof,
                         'tof_values': tof_values,
-                        'initial_ke': initial_ke,
-                        'elevation': elevation,
-                        'pass_energy': pass_energy,
-                        'retardation': self.retardation[-1]
+                        'final_ke': final_ke,
+                        'final_elevation': final_elevation,
+                        'final_azimuth': final_azimuth,
                     })
 
     def apply_mask(self, mask):
@@ -509,6 +522,35 @@ class DataStructure:
         ax.legend()
         ax.grid(True)
 
+    def plot_radial_distribution(self, nbins=36):
+        # Binning the radii
+        elevations = np.asarray(self.data[1]['initial_elevation'])
+        theta_max = elevations.max()
+        print(theta_max)
+        r_max = 406.7 * math.tan(theta_max*np.pi/180)
+        print(r_max)
+        radii = 406.7 * np.tan(elevations*np.pi/180)
+        num_bins = nbins
+        bin_edges = np.linspace(0, r_max, num_bins + 1)
+        bin_counts, _ = np.histogram(radii, bins=bin_edges)
+
+        # Prepare to generate the 2D plot
+        angles = np.linspace(0, 2 * np.pi, 360, endpoint=False)  # Full circle of angles
+        fig, ax = plt.subplots(subplot_kw={'projection': 'polar'}, figsize=(8, 8))
+
+        for i in range(num_bins):
+            count = bin_counts[i]
+            radius = np.mean([bin_edges[i], bin_edges[i + 1]])  # Average radius for the bin
+
+            # Randomly choose 'count' angles from the angle array
+            chosen_angles = np.random.choice(angles, size=count, replace=False)
+
+            # Plot each point at the randomly chosen angle with the same radial distance
+            ax.scatter(chosen_angles, np.full_like(chosen_angles, radius), alpha=0.5, s=10)
+
+        ax.set_title('2D Radial Distribution from 1D Slice Spread Across Angles')
+        plt.show()
+
     def plot_resolution(self, ds, specific_retardations=None, verbose=False):
 
         if specific_retardations is not None:
@@ -614,10 +656,7 @@ class DataStructure:
 
 def plot_relation2(ax, ds, x_label, y_label, title=None, plot_log=False):
     """
-    Plots TOF versus Pass Energy for all or specified retardation values.
-    :param ds: data structure you would like to plot, assumed to be a list of dictionaries where
-    each list corresponds to a different retardation
-    :param specific_retardations: List of retardation values to plot. If None, plots for all retardation values.
+    # I think I made this for looking at old data
     """
     for item in ds:
         if not plot_log:
@@ -637,36 +676,37 @@ if __name__ == '__main__':
     #dir_path = os.path.dirname(os.path.realpath(__file__))
     #amanda_filepath = dir_path + "\\NM_simulations"
     dir_path = "C:/Users/proxi/Documents/coding/TOF_ML/simulations/TOF_simulation"
+    #dir_path = "C:/Users/proxi/Documents/coding/TOF_ML/src/NM_simulations"
     amanda_filepath = dir_path + "/simion_output"
-    data_loader = MRCOLoader(amanda_filepath)
+    data_loader = DataStructure(filepath=amanda_filepath)
     data_loader.load()
-    data_loader.create_mask((102, np.inf), (-17.7, 17.7), -100, "make it")
-    fig, ax = plt.subplots()
-    plot_relation2(ax, data_loader.spec_masked, "log(Pass Energy)","log(Time of Flight)", plot_log=True)
-    plt.show()
+    #fig, ax = plt.subplots()
+    #plot_relation2(ax, data_loader.spec_masked, "log(Pass Energy)","log(Time of Flight)", plot_log=True)
+    #plt.show()
     #data_loader.plot_histogram(ax, "initial_ke", "Kinetic Energy (eV)")
     #plt.show()
     #print(data_loader.data[0]['initial_ke'].tolist(), '\n\n', data_loader.data[0]['pass_energy'].tolist())
     #data_loader.plot_tof_vs_pass_energy(data_loader.data, verbose=True)
-    #data_loader.create_mask(x_tof_range=(200, np.inf), y_tof_range=(0, 16), min_pass=0)
+    data_loader.create_mask(x_tof_range=(403.5, np.inf), y_tof_range=(-13.5, 13.5), min_pass=0)
     #data_loader.rebalance(ratio=0.2, nbins=3, plot=False, verbose=False, plot_training=False)
     #data_loader.plot_tof_vs_pass_energy(data_loader.data, verbose=True)
     #data_loader.plot_resolution(data_loader.data)
 
 
     # Example of using the function
-    """
+
     fig, axes = plt.subplots(2, 2, figsize=(14, 10))  # Create a figure with multiple subplots
     ax = axes.flatten()
     data_loader.plot_histogram(ax[0], "pass_energy", "Pass Energy (eV)", title=None, nbins=50)
-    data_loader.plot_histogram(ax[1], "initial_ke", "initial", title=None, nbins=50)
+    data_loader.plot_histogram(ax[1], "x_tof", "x position", title=None, nbins=50)
     data_loader.plot_histogram(ax[2], "y_tof", "y position", title=None, nbins=50)
-    data_loader.plot_histogram(ax[3], "elevation", "final elevation", title=None, nbins=50)
+    data_loader.plot_histogram(ax[3], "initial_elevation", "initial elevation", title=None, nbins=50)
     plt.show()
 
     fig, ax = plt.subplots()
     data_loader.plot_relation(ax, data_loader.data, "pass_energy", "tof_values", "log(Pass Energy)",
                               "log(Time of Flight)", plot_log=True)
     plt.show()
-    """
+    data_loader.plot_radial_distribution()
+
 
