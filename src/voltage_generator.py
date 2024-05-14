@@ -92,7 +92,7 @@ def voltageArrayGeneratorWrapperNM(voltageFront, voltageBack, midOneVoltage, mid
 
 def calculateVoltage_NelderMeade(retardationValue, voltageMidOne=None, voltageMidTwo=None, voltageFront=None):
     # setup fast adjust voltages
-    if not voltageFont:
+    if not voltageFront:
         voltageFront = 0
     voltageBack = -1 * abs(retardationValue)  # only talking about electrons
     if not voltageMidOne:
