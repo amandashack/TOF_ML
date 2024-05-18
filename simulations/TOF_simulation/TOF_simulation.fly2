@@ -28,13 +28,16 @@ end
 particles {
   coordinates = 0,
   standard_beam {
-    n = 30000,
+    n = 1000,
     tob = 0,
     mass = 0.000548579903,
     charge = -1,
-    ke = distribution(lognormal(7.38905609893065, 2, 990, 1000, 2200)),
+    ke =  uniform_distribution {
+      min = 0.1,
+      max = 0.1
+    },
     az =  single_value {0},
-    el =  distribution(generate_radial_distribution(3)), 
+    el =  distribution(generate_radial_distribution(2.5)), 
     cwf = 1,
     color = 0,
     position =  sphere_distribution {

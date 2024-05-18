@@ -1,6 +1,6 @@
 import sys
 import numpy as np
-from control_methods import voltageArrayGeneratorWrapperOneOverR
+
 
 def calculateNMVoltageBridge(voltageFront, voltageBack, midOneVoltage, midTwoVoltage):
     # denote the locations along the voltage node of the mid voltage sources.
@@ -77,42 +77,32 @@ def voltageArrayGeneratorWrapperNM(voltageFront, voltageBack, midOneVoltage, mid
     # call a helper method to get voltage settings of NM lens stack, given a front and back mesh voltage
     lensVoltages, resistor_values = calculateNMVoltageBridge(voltageFront, voltageBack, midOneVoltage, midTwoVoltage)
 
-    voltageArray[1:26] = lensVoltages[1:26]#control lens stack voltages
-    voltageArray[27] = lensVoltages[26] #set back mesh voltage to be same as final electric lens voltage
-    voltageArray[26] = lensVoltages[0]  #set front mesh voltage to be same as first lens voltage
-    voltageArray[[29, 30, 34, 36]] = lensVoltages[0] #set potential for nose and surrounding material
-    voltageArray[0] = lensVoltages[0] #set the voltage of outer construct of model - material that should be on outside of flight path
-    voltageArray[28] = voltageArray[27] #control voltage of MCP mesh to be same as voltage of back mesh
-    voltageArray[31:33] = voltageArray[28] #control inner surface of flight tube to be same voltage as MCP mesh
-    voltageArray[33] = voltageArray[28] + 300 #set MCP front voltage to be 300 V above the MCP mesh
-    voltageArray[35] = lensVoltages[0] #control voltage of mesh near electron generation point, to define voltage
+    voltageArray[1:26] = lensVoltages[1:26]  # control lens stack voltages
+    voltageArray[27] = lensVoltages[26]  # set back mesh voltage to be same as final electric lens voltage
+    voltageArray[26] = lensVoltages[0]  # set front mesh voltage to be same as first lens voltage
+    voltageArray[[29, 30, 34, 36]] = lensVoltages[0]  # set potential for nose and surrounding material
+    voltageArray[0] = lensVoltages[0]  # set the voltage of outer construct of model - material that
+    # should be on outside of flight path
+    voltageArray[28] = voltageArray[27]  # control voltage of MCP mesh to be same as voltage of back mesh
+    voltageArray[31:33] = voltageArray[28]  # control inner surface of flight tube to be same voltage as MCP mesh
+    voltageArray[33] = voltageArray[28] + 300  # set MCP front voltage to be 300 V above the MCP mesh
+    voltageArray[35] = lensVoltages[0]  # control voltage of mesh near electron generation point, to define voltage
     # near area where electrons are created
     return voltageArray, resistor_values
 
 
-def calculateVoltage_NelderMeade(retardationValue, voltageMidOne=None, voltageMidTwo=None, voltageFront=None):
+def calculateVoltage_NelderMeade(retardation_value, mid1_ratio=0.11248, mid2_ratio=0.1354, voltage_front=None):
     # setup fast adjust voltages
-    if not voltageFront:
-        voltageFront = 0
-    voltageBack = -1 * abs(retardationValue)  # only talking about electrons
-    if not voltageMidOne:
-        voltageMidOne = voltageBack + 0.11248 * (voltageFront - voltageBack)
-    if not voltageMidTwo:
-        voltageMidTwo = voltageBack + 0.1354 * (voltageFront - voltageBack)
+    if not voltage_front:
+        voltage_front = 0
+    voltage_back = -1 * abs(retardation_value)  # only talking about electrons
+    voltage_mid1 = voltage_back + mid1_ratio * (voltage_front - voltage_back)
+    voltage_mid2 = voltage_back + mid2_ratio * (voltage_front - voltage_back)
     # #run for NM
-    voltageArray, resistor_values = voltageArrayGeneratorWrapperNM(voltageFront, voltageBack, voltageMidOne, voltageMidTwo)
-    return voltageArray, resistor_values
-
-
-def calculateVoltage_OneoverR(retardationValue):
-    # setup fast adjust voltages
-    voltageFront = 0
-    voltageBack = -1 * retardationValue
-
-    # #run for NM
-    voltageArray, resistor_values = voltageArrayGeneratorWrapperOneOverR(voltageFront, voltageBack)
-
-    return voltageArray, resistor_values
+    # get voltage array and resistor values
+    va, rv = voltageArrayGeneratorWrapperNM(voltage_front, voltage_back,
+                                                                   voltage_mid1, voltage_mid2)
+    return va, rv
 
 
 def generate_netlist(voltage_array, resistor_values, filename="voltage_divider.cir"):

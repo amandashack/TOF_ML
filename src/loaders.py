@@ -366,9 +366,11 @@ class DataStructure:
         :param min_pass: A float defining the minimum value for the pass energy.
         """
         for i in range(len(self.data)):
+            start_len = len(self.data[i]['initial_ke'])
             for key in self.data[i]:
                 if key not in ['retardation']:
                     self.data[i][key] = np.array(self.data[i][key])[mask[i]]
+            self.data[i]['collection_efficiency'] = len(self.data[i]['initial_ke'])/start_len
 
     def create_mask(self, x_tof_range, y_tof_range, min_pass):
         # used to generate a mask for a part of the data
@@ -677,7 +679,7 @@ if __name__ == '__main__':
     #amanda_filepath = dir_path + "\\NM_simulations"
     dir_path = "C:/Users/proxi/Documents/coding/TOF_ML/simulations/TOF_simulation"
     #dir_path = "C:/Users/proxi/Documents/coding/TOF_ML/src/NM_simulations"
-    amanda_filepath = dir_path + "/simion_output"
+    amanda_filepath = dir_path + "/simion_output/positive_voltage"
     data_loader = DataStructure(filepath=amanda_filepath)
     data_loader.load()
     #fig, ax = plt.subplots()

@@ -14,7 +14,7 @@ import matplotlib.pyplot as plt
 import csv
 
 from ltspice_runner import modify_cir_file, run_simulation, check_currents
-from voltage_generator import calculateVoltage_NelderMeade, calculateVoltage_OneoverR
+from voltage_generator import calculateVoltage_NelderMeade
 import time
 import numpy as np
 
@@ -86,7 +86,7 @@ def parse_and_process_data(input_file_path):
                 data["final_elevation"].append(float(splat_line[9]))
                 data["final_ke"].append(float(splat_line[10]))
 
-        generate_files(data, simion_output_path)
+        generate_files(data, input_file_path)
 
 
 def generate_fly2File(filenameToWriteTo, numParticles=500, minEnergy=10, maxEnergy=0):
@@ -261,6 +261,7 @@ def runSimion(fly2File, voltage_array, outputFile, recordingFile, iobFileLoc, po
 
     # Change to the SIMION working directory
     original_cwd = os.getcwd()
+    print(original_cwd)
     os.chdir(r"C:\Users\proxi\Downloads\Simion_8-1-20230825T223627Z-001\Simion_8-1")
 
     # Convert voltage_array to a space-separated string
@@ -273,7 +274,9 @@ def runSimion(fly2File, voltage_array, outputFile, recordingFile, iobFileLoc, po
     # Construct the full command
     fullCommand = f"simion.exe --nogui {flyCommand}"
     # Go back to the base directory and delete temporary files
-    subprocess.run(fullCommand,  stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
+    print("starting flym")
+    subprocess.run(fullCommand, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
+    print("finished flym")
     os.chdir(baseDir)
     os.system('del *.tmp')
     os.chdir(original_cwd)
@@ -315,12 +318,12 @@ if __name__ == '__main__':
     ltspice_out_dir = args.simulation_dir + "\\ltspice"
 
     # Modify the .cir file with new voltages
-    generate_fly2File_lognorm(Fly2File, args.retardation, args.retardation+1200, numParticles=30000,
+    generate_fly2File_lognorm(Fly2File, args.retardation, args.retardation+1200, numParticles=1000,
                               medianEnergy=np.exp(2), energySigma=2, shift=args.retardation-10, max_angle=3)
     #generate_fly2File(Fly2File, numParticles=5000, minEnergy=args.retardation-100,
     #                  maxEnergy=args.retardation+1200)
     new_voltages, resistor_values = calculateVoltage_NelderMeade(args.retardation)
-    print(new_voltages)
+    #print(new_voltages)
     #new_cir_filepath = modify_cir_file(cir_filepath, new_voltages,
     #                                   args.simulation_dir + "\\ltspice", args.retardation)
 

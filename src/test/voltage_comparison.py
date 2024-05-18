@@ -1,6 +1,3 @@
-import subprocess
-import re
-
 from PyLTSpice import RawRead
 import os
 import argparse

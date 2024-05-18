@@ -1,6 +1,6 @@
 import subprocess
 import re
-
+import h5py
 from PyLTSpice import RawRead
 import os
 import argparse
@@ -43,19 +43,15 @@ def modify_cir_file(cir_file_path, new_voltages, new_filepath):
 
 # Function to run the LTspice simulation
 def run_simulation(spice_path, cir_file_path):
-    # Save the current directory
-    original_cwd = os.getcwd()
-
-    # Change the current directory to the desired output directory
-    os.chdir(os.path.dirname(cir_file_path))
-
     try:
-        subprocess.run([spice_path, "-b", "-Run", cir_file_path])
-    except FileNotFoundError as e:
-        print(f"An error occurred: {e}")
-    finally:
-        # Change back to the original directory
-        os.chdir(original_cwd)
+        subprocess.run([spice_path, "-b", "-Run", cir_file_path],
+                       cwd=os.path.dirname(cir_file_path), check=True)
+    except FileNotFoundError:
+        print(f"LTspice executable not found at {spice_path}. Please check the path.")
+    except subprocess.CalledProcessError:
+        print("LTspice simulation failed. Please check the input files and configuration.")
+    except Exception as e:
+        print(f"An unexpected error occurred: {str(e)}")
 
 
 # Function to read the .raw file and check current values
@@ -89,34 +85,49 @@ def check_currents(fp):
 
 # Example usage
 if __name__ == "__main__":
-    # Check if the retardation value is passed as a command-line argument
     parser = argparse.ArgumentParser(description='code for running LTSpice simulations')
-
-    # Add arguments
+    parser.add_argument('ltspice_dir', type=str, help='Required output directory for LTspice simulation files')
     parser.add_argument('retardation', type=int, help='Required retardation value')
-    parser.add_argument('ltspice_dir', type=str, help='Required output directory including the filename')
-    parser.add_argument('--front_voltage', type=float, help='Optional front voltage value')
-    parser.add_argument('--back_voltage', type=float, help='Optional back voltage value')
-    parser.add_argument('--nose_cone', type=float, help='Optional nose cone value')
+    parser.add_argument('--voltage_front', type=float, default=0, help='optional front voltage')
+    parser.add_argument('--blade22', type=float, default=0.11248,
+                        help='Optional blade 22 ratio value, default is 0.11248')
+    parser.add_argument('--blade25', type=float, default=0.1354,
+                        help='Optional blade 25 ratio value, default is 0.1354')
 
     args = parser.parse_args()
 
-    ltspice_path = "C:\\Users\\proxi\\AppData\\Local\\Programs\\ADI\\LTspice\\LTspice.exe"
-    dir_path = os.path.dirname(os.path.realpath(__file__))
-    # change this slash for linux
-    cir_filepath = dir_path + "\\voltage_divider.cir"
-    base_dir = os.path.dirname(args.ltspice_dir)
-    base_filename = os.path.basename(args.ltspice_dir)
+    # Validate output directory
+    if not os.path.isdir(args.ltspice_dir):
+        raise ValueError("The specified LTspice directory does not exist. Please provide a valid directory.")
 
-    # Create .cir and .raw file paths
+    # Validate numerical inputs (example ranges are hypothetical)
+    if args.retardation <= 0:
+        raise ValueError("Retardation must be a positive integer.")
+
+    if args.blade22 > 1 or args.blade25 > 1:
+        raise ValueError("Voltage ratio must be less than 1.")
+
+    if args.blade22 < -1 or args.blade25 < -1:
+        raise ValueError("Voltage ratio must be greater than -1.")
+
+    if args.voltage_front < 0:
+        raise ValueError("Voltage front must be greater than or equal to 0.")
+
+    ltspice_path = "C:\\Users\\proxi\\AppData\\Local\\Programs\\ADI\\LTspice\\LTspice.exe"
+    base_dir = args.ltspice_dir
+    base_filename = f"spice_{args.retardation}_{args.blade22}_{args.blade25}.raw"
+
     new_cir_filepath = os.path.join(base_dir, base_filename.replace('.raw', '.cir'))
-    raw_file_path = args.ltspice_dir
+    raw_file_path = os.path.join(base_dir, base_filename)
+
+    dir_path = os.path.dirname(os.path.realpath(__file__))
+    cir_filepath = dir_path + "\\voltage_divider.cir"
 
     # Modify the .cir file with new voltages
     new_voltages, resistor_values = calculateVoltage_NelderMeade(args.retardation,
-                                                                 args.front_voltage,
-                                                                 args.back_voltage,
-                                                                 args.nose_cone)
+                                                                 args.voltage_front,
+                                                                 args.blade22,
+                                                                 args.blade25)
     modify_cir_file(cir_filepath, new_voltages, new_cir_filepath)
 
     # Run the LTspice simulation
@@ -125,4 +136,25 @@ if __name__ == "__main__":
     # Read the .raw file and check current values
     ok, max_val = check_currents(raw_file_path)
 
-    print(max_val, ok)
+    h5_filename = os.path.join(base_dir, 'test_voltages.h5')
+    with h5py.File(h5_filename, 'a') as h5file:
+        # Create a nested group path based on retardation, front_voltage, and back_voltage
+        group_path = f"{args.retardation}/{args.front_voltage}/{args.back_voltage}"
+        # Navigate through the hierarchy, creating missing groups along the path
+        current_group = h5file
+        for subpath in group_path.split('/'):
+            if subpath not in current_group:
+                current_group = current_group.create_group(subpath)
+            else:
+                current_group = current_group[subpath]
+
+        # Create datasets within the deepest subgroup
+        current_group.create_dataset('voltages', data=new_voltages)
+        current_group.create_dataset('check', data=np.array([ok, max_val]))
+
+        # Generate and save a unique binary encoding for the combination
+        encoding = create_binary_encoding(
+            [args.retardation, int(args.front_voltage * 1e5), int(args.back_voltage * 1e5)])
+        current_group.attrs['binary_encoding'] = encoding
+
+        print(f"Results saved to {h5_filename} under {group_path} with encoding {encoding}")
