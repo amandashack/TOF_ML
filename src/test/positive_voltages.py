@@ -33,7 +33,7 @@ def generate_fly2File2(filenameToWriteTo, max_energy, numParticles=100, max_angl
         fileOut.write("end\n\n")
 
         fileOut.write("function generate_radial_distribution(theta_max)\n")
-        fileOut.write("  local d = 406.7-24.4\n")
+        fileOut.write("  local d = 406.7-12.2\n")
         fileOut.write("  return function()\n")
         fileOut.write("    local angle\n")
         fileOut.write("    local radius_max = d * math.tan(theta_max * math.pi / 180)\n")
@@ -62,8 +62,8 @@ def generate_fly2File2(filenameToWriteTo, max_energy, numParticles=100, max_angl
         fileOut.write("    cwf = 1,\n")
         fileOut.write("    color = 0,\n")
         fileOut.write("    position =  sphere_distribution {\n")
-        fileOut.write("      center = vector(24.4, 0, 0),\n")
-        fileOut.write("      radius = 2,\n")
+        fileOut.write("      center = vector(12.2, 0, 0),\n")
+        fileOut.write("      radius = 0,\n")
         fileOut.write("      fill = true")
         fileOut.write("    }\n")
         fileOut.write("  }\n")
@@ -84,17 +84,16 @@ if __name__ == '__main__':
     lua_path = baseDir + "/TOF_simulation.lua"
     Fly2File = baseDir + "/TOF_simulation.fly2"
     current_dir = os.path.dirname(os.path.realpath(__file__))
-    retardation = 0
 
-    parser = argparse.ArgumentParser(description='code for running LTSpice simulations')
+    parser = argparse.ArgumentParser(description='code for running Simion simulations for collection efficiency analysis')
 
     # Add arguments
     # turn this into a list of values to get through
     parser.add_argument(
-        "--front_voltage",  # name on the CLI - drop the `--` for positional/required parameters
+        "--retardation",  # name on the CLI - drop the `--` for positional/required parameters
         nargs="*",  # 0 or more values expected => creates a list
         type=int,
-        default=[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],  # default if nothing is provided
+        default=[0, -1, -2, -3, -4, -5, -6, -7, -8, -9, -10, -11, -12, -13, -14, -15],  # default if nothing is provided
     )
     parser.add_argument(
         "--kinetic_energy",  # name on the CLI - drop the `--` for positional/required parameters
@@ -104,24 +103,38 @@ if __name__ == '__main__':
     )
 
     args = parser.parse_args()
-    for front_voltage in args.front_voltage:
-        print(front_voltage)
+    for retardation in args.retardation:
+        print("Retardation: ", retardation)
         for ke in args.kinetic_energy:
-            print(ke)
+            print("Kinetic Energy: ", ke)
+            generate_fly2File2(Fly2File, float(ke), numParticles=1000, max_angle=2.5)
+            new_voltages, resistor_values = calculateVoltage_NelderMeade(retardation, voltage_front=0)
+            blade22 = new_voltages[22]
+            blade25 = new_voltages[25]
+            print(blade22, blade25, new_voltages)
+            if blade22 < 0:
+                blade22 = np.abs(blade22)
+                b22sign = "neg"
+            else:
+                b22sign="pos"
+            if blade25 < 0:
+                blade25 = np.abs(blade25)
+                b25sign = "neg"
+            else:
+                b25sign="pos"
+            if retardation < 0:
+                retardation = np.abs(retardation)
+                rsign = "neg"
+            else:
+                rsign = "pos"
             if ke == 0.1:
                 simion_output_path = (f"C:\\Users\\proxi\\Documents\\coding\\TOF_ML\\simulations\\"
-                                      f"TOF_simulation\\simion_output\\positive_voltage\\nonNM\\"
-                                      f"test_R{retardation}_{front_voltage}_0.txt")
+                                      f"TOF_simulation\\simion_output\\collection_efficiency\\"
+                                      f"sim_{rsign}_R{retardation}_{b22sign}_{blade22}_{b25sign}_{blade25}_0.txt")
             else:
                 simion_output_path = (f"C:\\Users\\proxi\\Documents\\coding\\TOF_ML\\simulations\\"
-                                      f"TOF_simulation\\simion_output\\positive_voltage\\nonNM\\"
-                                      f"test_R{retardation}_{front_voltage}_{int(ke)}.txt")
-
-            generate_fly2File2(Fly2File, float(ke), numParticles=1000, max_angle=2.5)
-            #generate_fly2File_lognorm(Fly2File, 0.1,  20, numParticles=100,
-            #                          medianEnergy=np.exp(2), energySigma=2, shift=-10, max_angle=3)
-            new_voltages, resistor_values = calculateVoltage_NelderMeade(0, voltage_front=0)
-            new_voltages[0] = front_voltage
-            print(new_voltages)
+                                      f"TOF_simulation\\simion_output\\collection_efficiency\\"
+                                      f"sim_{rsign}_R{retardation}_{b22sign}_{blade22}_{b25sign}_{blade25}_{int(ke)}.txt")
+            print(simion_output_path)
             runSimion(Fly2File, new_voltages, simion_output_path, recordingFile, iobFileLoc, potArrLoc, baseDir)
             parse_and_process_data(simion_output_path)

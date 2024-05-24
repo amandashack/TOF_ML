@@ -140,9 +140,7 @@ class DS_positive(DataStructure):
         # Convert the collection_efficiency dictionary to a DataFrame
         data = []
         for front_voltage, energies in self.collection_efficiency.items():
-            print(front_voltage, energies)
             for kinetic_energy, efficiency in energies.items():
-                print(kinetic_energy, efficiency)
                 data.append([front_voltage, kinetic_energy, efficiency])
 
         df = pd.DataFrame(data, columns=['Front Voltage', 'Kinetic Energy', 'Collection Efficiency'])
@@ -198,9 +196,9 @@ if __name__ == '__main__':
     # Example usage
     # Assuming the files are located in a directory named 'data_files' in the current working directory.
     dir_path = "C:/Users/proxi/Documents/coding/TOF_ML/simulations/TOF_simulation"
-    amanda_filepath = dir_path + "/simion_output/positive_voltage/nonNM"
+    amanda_filepath = dir_path + "/simion_output/collection_efficiency"
     data_loader = DS_positive(filepath=amanda_filepath)
-    data_loader.loadr(x_tof_range=(0, np.inf), y_tof_range=(-15.5, 15.5), min_pass=-10)
+    data_loader.loadr(x_tof_range=(403.5, np.inf), y_tof_range=(-20.5, 20.5), min_pass=-10)
     #print(data_loader.data[0])
     #data_loader.create_mask(x_tof_range=(403.5, np.inf), y_tof_range=(-13.5, 13.5), min_pass=-10)
 
