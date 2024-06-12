@@ -93,7 +93,7 @@ if __name__ == '__main__':
         "--retardation",  # name on the CLI - drop the `--` for positional/required parameters
         nargs="*",  # 0 or more values expected => creates a list
         type=int,
-        default=[0, -1, -2, -3, -4, -5, -6, -7, -8, -9, -10, -11, -12, -13, -14, -15],  # default if nothing is provided
+        default=[-15, -14, -13, -12, -11, -10, -9, -8, -7, -6, -5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],  # default if nothing is provided
     )
     parser.add_argument(
         "--kinetic_energy",  # name on the CLI - drop the `--` for positional/required parameters
@@ -102,39 +102,62 @@ if __name__ == '__main__':
         default=[0.1, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20],  # default if nothing is provided
     )
 
+    parser.add_argument(
+        "--mid1_ratio",  # name on the CLI - drop the `--` for positional/required parameters
+        nargs="*",  # 0 or more values expected => creates a list
+        type=float,
+        default=[0.08, 0.11248, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1],
+        # default if nothing is provided
+    )
+
+    parser.add_argument(
+        "--mid2_ratio",  # name on the CLI - drop the `--` for positional/required parameters
+        nargs="*",  # 0 or more values expected => creates a list
+        type=float,
+        default=[0.08, 0.1354, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1],
+        # default if nothing is provided
+    )
+
     args = parser.parse_args()
     for retardation in args.retardation:
         print("Retardation: ", retardation)
-        for ke in args.kinetic_energy:
-            print("Kinetic Energy: ", ke)
-            generate_fly2File2(Fly2File, float(ke), numParticles=1000, max_angle=2.5)
-            new_voltages, resistor_values = calculateVoltage_NelderMeade(retardation, voltage_front=0)
-            blade22 = new_voltages[22]
-            blade25 = new_voltages[25]
-            print(blade22, blade25, new_voltages)
-            if blade22 < 0:
-                blade22 = np.abs(blade22)
-                b22sign = "neg"
-            else:
-                b22sign="pos"
-            if blade25 < 0:
-                blade25 = np.abs(blade25)
-                b25sign = "neg"
-            else:
-                b25sign="pos"
-            if retardation < 0:
-                retardation = np.abs(retardation)
-                rsign = "neg"
-            else:
-                rsign = "pos"
-            if ke == 0.1:
-                simion_output_path = (f"C:\\Users\\proxi\\Documents\\coding\\TOF_ML\\simulations\\"
-                                      f"TOF_simulation\\simion_output\\collection_efficiency\\"
-                                      f"sim_{rsign}_R{retardation}_{b22sign}_{blade22}_{b25sign}_{blade25}_0.txt")
-            else:
-                simion_output_path = (f"C:\\Users\\proxi\\Documents\\coding\\TOF_ML\\simulations\\"
-                                      f"TOF_simulation\\simion_output\\collection_efficiency\\"
-                                      f"sim_{rsign}_R{retardation}_{b22sign}_{blade22}_{b25sign}_{blade25}_{int(ke)}.txt")
-            print(simion_output_path)
-            runSimion(Fly2File, new_voltages, simion_output_path, recordingFile, iobFileLoc, potArrLoc, baseDir)
-            parse_and_process_data(simion_output_path)
+        for mid1_ratio in args.mid1_ratio:
+            for mid2_ratio in args.mid2_ratio:
+                new_voltages, resistor_values = calculateVoltage_NelderMeade(retardation, voltage_front=0,
+                                                                             mid1_ratio=mid1_ratio,
+                                                                             mid2_ratio=mid2_ratio)
+                blade22 = new_voltages[22]
+                blade25 = new_voltages[25]
+                print(blade22, blade25, new_voltages)
+                for ke in args.kinetic_energy:
+                    print("Kinetic Energy: ", ke)
+                    generate_fly2File2(Fly2File, float(ke), numParticles=1000, max_angle=5)
+                    if mid1_ratio < 0:
+                        mid1 = np.abs(mid1_ratio)
+                        m1sign = "neg"
+                    else:
+                        mid1 = mid1_ratio
+                        m1sign="pos"
+                    if mid2_ratio < 0:
+                        mid2 = np.abs(mid2_ratio)
+                        m2sign = "neg"
+                    else:
+                        mid2 = mid2_ratio
+                        m2sign="pos"
+                    if retardation < 0:
+                        r = np.abs(retardation)
+                        rsign = "neg"
+                    else:
+                        r = retardation
+                        rsign = "pos"
+                    if ke == 0.1:
+                        simion_output_path = (f"C:\\Users\\proxi\\Documents\\coding\\TOF_ML\\simulations\\"
+                                              f"TOF_simulation\\simion_output\\collection_efficiency\\"
+                                              f"sim_{rsign}_R{r}_{m1sign}_{mid1}_{m2sign}_{mid2}_0.txt")
+                    else:
+                        simion_output_path = (f"C:\\Users\\proxi\\Documents\\coding\\TOF_ML\\simulations\\"
+                                              f"TOF_simulation\\simion_output\\collection_efficiency\\"
+                                              f"sim_{rsign}_R{r}_{m1sign}_{mid1}_{m2sign}_{mid2}_{int(ke)}.txt")
+                    print(simion_output_path)
+                    runSimion(Fly2File, new_voltages, simion_output_path, recordingFile, iobFileLoc, potArrLoc, baseDir)
+                    parse_and_process_data(simion_output_path)
