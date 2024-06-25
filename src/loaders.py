@@ -689,7 +689,7 @@ if __name__ == '__main__':
     #plt.show()
     #print(data_loader.data[0]['initial_ke'].tolist(), '\n\n', data_loader.data[0]['pass_energy'].tolist())
     #data_loader.plot_tof_vs_pass_energy(data_loader.data, verbose=True)
-    data_loader.create_mask(x_tof_range=(403.5, np.inf), y_tof_range=(-13.5, 13.5), min_pass=0)
+    data_loader.create_mask(x_tof_range=(403.5, np.inf), y_tof_range=(-14, 14), min_pass=-10)
     #data_loader.rebalance(ratio=0.2, nbins=3, plot=False, verbose=False, plot_training=False)
     #data_loader.plot_tof_vs_pass_energy(data_loader.data, verbose=True)
     #data_loader.plot_resolution(data_loader.data)

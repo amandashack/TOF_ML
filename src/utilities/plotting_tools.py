@@ -1,0 +1,356 @@
+from pyqtgraph.Qt import QtGui, QtWidgets
+import arpys
+import numpy as np
+import matplotlib.pyplot as plt
+import os
+import sys
+import pandas as pd
+import seaborn as sns
+import matplotlib.colors as mcolors
+import matplotlib.cm as cm
+from scipy.stats import ks_2samp
+from matplotlib.colors import Normalize
+from matplotlib.cm import ScalarMappable
+from matplotlib.backends.backend_pdf import PdfPages
+from pandas.plotting import parallel_coordinates
+import xarray as xr
+sys.path.insert(0, os.path.abspath('..'))
+from plotter import get_cmap
+
+class PlotWindow(QtWidgets.QWidget):
+    def __init__(self, plot_func, *args, **kwargs):
+        super().__init__()
+        self.plot_func = plot_func
+        self.args = args
+        self.kwargs = kwargs
+        self.initUI()
+
+    def initUI(self):
+        layout = QtWidgets.QVBoxLayout()
+        plot_widget = self.plot_func(*self.args, **self.kwargs)
+        layout.addWidget(plot_widget)
+        self.setLayout(layout)
+        self.setWindowTitle('Plot')
+        self.show()
+
+
+def plot_imagetool(*args):
+    app = QtWidgets.QApplication.instance()
+    if app is None:
+        # if it does not exist then a QApplication is created
+        app = QtWidgets.QApplication([])
+    for arg in args:
+        window = PlotWindow(arg.arpes.plot)
+        app.exec_()
+        window.close()
+
+
+def plot_relation(ax, ds, x_param, y_param, x_label, y_label, title=None,
+                  plot_log=False, retardation=None, kinetic_energy=None, mid1_ratio=None, mid2_ratio=None,
+                  collection_efficiency=None, ks_score=None, verbose=False):
+    def in_range(value, value_range):
+        return value_range is None or (value_range[0] <= value <= value_range[1])
+
+    data_to_plot = [
+        item for item in ds
+        if in_range(item['retardation'], retardation)
+           and in_range(item['kinetic_energy'], kinetic_energy)
+           and in_range(item['mid1_ratio'], mid1_ratio)
+           and in_range(item['mid2_ratio'], mid2_ratio)
+           and in_range(item['collection_efficiency'], collection_efficiency)
+           and in_range(item['ks_score'], ks_score)
+    ]
+
+    grouped_data = {}
+    for item in data_to_plot:
+        key = (item['retardation'], item['mid1_ratio'], item['mid2_ratio'])
+        if key not in grouped_data:
+            grouped_data[key] = []
+        grouped_data[key].append(item)
+
+    colors = get_cmap(len(grouped_data))
+
+    for idx, (key, group) in enumerate(grouped_data.items()):
+        color = colors(idx)
+        for item in group:
+            if not plot_log:
+                ax.scatter(item[x_param], item[y_param], alpha=0.6, color=color,
+                           label=f"R={item['retardation']}, M1={item['mid1_ratio']}, M2={item['mid2_ratio']}")
+            else:
+                ax.scatter(np.log2(item[x_param]), np.log2(item[y_param]), alpha=0.5, color=color,
+                           label=f"R={item['retardation']}, M1={item['mid1_ratio']}, M2={item['mid2_ratio']}")
+
+    handles, labels = ax.get_legend_handles_labels()
+    unique_labels = {label: handle for handle, label in zip(handles, labels)}
+    ax.legend(unique_labels.values(), unique_labels.keys())
+
+    if verbose:
+        tot = sum([len(d[y_param]) for d in data_to_plot])
+        print(tot)
+
+    if title:
+        ax.set_title(title)
+    ax.set_xlabel(x_label)
+    ax.set_ylabel(y_label)
+    ax.grid(True)
+
+
+def plot_parallel_coordinates(cuts, titles):
+    """
+    Plot parallel coordinates plots of 3D cuts from a 4D xarray with custom axes and colorbar.
+
+    Parameters:
+    cuts (list of xarray.DataArray): List of 3D cuts to plot.
+    titles (list of str): List of titles for each plot.
+
+    """
+    num_plots = len(cuts)
+
+    fig, axes = plt.subplots(1, num_plots, figsize=(6 * num_plots, 4), sharey=True)
+
+    if num_plots == 1:
+        axes = [axes]
+
+    for ax, cut, title in zip(axes, cuts, titles):
+        df = cut.to_dataframe(name='collection_efficiency').reset_index()
+        kinetic_energy = df['kinetic_energy'].unique()
+
+        # Create a unique identifier for each combination of mid1_ratio and mid2_ratio
+        df['combo'] = list(zip(df['mid1_ratio'], df['mid2_ratio']))
+        unique_combos = df['combo'].unique()
+
+        # Create a colormap
+        norm = mcolors.Normalize(vmin=0, vmax=len(unique_combos) - 1)
+        cmap = cm.get_cmap('viridis', len(unique_combos))
+
+        # Create a mapping from combo to color index
+        combo_to_index = {combo: idx for idx, combo in enumerate(unique_combos)}
+
+        for combo, group in df.groupby('combo'):
+            color_idx = combo_to_index[combo]
+            color = cmap(color_idx)
+            ax.plot(kinetic_energy, group['collection_efficiency'].values,
+                    label=f'M1: {combo[0]}, M2: {combo[1]}',
+                    color=color)
+            # Draw vertical lines
+            for k in kinetic_energy:
+                ax.axvline(x=k, color='gray', linestyle='--', linewidth=0.5)
+
+        ax.set_title(title)
+        ax.set_xlabel('Kinetic Energy')
+
+    axes[0].set_ylabel('Collection Efficiency')
+
+    # Create a colorbar
+    sm = cm.ScalarMappable(cmap=cmap, norm=norm)
+    sm.set_array([])
+    cbar = plt.colorbar(sm, ax=axes, orientation='vertical', pad=0.02, aspect=30)
+    cbar.set_label('Combination Index')
+
+    # Create a table next to the plot
+    table_data = [(combo_to_index[combo], combo[0], combo[1]) for combo in unique_combos]
+    table_df = pd.DataFrame(table_data, columns=['Index', 'mid1_ratio', 'mid2_ratio'])
+
+    fig_table, ax_table = plt.subplots(figsize=(3, 4))
+    ax_table.axis('tight')
+    ax_table.axis('off')
+    table = ax_table.table(cellText=table_df.values, colLabels=table_df.columns, loc='center')
+    table.auto_set_font_size(False)
+    table.set_fontsize(10)
+    table.scale(1.2, 1.2)
+
+    plt.tight_layout()
+    plt.show()
+
+
+def plot_ks_score(data_masked, R=13.74, bootstrap=None, directory=None, filename=None):
+    """
+    Plot particle distributions for each retardation, colored by kinetic energy.
+
+    Parameters:
+    data_masked (list of dict): Masked data loaded by DS_positive.
+    R (float): Radius for the uniform distribution.
+    bootstrap (int): Number of bootstrap samples to use for calculating KS scores.
+    directory (str): Directory to save the PDF file.
+    filename (str): Filename for the PDF file.
+
+    Returns:
+    dict: A dictionary of average KS scores for each retardation.
+    """
+    ks_scores = {}
+    save_to_pdf = directory is not None and filename is not None
+
+    if save_to_pdf:
+        pdf_path = os.path.join(directory, filename)
+        pdf_pages = PdfPages(pdf_path)
+
+    # Get unique retardations
+    retardations = sorted(list(set(entry['retardation'] for entry in data_masked)))
+
+    for retardation in retardations:
+        fig, ax = plt.subplots(1, 2, figsize=(12, 6))
+
+        # Filter data for the current retardation
+        filtered_data = [entry for entry in data_masked if entry['retardation'] == retardation]
+
+        # Get unique kinetic energies and create a color map
+        kinetic_energies = sorted(list(set(entry['kinetic_energy'] for entry in filtered_data)))
+        norm = Normalize(vmin=min(kinetic_energies), vmax=max(kinetic_energies))
+        cmap = plt.cm.viridis
+
+        for entry in filtered_data:
+            y_pos = entry['y_tof']
+            num_points = len(y_pos)
+
+            if num_points == 0:
+                print()
+                continue
+
+            theta_uniform = np.random.uniform(0, 2 * np.pi, num_points)
+            radius_uniform = np.random.uniform(0, R ** 2, num_points) ** 0.5
+            x_uniform = radius_uniform * np.cos(theta_uniform)
+            y_uniform = radius_uniform * np.sin(theta_uniform)
+
+            theta_final = np.random.uniform(0, 2 * np.pi, num_points)
+            radius_final = np.abs(y_pos)
+            x_final = radius_final * np.cos(theta_final)
+            y_final = radius_final * np.sin(theta_final)
+
+            uniform_dist = np.hstack((x_uniform, y_uniform))
+            final_dist = np.hstack((x_final, y_final))
+
+            if bootstrap:
+                bootstrap_scores = []
+                for _ in range(bootstrap):
+                    sample_indices = np.random.choice(num_points, num_points, replace=True)
+                    uniform_sample = uniform_dist[sample_indices]
+                    final_sample = final_dist[sample_indices]
+                    ks_score, _ = ks_2samp(uniform_sample, final_sample)
+                    bootstrap_scores.append(ks_score)
+                ks_score = np.mean(bootstrap_scores)
+            else:
+                ks_score, _ = ks_2samp(uniform_dist, final_dist)
+
+            kinetic_energy = entry['kinetic_energy']
+
+            if retardation not in ks_scores:
+                ks_scores[retardation] = []
+            ks_scores[retardation].append(ks_score)
+
+            color = cmap(norm(kinetic_energy))
+            ax[0].scatter(x_uniform, y_uniform, alpha=0.5, color=color,
+                       label=f'KE: {kinetic_energy:.2f}' if len(filtered_data) <= 10 else None)
+            ax[1].scatter(x_final, y_final, alpha=0.5, color=color,
+                       label=f'KE: {kinetic_energy:.2f}' if len(filtered_data) <= 10 else None)
+
+        fig.suptitle(f'Distribution for Retardation = {retardation:.2f} giving '
+                     f'ks score = {np.nanmean(ks_scores[retardation])}')
+        ax[0].set_xlabel('X')
+        ax[0].set_ylabel('Y')
+        ax[0].set_aspect('equal', 'box')
+        ax[1].set_xlabel('X')
+        ax[1].set_ylabel('Y')
+        ax[1].set_aspect('equal', 'box')
+        # Add legend only if there are valid labels
+        handles, labels = ax[1].get_legend_handles_labels()
+        if handles:
+            ax[1].legend()
+
+        # Adjust layout to make space for the colorbar
+        plt.tight_layout(rect=[0, 0, 0.85, 1])
+
+        # Create the colorbar outside the plot
+        cbar_ax = fig.add_axes([0.9, 0.15, 0.03, 0.7])
+        sm = ScalarMappable(norm=norm, cmap=cmap)
+        sm.set_array([])
+        cbar = plt.colorbar(sm, cax=cbar_ax, label='Kinetic Energy')
+
+        if save_to_pdf:
+            pdf_pages.savefig(fig)
+            plt.close(fig)
+        else:
+            plt.show()
+
+    if save_to_pdf:
+        pdf_pages.close()
+
+    # Calculate average KS scores for each retardation
+    avg_ks_scores = {ret: np.nanmean(scores) for ret, scores in ks_scores.items()}
+
+    return avg_ks_scores
+
+def plot_heatmap(collection_efficiency):
+    data = []
+    for retardation, energies in collection_efficiency.items():
+        for kinetic_energy, efficiency in energies.items():
+            data.append([retardation, kinetic_energy, efficiency])
+
+    df = pd.DataFrame(data, columns=['Retardation', 'Kinetic Energy', 'Collection Efficiency'])
+    heatmap_data = df.pivot('Kinetic Energy', 'Retardation', 'Collection Efficiency')
+
+    plt.figure(figsize=(10, 8))
+    sns.heatmap(heatmap_data, annot=True, cmap='viridis', cbar_kws={'label': 'Collection Efficiency'})
+    plt.title('Heatmap of Collection Efficiency')
+    plt.xlabel('Retardation')
+    plt.ylabel('Kinetic Energy')
+    plt.show()
+
+
+def plot_histogram(ax, ds, parameter, x_label, title=None, nbins=50, selected_pairs=None):
+    if selected_pairs:
+        cmap = get_cmap(len(selected_pairs))
+    else:
+        cmap = get_cmap(len(ds))
+    color_index = 0
+    print(selected_pairs)
+
+    for i in range(len(ds)):
+        retardation = ds[i]['retardation']
+        kinetic_energy = ds[i]['kinetic_energy']
+        mid1_ratio = ds[i]['mid1_ratio']
+        mid2_ratio = ds[i]['mid2_ratio']
+        if selected_pairs is None or (retardation, kinetic_energy, mid1_ratio, mid2_ratio) in selected_pairs:
+            collection_efficiency = ds[i]['collection_efficiency']
+            ks_score = ds[i]['ks_score']
+            ax.hist(ds[i][parameter], bins=nbins, color=cmap(color_index),
+                    edgecolor='black', alpha=0.5,
+                    label=f"R={retardation}, KE={kinetic_energy}, CE={collection_efficiency}, KS score={ks_score:.2f}, "
+                          f"M1={mid1_ratio}, M2={mid2_ratio}")
+            ax.legend(fontsize=8)
+            color_index += 1
+
+    if title:
+        ax.set_title(title)
+    ax.set_xlabel(x_label)
+    ax.set_ylabel('Frequency')
+    ax.legend()
+    ax.grid(True)
+
+
+def plot_energy_resolution(gradients, retardation, mid1_range, mid2_range):
+    fig, axes = plt.subplots(2, 1, figsize=(10, 12))
+
+    colors = plt.cm.viridis(np.linspace(0, 1, len(gradients)))
+    color_index = 0
+
+    for (r, mid1, mid2), (avg_tof_values, kinetic_energies, gradient, error) in gradients.items():
+        if r == retardation and mid1_range[0] <= mid1 <= mid1_range[1] and mid2_range[0] <= mid2 <= mid2_range[1]:
+            kinetic_energies = sorted(kinetic_energies)
+            label = f'Mid1: {mid1}, Mid2: {mid2}'
+            axes[0].scatter(kinetic_energies, avg_tof_values, label=label)
+            axes[1].scatter(kinetic_energies, gradient, label=label)
+
+    axes[0].set_title(f'TOF values vs Initial KE for Retardation = {retardation}')
+    axes[0].set_xlabel('Initial KE')
+    axes[0].set_ylabel('TOF values')
+    axes[0].legend()
+    axes[0].grid(True)
+
+    axes[1].set_title(f'Gradient of TOF values vs Initial KE for Retardation = {retardation}')
+    axes[1].set_xlabel('Initial KE')
+    axes[1].set_ylabel('Gradient of TOF values')
+    axes[1].legend()
+    axes[1].grid(True)
+
+    plt.tight_layout()
+    plt.show()

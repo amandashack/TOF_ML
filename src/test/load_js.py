@@ -87,7 +87,7 @@ def load_data_from_json(json_file, retardation=None, voltage1=None, voltage2=Non
 
 
 # Example usage
-json_file = 'simulation_data.json'
+json_file = '../simulations/simulation_data.json'
 retardation_filter = 'neg'  # Can be 'neg', 'pos', or a list of values
 #voltage1_filter = [4.4376]  # Can be 'neg', 'pos', or a list of values
 #voltage2_filter = None  # Can be 'neg', 'pos', or a list of values

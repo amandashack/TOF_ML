@@ -95,13 +95,13 @@ def calculateVoltage_NelderMeade(retardation_value, mid1_ratio=0.11248, mid2_rat
     # setup fast adjust voltages
     if not voltage_front:
         voltage_front = 0
-    voltage_back = -1 * abs(retardation_value)  # only talking about electrons
+    voltage_back = retardation_value
     voltage_mid1 = voltage_back + mid1_ratio * (voltage_front - voltage_back)
     voltage_mid2 = voltage_back + mid2_ratio * (voltage_front - voltage_back)
     # #run for NM
     # get voltage array and resistor values
     va, rv = voltageArrayGeneratorWrapperNM(voltage_front, voltage_back,
-                                                                   voltage_mid1, voltage_mid2)
+                                            voltage_mid1, voltage_mid2)
     return va, rv
 
 
