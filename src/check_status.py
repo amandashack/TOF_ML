@@ -6,7 +6,6 @@ import numpy as np
 import os
 import re
 import subprocess
-import sys
 
 
 def load_results(fn, measures=None, result_in_parts=False, safe_measure_names=False):

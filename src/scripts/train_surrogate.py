@@ -1,16 +1,14 @@
-import os
-import pickle
-import numpy as np
 import tensorflow as tf
-import glob
 from sklearn.model_selection import KFold
-import h5py
-import sys
+import re
 from training_functions import *
+import sys
 sys.path.insert(0, os.path.abspath('..'))
 from loaders.load_and_save import DataGenerator, DataGeneratorWithVeto
 from models.surrogate_model import train_main_model
 from models.veto_model import train_veto_model
+
+DATA_FILENAME = r"C:\Users\proxi\Documents\coding\TOF_ML_backup\src\simulations\combined_data_shuffled.h5"
 
 # Check GPU availability and set memory growth
 gpus = tf.config.experimental.list_physical_devices('GPU')
@@ -24,9 +22,10 @@ if gpus:
         print(e)
 
 
-def run_train(out_path, params, h5_filename, checkpoint_dir, n_splits=2, subset_percentage=None):
+def run_train(out_path, params, n_splits=3, subset_percentage=None):
+    checkpoint_dir = os.path.join(out_path, "\checkpoints")
     # Load data from the HDF5 file
-    with h5py.File(h5_filename, 'r') as hf:
+    with h5py.File(DATA_FILENAME, 'r') as hf:
         # preprocess data
         data = hf["data"][:]
         # log of TOF and log of KE
@@ -126,9 +125,8 @@ def run_train(out_path, params, h5_filename, checkpoint_dir, n_splits=2, subset_
 
 
 if __name__ == '__main__':
-    h5_filename = r"C:\Users\proxi\Documents\coding\TOF_ML_backup\src\simulations\combined_data_shuffled.h5"
-    run_train("/Users/proxi/Documents/coding/stored_models/test_001/25",
-              {"layer_size": 32, "batch_size": 1024, 'dropout': 0.2,
-               'learning_rate': 0.4, 'optimizer': 'RMSprop'},
-              h5_filename, r"C:\Users\proxi\Documents\coding\stored_models\test_001\25\checkpoints",
-              subset_percentage=0.5)
+    p = ' '.join(sys.argv[2:])
+    p = re.findall(r'(\w+)=(\d+)', p)
+    params = dict((p[i][0], float(p[i][1])) for i in range(len(p)))
+    output_file_path = sys.argv[1]
+    run_train(output_file_path, params)

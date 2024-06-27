@@ -37,7 +37,7 @@ import numpy as np
 
 space = {
     'layer_size': [32, 64, 128],
-    'batch_size': [32, 64, 128, 256, 512, 1024],
+    'batch_size': [64, 256, 512, 1024, 2*1024],
     'dropout': [0.1, 0.2, 0.3, 0.5],
     'optimizer': ['Adam', 'RMSprop'],
     'learning_rate': [0.1, 0.01, 0.001, 0.0001]
