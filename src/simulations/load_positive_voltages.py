@@ -203,7 +203,11 @@ class DS_positive():
 
     def calculate_energy_resolution(self):
         gradients = {}
+        r1 = 999
         for (retardation, mid1, mid2) in self.collection_efficiency.keys():
+            if r1 != retardation:
+                r1 = retardation
+                print(retardation)
             kinetic_energies = sorted(self.collection_efficiency[(retardation, mid1, mid2)].keys())
             avg_tof_values = [
                 np.mean([np.log(item['tof_values']) for item in self.data_masked
@@ -241,7 +245,7 @@ class DS_positive():
                         error.append((var_tof_values[i + 1] + var_tof_values[i - 1]) / 2)
 
                 gradients[(retardation, mid1, mid2)] = [avg_tof_values, kinetic_energies, gradient, error]
-
+        print("Finished making gradients dict")
         return gradients
 
     def create_energy_resolution_xarray(self, resolution_dict):
@@ -275,6 +279,7 @@ class DS_positive():
 
     def create_combined_array(self):
         combined_data = []
+        last_length = None
 
         for entry in self.data:
             initial_ke = entry['pass_energy']
@@ -286,9 +291,29 @@ class DS_positive():
             y_tof = entry['y_tof']
             mask = entry['mask']
 
+            # Ensure all arrays have the same length
+            lengths = [
+                len(initial_ke),
+                len(elevation),
+                len(tof),
+                len(y_tof),
+                len(mask)
+            ]
+
+            if not all(length == lengths[0] for length in lengths):
+                print(f"Skipping entry due to internal length mismatch: {entry}")
+                continue
+
+            # Ensure the length matches the last entry added to combined_data
+            current_length = lengths[0]
+            if last_length is not None and current_length != last_length:
+                print(f"Skipping entry due to length mismatch with previous entry: {entry}")
+                continue
+
             retardation_array = np.full_like(initial_ke, retardation)
             mid1_ratio_array = np.full_like(initial_ke, mid1_ratio)
             mid2_ratio_array = np.full_like(initial_ke, mid2_ratio)
+            print(retardation_array.shape, mid2_ratio_array.shape, mid2_ratio_array.shape)
 
             combined_entry = np.column_stack([
                 initial_ke,
@@ -302,9 +327,32 @@ class DS_positive():
             ])
 
             combined_data.append(combined_entry)
+            last_length = current_length
 
-        combined_array = np.vstack(combined_data)
+        if combined_data:
+            combined_array = np.vstack(combined_data)
+        else:
+            combined_array = np.empty((0, 8))  # Return an empty array if no valid data
+
         return combined_array
+
+
+def gradients_to_numpy(gradients):
+    print("making numpy array for TOF to KE project.")
+    data_list = []
+
+    for (retardation, mid1, mid2), values in gradients.items():
+        avg_tof_values, kinetic_energies, gradients, errors = values
+        retardation_array = np.full_like(avg_tof_values, retardation)
+        mid1_ratio_array = np.full_like(avg_tof_values, mid1)
+        mid2_ratio_array = np.full_like(avg_tof_values, mid2)
+
+        combined = np.column_stack(
+            (avg_tof_values, retardation_array, mid1_ratio_array, mid2_ratio_array, kinetic_energies))
+        data_list.append(combined)
+
+    data_array = np.vstack(data_list)
+    return data_array
 
 
 
@@ -314,12 +362,13 @@ if __name__ == '__main__':
     json_file = "simulation_data.json"
     data_loader = DS_positive()
     data_loader.load_data('simulation_data.json', xtof_range=(403.6, np.inf), ytof_range=(-13.74, 13.74),
-                          retardation_range=(-10, 10), overwrite=False)#, mid1_range=(0.11248, 0.11248), mid2_range=(0.1354, 0.1354), overwrite=False)
-    # Create the combined array
-    combined_array = data_loader.create_combined_array()
+                          retardation_range=(-10, 10), overwrite=False)#, mid1_range=(0, 0.11248), mid2_range=(0, 0.1354))
+    # Create the gradient array
+    gradients = data_loader.calculate_energy_resolution()
+    gradients_array = gradients_to_numpy(gradients)
 
     # Save the combined array to an HDF5 file
-    save_to_h5(combined_array, 'combined_data.h5')
+    save_to_h5(gradients_array, 'tof_to_energy_data')
     #ex = data_loader.create_efficiency_xarray()
     #plot_imagetool(ex.sel({'kinetic_energy': 0.1}))
     #save_xarray(ex, r"C:\Users\proxi\Documents\coding\TOF_ML\simulations\TOF_simulation\simion_output\collection_efficiency",
