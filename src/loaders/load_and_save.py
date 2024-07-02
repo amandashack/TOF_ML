@@ -1,62 +1,21 @@
 import xarray as xr
 import os
 import h5py
+import numpy as np
 
 
-def save_xarray(data_array, directory, filename, method='h5'):
-    """
-    Save an xarray.DataArray to an HDF5 file.
+class DataGenerator:
+    def __init__(self, data, batch_size=100):
+        self.data = data
+        self.batch_size = batch_size
 
-    Parameters:
-    - data_array: xarray.DataArray, the data array to save.
-    - directory: str, the directory where the file will be saved.
-    - filename: str, the name of the file (without extension).
-
-    The function will create the directory if it does not exist.
-    """
-    if not os.path.exists(directory):
-        os.makedirs(directory)
-
-    filepath = os.path.join(directory, f"{filename}.h5")
-    if method == "netcdf":
-        data_array.to_netcdf(filepath, format='NETCDF4', engine='netcdf4')
-    else:
-        with h5py.File(filepath, 'w') as f:
-            for dim in data_array.dims:
-                f.create_dataset(dim, data=data_array[dim].values)
-            f.create_dataset('data', data=data_array.values)
-            for attr, value in data_array.attrs.items():
-                f.attrs[attr] = value
-
-
-def load_xarray(directory, filename, method='h5'):
-    """
-    Load an xarray.DataArray from an HDF5 file.
-
-    Parameters:
-    - directory: str, the directory where the file is located.
-    - filename: str, the name of the file (without extension).
-
-    Returns:
-    - data_array: xarray.DataArray, the loaded data array.
-    """
-    filepath = os.path.join(directory, f"{filename}.h5")
-    if method == 'netcdf':
-        return xr.open_dataarray(filepath, engine='netcdf4')
-    else:
-        with h5py.File(filepath, 'r') as f:
-            # Load dimensions
-            coords = {dim: f[dim][:] for dim in reversed(f.keys()) if dim != 'data'}
-
-            # Load the data values
-            data = f['data'][:]
-
-            # Load attributes
-            attrs = {attr: f.attrs[attr] for attr in f.attrs}
-
-        # Create the xarray DataArray
-        xarr = xr.DataArray(data, coords=coords, dims=list(coords.keys()), attrs=attrs)
-        return xarr
+    def __call__(self):
+        total_samples = self.data.shape[0]
+        i = 0
+        while i < total_samples:
+            batch = self.data[i:i + self.batch_size, :]
+            yield batch[:, :5], batch[:, 5:]  # Split into inputs and outputs
+            i += self.batch_size
 
 
 def save_to_h5(array, filename):
@@ -86,4 +45,27 @@ def load_from_h5(filename):
         array = h5f['data'][:]
     print(f"Data loaded from {filename}")
     return array
+
+
+def shuffle_h5(filename, out_filename):
+    with h5py.File(filename, 'r') as f:
+        array = f['data'][:]
+
+    print(array.shape, array[:10])
+    np.random.shuffle(array)
+    print(array.shape, array[:10])
+
+    with h5py.File(out_filename, 'w') as f:
+        f.create_dataset('data', data=array)
+
+if __name__ == '__main__':
+    h5_filename = r"C:\Users\proxi\Documents\coding\TOF_ML\src\simulations\combined_data.h5"
+    out_filename = r"C:\Users\proxi\Documents\coding\TOF_ML\src\simulations\combined_data_shuffled.h5"
+    #shuffle_h5(h5_filename, out_filename)
+    data = np.random.rand(1000, 8)
+    gen = DataGenerator(data, batch_size=256)
+    for x, y in gen():
+        print("Inputs:", x.shape)
+        print("Outputs:", y.shape)
+        break  # Only print the first batch
 

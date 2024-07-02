@@ -6,7 +6,6 @@ from check_status import load_results
 import matplotlib.pyplot as plt
 import seaborn as sns
 import tensorflow as tf
-from loaders import train_test_val_loader
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 from scipy.stats import kurtosis, skew, norm
 from mpl_toolkits.axes_grid1.inset_locator import inset_axes

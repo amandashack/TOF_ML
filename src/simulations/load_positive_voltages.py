@@ -6,7 +6,8 @@ import sys
 import json
 import xarray as xr
 sys.path.insert(0, os.path.abspath('..'))
-from loaders.load_and_save import save_xarray, load_xarray, save_to_h5, load_from_h5
+from loaders.load_and_save import save_to_h5, load_from_h5
+from loaders.load_xarrays import save_xarray, load_xarray
 from utilities.plotting_tools import plot_imagetool, plot_relation, plot_heatmap, plot_histogram, plot_energy_resolution
 from utilities.mask_data import create_mask
 from utilities.calculation_tools import calculate_ks_score, normalize_3D
@@ -60,7 +61,7 @@ class DS_positive():
                     final_elevation = grp['final_elevation'][:]
                     final_ke = grp['final_ke'][:]
 
-                    pass_energy = initial_ke + retardation
+                    pass_energy = initial_ke - retardation
 
                     data = {
                         'initial_ke': initial_ke,
@@ -363,12 +364,15 @@ if __name__ == '__main__':
     data_loader = DS_positive()
     data_loader.load_data('simulation_data.json', xtof_range=(403.6, np.inf), ytof_range=(-13.74, 13.74),
                           retardation_range=(-10, 10), overwrite=False)#, mid1_range=(0, 0.11248), mid2_range=(0, 0.1354))
+    ds = data_loader.create_combined_array()
+    h5_filename = r"C:\Users\proxi\Documents\coding\TOF_ML\src\simulations\combined_data.h5"
+    save_to_h5(ds, h5_filename)
     # Create the gradient array
-    gradients = data_loader.calculate_energy_resolution()
-    gradients_array = gradients_to_numpy(gradients)
+    #gradients = data_loader.calculate_energy_resolution()
+    #gradients_array = gradients_to_numpy(gradients)
 
     # Save the combined array to an HDF5 file
-    save_to_h5(gradients_array, 'tof_to_energy_data')
+    #save_to_h5(gradients_array, 'tof_to_energy_data')
     #ex = data_loader.create_efficiency_xarray()
     #plot_imagetool(ex.sel({'kinetic_energy': 0.1}))
     #save_xarray(ex, r"C:\Users\proxi\Documents\coding\TOF_ML\simulations\TOF_simulation\simion_output\collection_efficiency",
