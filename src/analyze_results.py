@@ -30,7 +30,7 @@ def load_test_data(test_data_path):
 
 # Function to randomly sample data
 def random_sample_data(df, sample_size):
-    return df.sample(n=sample_size)
+    return df.sample(n=min(sample_size, len(df)), random_state=42)
 
 
 # Function to plot the results
