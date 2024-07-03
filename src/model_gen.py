@@ -6,6 +6,7 @@ from tensorflow.keras.callbacks import ReduceLROnPlateau, EarlyStopping, Progbar
 from tensorflow.keras.optimizers import Adam, SGD, RMSprop
 from tensorflow.keras import Input, Model
 import os
+import matplotlib.pyplot as plt
 
 
 # Define Swish activation function
@@ -26,6 +27,12 @@ def y_tof_loss(y_true, y_pred):
     mask = tf.cast(mask, dtype=tf.float32)
     loss = tf.square(y_tof_true - y_pred)
     return tf.reduce_mean(mask * loss)
+
+
+def hit_loss(y_true, y_pred):
+    y_true = tf.cast(y_true, dtype=tf.float32)
+    y_true_hit = tf.reshape(y_true[:, 2], [-1, 1])
+    return tf.keras.losses.binary_crossentropy(y_true_hit, y_pred)
 
 
 def create_model(params, steps_per_execution):
@@ -50,20 +57,20 @@ def create_model(params, steps_per_execution):
     x = tf.keras.layers.BatchNormalization(name="batchnorm_3")(x)
     x = tf.keras.layers.Dropout(dropout_rate, name="dropout_3")(x)
 
-    time_of_flight_output = tf.keras.layers.Dense(1, activation='linear', name='time_of_flight')(x)
+    time_of_flight_output = tf.keras.layers.Dense(1, activation='linear',
+                                                  name='time_of_flight')(x)
     y_tof_output = tf.keras.layers.Dense(1, activation='linear', name='y_tof')(x)
+    hit_output = tf.keras.layers.Dense(1, activation='sigmoid', name='hit')(x)
 
-    model = tf.keras.Model(inputs=inputs, outputs=[time_of_flight_output, y_tof_output])
+    model = tf.keras.Model(inputs=inputs, outputs=[time_of_flight_output, y_tof_output, hit_output])
 
     if optimizer == "Adam":
         optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate)
-    elif optimizer == "SGD":
-        optimizer = tf.keras.optimizers.SGD(learning_rate=learning_rate)
     elif optimizer == "RMSprop":
         optimizer = tf.keras.optimizers.RMSprop(learning_rate=learning_rate)
 
     model.compile(
-        loss={'time_of_flight': time_of_flight_loss, 'y_tof': y_tof_loss},
+        loss={'time_of_flight': time_of_flight_loss, 'y_tof': y_tof_loss, 'hit': hit_loss},
         optimizer=optimizer,
         steps_per_execution=steps_per_execution
     )
@@ -78,11 +85,53 @@ class MemoryUsageCallback(tf.keras.callbacks.Callback):
               f"MB / {memory_info['peak'] / 1024**2:.2f} MB")
 
 
+# Define the learning rate finder class
+class LRFinder(tf.keras.callbacks.Callback):
+    def __init__(self, min_lr=1e-8, max_lr=10, steps_per_epoch=None, epochs=1):
+        super().__init__()
+        self.min_lr = min_lr
+        self.max_lr = max_lr
+        self.total_steps = steps_per_epoch * epochs
+        self.step = 0
+        self.lr_mult = (max_lr / min_lr) ** (1 / self.total_steps)
+        self.losses = []
+        self.lrs = []
+
+    def on_batch_end(self, batch, logs=None):
+        self.step += 1
+        lr = tf.keras.backend.get_value(self.model.optimizer.lr)
+        lr *= self.lr_mult
+        tf.keras.backend.set_value(self.model.optimizer.lr, lr)
+        self.lrs.append(lr)
+        self.losses.append(np.log(logs['loss']))
+
+        # Debugging: Print the learning rate and loss
+        print(f"Step: {self.step}, Learning Rate: {lr}, Loss: {logs['loss']}")
+
+        if self.step >= self.total_steps:
+            self.model.stop_training = True
+
+    def plot_loss(self, sma=1):
+        # Apply simple moving average (SMA) to smooth the loss plot
+        def sma_smoothing(values, window):
+            weights = np.repeat(1.0, window) / window
+            return np.convolve(values, weights, 'valid')
+
+        smoothed_losses = sma_smoothing(self.losses, sma)
+
+        plt.plot(self.lrs[:len(smoothed_losses)], smoothed_losses)
+        plt.xscale('log')
+        plt.xlabel('Learning Rate')
+        plt.ylabel('Loss')
+        plt.title('Learning Rate Finder')
+        plt.show()
+
+
 def run_model(train_dataset, val_dataset, params, checkpoint_dir):
-    epochs = 10
+    epochs = 300
     steps_per_epoch = params['steps_per_epoch']
     validation_steps = params['validation_steps']
-    steps_per_execution = steps_per_epoch/10
+    steps_per_execution = steps_per_epoch // 10
 
     model = create_model(params, steps_per_execution)
 
@@ -113,6 +162,7 @@ def run_model(train_dataset, val_dataset, params, checkpoint_dir):
     )
 
     memory_callback = MemoryUsageCallback()
+    lr_finder = LRFinder(min_lr=1e-8, max_lr=1, steps_per_epoch=steps_per_epoch, epochs=1)
 
     # Create checkpoint directory if it doesn't exist
     if not os.path.exists(checkpoint_dir):
@@ -128,6 +178,8 @@ def run_model(train_dataset, val_dataset, params, checkpoint_dir):
         verbose=1,  # Suppress the default verbose output
         callbacks=[reduce_lr, early_stop, checkpoint, memory_callback]  # Add callbacks here
     )
+    # Plot the results
+    #lr_finder.plot_loss()
     print(f"early_stop {early_stop.stopped_epoch}")
     print(f"best_epoch {np.argmin(history.history['val_loss']) + 1}")
     return model, history

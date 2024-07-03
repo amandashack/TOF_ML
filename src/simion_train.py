@@ -83,14 +83,14 @@ def run_train(out_path, params, h5_filename, checkpoint_dir):
             tf.TensorSpec(shape=(None, 5), dtype=tf.float32),
             tf.TensorSpec(shape=(None, 3), dtype=tf.float32)
         )
-    ).repeat().cache().prefetch(tf.data.experimental.AUTOTUNE)  # Added repeat()
+    ).take(len(train_data)).cache().repeat().prefetch(tf.data.experimental.AUTOTUNE)
 
     val_dataset = tf.data.Dataset.from_generator(
         val_gen, output_signature=(
             tf.TensorSpec(shape=(None, 5), dtype=tf.float32),
             tf.TensorSpec(shape=(None, 3), dtype=tf.float32)
         )
-    ).repeat().cache().prefetch(tf.data.experimental.AUTOTUNE)  # Added repeat()
+    ).take(len(val_data)).cache().repeat().prefetch(tf.data.experimental.AUTOTUNE)
 
     # Train the model
     model, history = run_model(train_dataset, val_dataset, params, checkpoint_dir)
@@ -104,6 +104,6 @@ def run_train(out_path, params, h5_filename, checkpoint_dir):
 if __name__ == '__main__':
     h5_filename = r"C:\Users\proxi\Documents\coding\TOF_ML\src\simulations\combined_data.h5"
     run_train("/Users/proxi/Documents/coding/TOF_ML/stored_models/test_001/13",
-              {"layer_size": 128, "batch_size": 1024, 'dropout': 0.2,
-               'learning_rate': 0.001, 'optimizer': 'RMSprop'},
+              {"layer_size": 64, "batch_size": 256, 'dropout': 0.4,
+               'learning_rate': 0.1, 'optimizer': 'Adam'},
               h5_filename, r"C:\Users\proxi\Documents\coding\TOF_ML\stored_models\test_001\13\checkpoints")
