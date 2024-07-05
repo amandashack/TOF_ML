@@ -17,16 +17,16 @@ def swish(x):
 # Custom loss function to incorporate mask
 def time_of_flight_loss(y_true, y_pred):
     time_of_flight_true, mask = y_true[:, 0], y_true[:, 2]
-    mask = tf.cast(mask, dtype=tf.float32)
+    mask = tf.cast(mask, dtype=tf.bool)
     loss = tf.square(time_of_flight_true - y_pred)
-    return tf.reduce_mean(mask * loss)
+    return tf.reduce_mean(tf.boolean_mask(loss, mask))
 
 
 def y_tof_loss(y_true, y_pred):
     y_tof_true, mask = y_true[:, 1], y_true[:, 2]
-    mask = tf.cast(mask, dtype=tf.float32)
+    mask = tf.cast(mask, dtype=tf.bool)
     loss = tf.square(y_tof_true - y_pred)
-    return tf.reduce_mean(mask * loss)
+    return tf.reduce_mean(tf.boolean_mask(loss, mask))
 
 
 def hit_loss(y_true, y_pred):
@@ -41,7 +41,7 @@ def create_model(params, steps_per_execution):
     learning_rate = float(params['learning_rate'])
     optimizer = params['optimizer']
 
-    inputs = tf.keras.Input(shape=(5,), name="inputs")
+    inputs = tf.keras.Input(shape=(14,), name="inputs")
     x = tf.keras.layers.Dense(layer_size, name="dense_1")(inputs)
     x = tf.keras.layers.LeakyReLU(alpha=0.02, name="leakyrelu_1")(x)
     x = tf.keras.layers.BatchNormalization(name="batchnorm_1")(x)
@@ -81,7 +81,7 @@ def create_model(params, steps_per_execution):
 class MemoryUsageCallback(tf.keras.callbacks.Callback):
     def on_train_batch_end(self, batch, logs=None):
         memory_info = tf.config.experimental.get_memory_info('GPU:0')
-        print(f"Batch {batch + 1} - GPU Memory Usage: {memory_info['current'] / 1024**2:.2f} "
+        print(f" - Batch {batch + 1} - GPU Memory Usage: {memory_info['current'] / 1024**2:.2f} "
               f"MB / {memory_info['peak'] / 1024**2:.2f} MB")
 
 
@@ -128,7 +128,7 @@ class LRFinder(tf.keras.callbacks.Callback):
 
 
 def run_model(train_dataset, val_dataset, params, checkpoint_dir):
-    epochs = 300
+    epochs = 5
     steps_per_epoch = params['steps_per_epoch']
     validation_steps = params['validation_steps']
     steps_per_execution = steps_per_epoch // 10
@@ -140,7 +140,7 @@ def run_model(train_dataset, val_dataset, params, checkpoint_dir):
         monitor='val_loss',  # Monitor validation loss
         factor=0.1,  # Factor by which the learning rate will be reduced (e.g., 0.5 means halving the LR)
         patience=5,  # Number of epochs with no improvement after which learning rate will be reduced
-        min_lr=1e-7,  # Minimum learning rate
+        min_lr=1e-8,  # Minimum learning rate
         verbose=1  # 1: Update messages, 0: No update messages
     )
 
@@ -162,7 +162,6 @@ def run_model(train_dataset, val_dataset, params, checkpoint_dir):
     )
 
     memory_callback = MemoryUsageCallback()
-    lr_finder = LRFinder(min_lr=1e-8, max_lr=1, steps_per_epoch=steps_per_epoch, epochs=1)
 
     # Create checkpoint directory if it doesn't exist
     if not os.path.exists(checkpoint_dir):
@@ -178,8 +177,7 @@ def run_model(train_dataset, val_dataset, params, checkpoint_dir):
         verbose=1,  # Suppress the default verbose output
         callbacks=[reduce_lr, early_stop, checkpoint, memory_callback]  # Add callbacks here
     )
-    # Plot the results
-    #lr_finder.plot_loss()
+
     print(f"early_stop {early_stop.stopped_epoch}")
     print(f"best_epoch {np.argmin(history.history['val_loss']) + 1}")
     return model, history

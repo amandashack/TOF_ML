@@ -43,11 +43,8 @@ def plot_results(base_dir, model_num, pdf_filename=None, sample_size=1000):
     test_data = load_test_data(test_data_path)
     retardation_values = test_data[:2*sample_size, 2].flatten()
     x_test = test_data[:2*sample_size, :5]
-    print(x_test[:100, :])
     y_test = test_data[:2*sample_size, 5:]
-    print(y_test[:100, :])
     y_pred = model.predict(x_test)
-    print(y_pred[i][:100] for i in range(len(y_pred)))
 
     # Mask the data
     mask = y_test[:, 2].flatten().astype(bool)

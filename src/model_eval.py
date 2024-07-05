@@ -1,7 +1,7 @@
 import tensorflow as tf
 
 
-def evaluate(model, test_inputs, test_outputs, batch_size=1024):
+def evaluate(model, test_dataset, batch_size=1024):
     """
     Evaluate the model on test data.
 
@@ -15,7 +15,7 @@ def evaluate(model, test_inputs, test_outputs, batch_size=1024):
     test_loss: Loss on the test dataset.
     """
     print("Starting evaluation...")  # Debugging statement
-    test_dataset = tf.data.Dataset.from_tensor_slices((test_inputs, test_outputs)).batch(batch_size)
+    #test_dataset = tf.data.Dataset.from_tensor_slices((test_inputs, test_outputs)).batch(batch_size)
     print("Test dataset created.")  # Debugging statement
     loss = model.evaluate(test_dataset)
     print("Evaluation completed.")  # Debugging statement

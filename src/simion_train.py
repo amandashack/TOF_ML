@@ -42,6 +42,12 @@ def partition_data(h5_filename, train_size=0.7, val_size=0.15):
 
 
 def save_test_data(test_data, out_path):
+    # Check if the base directory exists, create it if it does not
+    if not os.path.exists(out_path):
+        os.makedirs(out_path)
+        print(f"Created directory {out_path}")
+
+    # Save test data to the specified path
     test_data_path = os.path.join(out_path, 'test_data.h5')
     with h5py.File(test_data_path, 'w') as hf:
         hf.create_dataset('test_data', data=test_data)
@@ -61,7 +67,6 @@ def run_train(out_path, params, h5_filename, checkpoint_dir):
     """
     # Partition the data
     train_data, val_data, test_data = partition_data(h5_filename)
-    print(train_data.shape, val_data.shape, test_data.shape)
 
     # Save test data
     save_test_data(test_data, out_path)
@@ -76,18 +81,26 @@ def run_train(out_path, params, h5_filename, checkpoint_dir):
     # Create generator instances for training, validation, and test datasets
     train_gen = DataGenerator(train_data, batch_size=batch_size)
     val_gen = DataGenerator(val_data, batch_size=batch_size)
+    test_gen = DataGenerator(test_data, batch_size=batch_size)
 
     # Create tf.data.Dataset from the generators
     train_dataset = tf.data.Dataset.from_generator(
         train_gen, output_signature=(
-            tf.TensorSpec(shape=(None, 5), dtype=tf.float32),
+            tf.TensorSpec(shape=(None, 14), dtype=tf.float32),
             tf.TensorSpec(shape=(None, 3), dtype=tf.float32)
         )
     ).take(len(train_data)).cache().repeat().prefetch(tf.data.experimental.AUTOTUNE)
 
     val_dataset = tf.data.Dataset.from_generator(
         val_gen, output_signature=(
-            tf.TensorSpec(shape=(None, 5), dtype=tf.float32),
+            tf.TensorSpec(shape=(None, 14), dtype=tf.float32),
+            tf.TensorSpec(shape=(None, 3), dtype=tf.float32)
+        )
+    ).take(len(val_data)).cache().repeat().prefetch(tf.data.experimental.AUTOTUNE)
+
+    test_dataset = tf.data.Dataset.from_generator(
+        test_gen, output_signature=(
+            tf.TensorSpec(shape=(None, 14), dtype=tf.float32),
             tf.TensorSpec(shape=(None, 3), dtype=tf.float32)
         )
     ).take(len(val_data)).cache().repeat().prefetch(tf.data.experimental.AUTOTUNE)
@@ -98,12 +111,12 @@ def run_train(out_path, params, h5_filename, checkpoint_dir):
     model.save(out_path)
 
     # Evaluate the model
-    loss_test = evaluate(model, test_data[:, :5], test_data[:, 5:], batch_size=batch_size)
+    loss_test = evaluate(model, test_dataset, batch_size=batch_size)
     print(f"test_loss {loss_test}")
 
 if __name__ == '__main__':
     h5_filename = r"C:\Users\proxi\Documents\coding\TOF_ML\src\simulations\combined_data.h5"
-    run_train("/Users/proxi/Documents/coding/TOF_ML/stored_models/test_001/13",
+    run_train("/Users/proxi/Documents/coding/stored_models/test_001/14",
               {"layer_size": 64, "batch_size": 256, 'dropout': 0.4,
                'learning_rate': 0.1, 'optimizer': 'Adam'},
-              h5_filename, r"C:\Users\proxi\Documents\coding\TOF_ML\stored_models\test_001\13\checkpoints")
+              h5_filename, r"C:\Users\proxi\Documents\coding\stored_models\test_001\14\checkpoints")
