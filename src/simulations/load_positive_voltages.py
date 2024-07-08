@@ -5,13 +5,16 @@ import os
 import sys
 import json
 import xarray as xr
+from matplotlib.colors import Normalize
+from scipy.stats import ks_2samp
+from matplotlib.cm import ScalarMappable
 sys.path.insert(0, os.path.abspath('..'))
 from loaders.load_and_save import save_to_h5, load_from_h5
 from loaders.load_xarrays import save_xarray, load_xarray
-from utilities.plotting_tools import plot_imagetool, plot_relation, plot_heatmap, plot_histogram, plot_energy_resolution
+#from utilities.plotting_tools import plot_imagetool, plot_relation, plot_heatmap, plot_histogram, plot_energy_resolution
 from utilities.mask_data import create_mask
 from utilities.calculation_tools import calculate_ks_score, normalize_3D
-
+from utilities.plotting_tools import plot_ks_score
 
 class DS_positive():
     def __init__(self):
@@ -211,7 +214,7 @@ class DS_positive():
                 print(retardation)
             kinetic_energies = sorted(self.collection_efficiency[(retardation, mid1, mid2)].keys())
             avg_tof_values = [
-                np.mean([np.log(item['tof_values']) for item in self.data_masked
+                np.mean([item['tof_values'] for item in self.data_masked
                          if item['retardation'] == retardation and
                          item['mid1_ratio'] == mid1 and
                          item['mid2_ratio'] == mid2 and
@@ -230,7 +233,7 @@ class DS_positive():
             ]
 
             if len(kinetic_energies) > 1:
-                gradient = np.gradient(avg_tof_values, np.log(kinetic_energies))
+                gradient = np.gradient(avg_tof_values, kinetic_energies)
                 error = []
 
                 # Propagate errors
@@ -360,15 +363,22 @@ def gradients_to_numpy(gradients):
 if __name__ == '__main__':
     # Example usage
     # Assuming the files are located in a directory named 'data_files' in the current working directory.
-    json_file = "simulation_data.json"
     data_loader = DS_positive()
     data_loader.load_data('simulation_data.json', xtof_range=(403.6, np.inf), ytof_range=(-13.74, 13.74),
-                          retardation_range=(-10, 10), overwrite=False)#, mid1_range=(0, 0.11248), mid2_range=(0, 0.1354))
-    ds = data_loader.create_combined_array()
-    h5_filename = r"C:\Users\proxi\Documents\coding\TOF_ML\src\simulations\combined_data.h5"
-    save_to_h5(ds, h5_filename)
+                          retardation_range=(9, 9), mid1_range=(0.11248, 0.11248), mid2_range=(0.1354, 0.1354),
+                          overwrite=False)
+    plot_ks_score(data_loader.data_masked, 0.11248, 0.1354, R=13.74, bootstrap=10, directory=None, filename=None,
+                  kinetic_energies=[0.1, 4, 9, 12, 18])
+    #ds = data_loader.create_combined_array()
+    #h5_filename = r"C:\Users\proxi\Documents\coding\TOF_ML\src\simulations\combined_data.h5"
+    #save_to_h5(ds, h5_filename)
     # Create the gradient array
     #gradients = data_loader.calculate_energy_resolution()
+    #grad_xar = data_loader.create_energy_resolution_xarray(gradients)
+    #save_xarray(grad_xar, r"C:\Users\proxi\Documents\coding\TOF_data",
+    #            "gradients")
+
+
     #gradients_array = gradients_to_numpy(gradients)
 
     # Save the combined array to an HDF5 file

@@ -16,23 +16,9 @@ def swish(x):
 
 # Custom loss function to incorporate mask
 def time_of_flight_loss(y_true, y_pred):
-    time_of_flight_true, mask = y_true[:, 0], y_true[:, 2]
-    mask = tf.cast(mask, dtype=tf.bool)
+    time_of_flight_true = y_true[:, 0]
     loss = tf.square(time_of_flight_true - y_pred)
-    return tf.reduce_mean(tf.boolean_mask(loss, mask))
-
-
-def y_tof_loss(y_true, y_pred):
-    y_tof_true, mask = y_true[:, 1], y_true[:, 2]
-    mask = tf.cast(mask, dtype=tf.bool)
-    loss = tf.square(y_tof_true - y_pred)
-    return tf.reduce_mean(tf.boolean_mask(loss, mask))
-
-
-def hit_loss(y_true, y_pred):
-    y_true = tf.cast(y_true, dtype=tf.float32)
-    y_true_hit = tf.reshape(y_true[:, 2], [-1, 1])
-    return tf.keras.losses.binary_crossentropy(y_true_hit, y_pred)
+    return tf.reduce_mean(loss)
 
 
 def create_model(params, steps_per_execution):
@@ -59,10 +45,8 @@ def create_model(params, steps_per_execution):
 
     time_of_flight_output = tf.keras.layers.Dense(1, activation='linear',
                                                   name='time_of_flight')(x)
-    y_tof_output = tf.keras.layers.Dense(1, activation='linear', name='y_tof')(x)
-    hit_output = tf.keras.layers.Dense(1, activation='sigmoid', name='hit')(x)
 
-    model = tf.keras.Model(inputs=inputs, outputs=[time_of_flight_output, y_tof_output, hit_output])
+    model = tf.keras.Model(inputs=inputs, outputs=[time_of_flight_output])
 
     if optimizer == "Adam":
         optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate)
@@ -70,7 +54,7 @@ def create_model(params, steps_per_execution):
         optimizer = tf.keras.optimizers.RMSprop(learning_rate=learning_rate)
 
     model.compile(
-        loss={'time_of_flight': time_of_flight_loss, 'y_tof': y_tof_loss, 'hit': hit_loss},
+        loss={'time_of_flight': time_of_flight_loss},
         optimizer=optimizer,
         steps_per_execution=steps_per_execution
     )

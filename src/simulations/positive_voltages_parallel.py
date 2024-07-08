@@ -12,12 +12,13 @@ from voltage_generator import calculateVoltage_NelderMeade
 from run_simion import parse_and_process_data, runSimion, generate_fly2File_lognorm
 
 
-baseDir = "C:/Users/proxi/Documents/coding/TOF_ML/simulations/TOF_simulation"
-iobFileLoc = baseDir + "/TOF_simulation.iob"
-recordingFile = baseDir + "/TOF_simulation.rec"
-potArrLoc = baseDir + "/copiedArray.PA0"
-lua_path = baseDir + "/TOF_simulation.lua"
-Fly2File = baseDir + "/TOF_simulation.fly2"
+ResultsDir = r"C:\Users\proxi\Documents\coding\TOF_data"
+SimionDir = r"C:\Users\proxi\Documents\coding\TOF_ML\simulations\TOF_simulation"
+iobFileLoc = SimionDir + "/TOF_simulation.iob"
+recordingFile = SimionDir + "/TOF_simulation.rec"
+potArrLoc = SimionDir + "/copiedArray.PA0"
+lua_path = SimionDir + "/TOF_simulation.lua"
+Fly2File = SimionDir + "/TOF_simulation.fly2"
 
 
 def generate_fly2File2(filenameToWriteTo, max_energy, numParticles=100, max_angle=3):
@@ -92,23 +93,21 @@ def run_simulation(args):
 
     try:
         # Copy necessary files to the temporary directory
-        iobFileLoc = shutil.copy(os.path.join(baseDir, "TOF_simulation.iob"), temp_dir)
-        recordingFile = shutil.copy(os.path.join(baseDir, "TOF_simulation.rec"), temp_dir)
-        lua_path = shutil.copy(os.path.join(baseDir, "TOF_simulation.lua"), temp_dir)
-        Fly2File = shutil.copy(os.path.join(baseDir, "TOF_simulation.fly2"), temp_dir)
+        iobFileLoc = shutil.copy(os.path.join(SimionDir, "TOF_simulation.iob"), temp_dir)
+        recordingFile = shutil.copy(os.path.join(SimionDir, "TOF_simulation.rec"), temp_dir)
+        lua_path = shutil.copy(os.path.join(SimionDir, "TOF_simulation.lua"), temp_dir)
+        Fly2File = shutil.copy(os.path.join(SimionDir, "TOF_simulation.fly2"), temp_dir)
 
         # Copy all PA files to the temporary directory
-        for pa_file in os.listdir(baseDir):
+        for pa_file in os.listdir(SimionDir):
             if pa_file.startswith("copiedArray.PA"):
-                shutil.copy(os.path.join(baseDir, pa_file), temp_dir)
+                shutil.copy(os.path.join(SimionDir, pa_file), temp_dir)
 
         potArrLoc = os.path.join(temp_dir, "copiedArray.PA0")
 
         new_voltages, resistor_values = calculateVoltage_NelderMeade(retardation, voltage_front=0,
                                                                      mid1_ratio=mid1_ratio,
                                                                      mid2_ratio=mid2_ratio)
-        blade22 = new_voltages[22]
-        blade25 = new_voltages[25]
         generate_fly2File2(Fly2File, float(ke), numParticles=1000, max_angle=5)
 
         if mid1_ratio < 0:
@@ -130,7 +129,7 @@ def run_simulation(args):
             r = retardation
             rsign = "pos"
 
-        output_dir = os.path.join(baseDir, "simion_output", "collection_efficiency")
+        output_dir = os.path.join(baseDir, f"R{np.abs(retardation)}")
         if not os.path.exists(output_dir):
             os.makedirs(output_dir)
 
@@ -173,14 +172,16 @@ def check_existing_simulation(args):
         r = retardation
         rsign = "pos"
 
-    output_dir = os.path.join(baseDir, "simion_output", "collection_efficiency", f"R{np.abs(retardation)}")
+    # Construct the output path based on the structure provided
+    output_dir = os.path.join(baseDir, f"R{np.abs(retardation)}")
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
 
     if ke == 0.1:
-        simion_output_path = os.path.join(output_dir, f"sim_{rsign}_R{r}_{m1sign}_{mid1}_{m2sign}_{mid2}_0.txt")
+        simion_output_path = os.path.join(output_dir, f"sim_{rsign}_R{r}_{m1sign}_{mid1}_{m2sign}_{mid2}_0.h5")
     else:
-        simion_output_path = os.path.join(output_dir, f"sim_{rsign}_R{r}_{m1sign}_{mid1}_{m2sign}_{mid2}_{int(ke)}.txt")
+        simion_output_path = os.path.join(output_dir,
+                                          f"sim_{rsign}_R{r}_{m1sign}_{mid1}_{m2sign}_{mid2}_{int(ke)}.h5")
 
     if os.path.exists(simion_output_path) and os.path.getsize(simion_output_path) >= 89000:
         return None
@@ -206,9 +207,6 @@ if __name__ == '__main__':
             return string
         else:
             raise argparse.ArgumentTypeError(f"readable_dir:{string} is not a valid path")
-
-
-    baseDir = "C:/Users/proxi/Documents/coding/TOF_ML/simulations/TOF_simulation"
 
     parser = argparse.ArgumentParser(
         description='code for running Simion simulations for collection efficiency analysis')
@@ -243,7 +241,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     # Prepare list of all combinations
-    simulation_args = [(retardation, mid1_ratio, mid2_ratio, ke, baseDir)
+    simulation_args = [(retardation, mid1_ratio, mid2_ratio, ke, ResultsDir)
                        for retardation in args.retardation
                        for mid1_ratio in args.mid1_ratio
                        for mid2_ratio in args.mid2_ratio

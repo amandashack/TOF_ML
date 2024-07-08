@@ -163,16 +163,19 @@ def plot_parallel_coordinates(cuts, titles):
     plt.show()
 
 
-def plot_ks_score(data_masked, R=13.74, bootstrap=None, directory=None, filename=None):
+def plot_ks_score(data_masked, mid1, mid2, R=13.74, bootstrap=None, directory=None, filename=None, kinetic_energies=None):
     """
     Plot particle distributions for each retardation, colored by kinetic energy.
 
     Parameters:
     data_masked (list of dict): Masked data loaded by DS_positive.
+    mid1 (float): Mid1 value to display in the title.
+    mid2 (float): Mid2 value to display in the title.
     R (float): Radius for the uniform distribution.
     bootstrap (int): Number of bootstrap samples to use for calculating KS scores.
     directory (str): Directory to save the PDF file.
     filename (str): Filename for the PDF file.
+    kinetic_energies (list or None): List of specific kinetic energies to include in the plot.
 
     Returns:
     dict: A dictionary of average KS scores for each retardation.
@@ -193,17 +196,28 @@ def plot_ks_score(data_masked, R=13.74, bootstrap=None, directory=None, filename
         # Filter data for the current retardation
         filtered_data = [entry for entry in data_masked if entry['retardation'] == retardation]
 
+        # Filter data by specified kinetic energies if provided
+        if kinetic_energies is not None:
+            filtered_data = [entry for entry in filtered_data if entry['kinetic_energy'] in kinetic_energies]
+            for ke in kinetic_energies:
+                if not any(entry['kinetic_energy'] == ke for entry in filtered_data):
+                    print(f"ke {ke} is not in the list of kinetic energies")
+
+        if not filtered_data:
+            continue
+
         # Get unique kinetic energies and create a color map
-        kinetic_energies = sorted(list(set(entry['kinetic_energy'] for entry in filtered_data)))
-        norm = Normalize(vmin=min(kinetic_energies), vmax=max(kinetic_energies))
+        kinetic_energies_in_data = sorted(list(set(entry['kinetic_energy'] for entry in filtered_data)))
+        norm = Normalize(vmin=min(kinetic_energies_in_data), vmax=max(kinetic_energies_in_data))
         cmap = plt.cm.viridis
+
+        ks_score_dict = {}
 
         for entry in filtered_data:
             y_pos = entry['y_tof']
             num_points = len(y_pos)
 
             if num_points == 0:
-                print()
                 continue
 
             theta_uniform = np.random.uniform(0, 2 * np.pi, num_points)
@@ -237,14 +251,19 @@ def plot_ks_score(data_masked, R=13.74, bootstrap=None, directory=None, filename
                 ks_scores[retardation] = []
             ks_scores[retardation].append(ks_score)
 
+            if kinetic_energy not in ks_score_dict:
+                ks_score_dict[kinetic_energy] = []
+            ks_score_dict[kinetic_energy].append(ks_score)
+
             color = cmap(norm(kinetic_energy))
             ax[0].scatter(x_uniform, y_uniform, alpha=0.5, color=color,
-                       label=f'KE: {kinetic_energy:.2f}' if len(filtered_data) <= 10 else None)
+                          label=f'KE: {kinetic_energy:.2f}, KS: {ks_score:.2f}' if len(filtered_data) <= 10 else None)
             ax[1].scatter(x_final, y_final, alpha=0.5, color=color,
-                       label=f'KE: {kinetic_energy:.2f}' if len(filtered_data) <= 10 else None)
+                          label=f'KE: {kinetic_energy:.2f}, KS: {ks_score:.2f}' if len(filtered_data) <= 10 else None)
 
-        fig.suptitle(f'Distribution for Retardation = {retardation:.2f} giving '
-                     f'ks score = {np.nanmean(ks_scores[retardation])}')
+        title_sign = '+' if retardation >= 0 else '-'
+        fig.suptitle(f'Detector distributions for {title_sign}{abs(retardation):.2f} V and {mid1} at Blade 22 and {mid2} at Blade 25')
+
         ax[0].set_xlabel('X')
         ax[0].set_ylabel('Y')
         ax[0].set_aspect('equal', 'box')
@@ -254,13 +273,15 @@ def plot_ks_score(data_masked, R=13.74, bootstrap=None, directory=None, filename
         # Add legend only if there are valid labels
         handles, labels = ax[1].get_legend_handles_labels()
         if handles:
-            ax[1].legend()
+            legend_order = sorted(zip(handles, labels), key=lambda x: float(x[1].split()[1][:-1]))
+            ordered_handles, ordered_labels = zip(*legend_order)
+            ax[1].legend(ordered_handles, ordered_labels, loc='upper right')
 
         # Adjust layout to make space for the colorbar
-        plt.tight_layout(rect=[0, 0, 0.85, 1])
+        plt.tight_layout(rect=[0, 0, 0.9, 1])
 
         # Create the colorbar outside the plot
-        cbar_ax = fig.add_axes([0.9, 0.15, 0.03, 0.7])
+        cbar_ax = fig.add_axes([0.9, 0.15, 0.03, 0.6])
         sm = ScalarMappable(norm=norm, cmap=cmap)
         sm.set_array([])
         cbar = plt.colorbar(sm, cax=cbar_ax, label='Kinetic Energy')
@@ -278,6 +299,7 @@ def plot_ks_score(data_masked, R=13.74, bootstrap=None, directory=None, filename
     avg_ks_scores = {ret: np.nanmean(scores) for ret, scores in ks_scores.items()}
 
     return avg_ks_scores
+
 
 def plot_heatmap(collection_efficiency):
     data = []
@@ -354,3 +376,4 @@ def plot_energy_resolution(gradients, retardation, mid1_range, mid2_range):
 
     plt.tight_layout()
     plt.show()
+
