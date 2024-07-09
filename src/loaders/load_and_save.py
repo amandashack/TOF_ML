@@ -19,25 +19,38 @@ class DataGenerator:
             # Replace zeros with a small value to avoid divide by zero in log
             input_batch[:, 0] = np.where(input_batch[:, 0] <= 0, 1e-10, input_batch[:, 0])
             input_batch[:, 0] = np.log(input_batch[:, 0])
+
+            # Interaction terms and higher-order polynomial terms
             input_batch = np.column_stack([
                 input_batch,
                 input_batch[:, 0] * input_batch[:, 1],  # pass energy * elevation
-                input_batch[:, 0] * input_batch[:, 3],  # pass_energy * mid1
-                input_batch[:, 0] * input_batch[:, 4],  # pass_energy * mid2
+                input_batch[:, 0] * input_batch[:, 3],  # pass energy * mid1
+                input_batch[:, 0] * input_batch[:, 4],  # pass energy * mid2
                 input_batch[:, 1] * input_batch[:, 2],  # elevation * retardation
                 input_batch[:, 1] * input_batch[:, 3],  # elevation * mid1
                 input_batch[:, 1] * input_batch[:, 4],  # elevation * mid2
                 input_batch[:, 2] * input_batch[:, 3],  # retardation * mid1
                 input_batch[:, 2] * input_batch[:, 4],  # retardation * mid2
+                input_batch[:, 0] ** 2,                 # pass energy ^ 2
+                input_batch[:, 1] ** 2,                 # elevation ^ 2
+                input_batch[:, 2] ** 2,                 # retardation ^ 2
+                input_batch[:, 3] ** 2,                 # mid1 ^ 2
+                input_batch[:, 4] ** 2                  # mid2 ^ 2
                 input_batch[:, 0] * input_batch[:, 0]  # pass energy * pass energy
             ])
 
-            output_batch = batch[:, 5:]
+            output_batch = batch[:, 5:8]  # Including TOF, y_tof, and mask
+            output_batch[:, 0] = np.where(output_batch[:, 0] <= 0, 1e-10, output_batch[:, 0])
             output_batch[:, 0] = np.log(output_batch[:, 0])
 
             # Replace NaNs with the log of a small value (1e-10)
             input_batch = np.nan_to_num(input_batch, nan=np.log(1e-10))
             output_batch = np.nan_to_num(output_batch, nan=np.log(1e-10))
+
+            mask = batch[:, 7].astype(bool)  # Use the mask to filter the data
+
+            input_batch = input_batch[mask]
+            output_batch = output_batch[mask]
 
             if len(input_batch) > 0:  # Only yield if there are valid rows remaining
                 yield input_batch, output_batch  # Split into inputs and outputs

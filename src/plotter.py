@@ -18,16 +18,15 @@ def get_cmap(n, name='seismic'):
     return plt.cm.get_cmap(name, n)
 
 
-def multi_plot(spec_dict):
+def multi_plot(spec_dict, x_axis='pass_energy', y_axis='collection_efficiency'):
     n = len(spec_dict.keys())
-    h = math.ceil(n/3)
     row = math.ceil(n/3)
-    f = plt.figure(figsize=(15,5*row))
+    f = plt.figure(figsize=(row*5, 15))
     for i in range(1, n+1):
         keys = list(spec_dict.keys())
         spec = spec_dict[keys[i-1]]
         ax = f.add_subplot(row, 3, i)
-        spec.plot(x='slit', y='photon_energy', ax=ax, add_colorbar=False, cmap='viridis')
+        spec.plot(x=x_axis, y=y_axis, ax=ax, add_colorbar=False, cmap='viridis')
         ax.set_xlabel('$k_{x}$ ($\AA^{-1}$)', fontsize=18)
         ax.set_ylabel('hv', fontsize=18)
         ax.set_title(keys[i-1], fontsize=20)
