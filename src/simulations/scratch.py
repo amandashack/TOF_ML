@@ -169,14 +169,14 @@ def main(xar, mid1_ratios, mid2_ratios):
 
 
 path = r"C:\Users\proxi\Documents\coding\TOF_data"
-ce_xar = load_xarray(path, "gradients")
+ce_xar = load_xarray(path, "avg_tof")
 retardations = [10, 5, 3, 1, 0, -1, -3, -5, -10]
 mid1_ratios = [0.08, 0.11248, 0.2, 0.8]  # Example list of mid1_ratio
 mid2_ratios = [0.1354, 0.3, 0.4]  # Example list of mid2_ratio
 d = r"C:\Users\proxi\Documents\coding\TOF_ML\figures\shack"
 #plot_xar_instances(ce_xar, retardations, mid1_ratios, mid2_ratios,
 #                   directory=d, filename="collection_efficiency_comb")
-plot_imagetool(ce_xar.sel({'retardation': 9}))
+plot_imagetool(ce_xar.sel({'kinetic_energy': 0.1}))
 
 #data_loader = DS_positive()
 #data_loader.load_data('simulation_data.json', xtof_range=(403.6, np.inf), ytof_range=(-13.74, 13.74),

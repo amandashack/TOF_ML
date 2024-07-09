@@ -1,5 +1,5 @@
 from pyqtgraph.Qt import QtGui, QtWidgets
-import arpys
+from pyimagetool import ImageTool
 import numpy as np
 import matplotlib.pyplot as plt
 import os
@@ -27,7 +27,7 @@ class PlotWindow(QtWidgets.QWidget):
 
     def initUI(self):
         layout = QtWidgets.QVBoxLayout()
-        plot_widget = self.plot_func(*self.args, **self.kwargs)
+        plot_widget = self.plot_func(*self.args, **self.kwargs, layout=ImageTool.LayoutComplete)
         layout.addWidget(plot_widget)
         self.setLayout(layout)
         self.setWindowTitle('Plot')
@@ -40,7 +40,7 @@ def plot_imagetool(*args):
         # if it does not exist then a QApplication is created
         app = QtWidgets.QApplication([])
     for arg in args:
-        window = PlotWindow(arg.arpes.plot)
+        window = PlotWindow(ImageTool, arg)
         app.exec_()
         window.close()
 

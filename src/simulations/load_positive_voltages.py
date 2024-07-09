@@ -234,7 +234,7 @@ class DS_positive():
             ]
 
             if len(kinetic_energies) > 1:
-                gradient = np.gradient(avg_tof_values, kinetic_energies)
+                gradient = np.gradient(np.array(avg_tof_values), np.array(kinetic_energies))
                 error = []
 
                 # Propagate errors
@@ -249,7 +249,7 @@ class DS_positive():
                         # Central difference
                         error.append((var_tof_values[i + 1] + var_tof_values[i - 1]) / 2)
 
-                gradients[(retardation, mid1, mid2)] = [avg_tof_values, kinetic_energies, gradient, error]
+                gradients[(retardation, mid1, mid2)] = [avg_tof_values, gradient, error]
         print("Finished making gradients dict")
         return gradients
 
@@ -267,7 +267,36 @@ class DS_positive():
             ridx = retardation_indices[retardation]
             mid1_idx = mid1_indices[mid1]
             mid2_idx = mid2_indices[mid2]
-            resolution_data[ridx, mid1_idx, mid2_idx, :] = gradient[2]
+            resolution_data[ridx, mid1_idx, mid2_idx, :] = gradient[1]
+
+        resolution_xarray = xr.DataArray(
+            resolution_data,
+            coords=[
+                r_coord,
+                self.mid1_ratios,
+                self.mid2_ratios,
+                self.kinetic_energies
+            ],
+            dims=["retardation", "mid1_ratio", "mid2_ratio", "kinetic_energy"]
+        )
+
+        return resolution_xarray
+
+    def create_avg_tof_xarray(self, resolution_dict):
+        r_coord = list(range(np.min(self.retardation), np.max(self.retardation)+1))
+        resolution_data = np.full(
+            (len(r_coord), len(self.mid1_ratios), len(self.mid2_ratios), len(self.kinetic_energies)),
+            np.nan
+        )
+        retardation_indices = {val: idx for idx, val in enumerate(r_coord)}
+        mid1_indices = {val: idx for idx, val in enumerate(self.mid1_ratios)}
+        mid2_indices = {val: idx for idx, val in enumerate(self.mid2_ratios)}
+
+        for (retardation, mid1, mid2), gradient in resolution_dict.items():
+            ridx = retardation_indices[retardation]
+            mid1_idx = mid1_indices[mid1]
+            mid2_idx = mid2_indices[mid2]
+            resolution_data[ridx, mid1_idx, mid2_idx, :] = gradient[0]
 
         resolution_xarray = xr.DataArray(
             resolution_data,
@@ -366,17 +395,17 @@ if __name__ == '__main__':
     # Assuming the files are located in a directory named 'data_files' in the current working directory.
     data_loader = DS_positive()
     data_loader.load_data('simulation_data.json', xtof_range=(403.6, np.inf), ytof_range=(-13.74, 13.74),
-                          retardation_range=(-10, 10))#, mid1_range=(0.11248, 0.11248), mid2_range=(0.1354, 0.1354))
-    plot_ks_score(data_loader.data_masked, 0.11248, 0.1354, R=13.74, bootstrap=10, directory=None, filename=None,
-                  kinetic_energies=[0.1, 4, 9, 12, 18])
+                          retardation_range=(-10, 10), overwrite=False)#, mid1_range=(0.11248, 0.11248), mid2_range=(0.1354, 0.1354))
+    #plot_ks_score(data_loader.data_masked, 0.11248, 0.1354, R=13.74, bootstrap=10, directory=None, filename=None,
+    #              kinetic_energies=[0.1, 4, 9, 12, 18])
     #ds = data_loader.create_combined_array()
     #h5_filename = r"C:\Users\proxi\Documents\coding\TOF_ML\src\simulations\combined_data.h5"
     #save_to_h5(ds, h5_filename)
     # Create the gradient array
-    #gradients = data_loader.calculate_energy_resolution()
-    #grad_xar = data_loader.create_energy_resolution_xarray(gradients)
-    #save_xarray(grad_xar, r"C:\Users\proxi\Documents\coding\TOF_data",
-    #            "gradients")
+    gradients = data_loader.calculate_energy_resolution()
+    grad_xar = data_loader.create_avg_tof_xarray(gradients)
+    save_xarray(grad_xar, r"C:\Users\proxi\Documents\coding\TOF_data",
+                "avg_tof")
 
 
     #gradients_array = gradients_to_numpy(gradients)

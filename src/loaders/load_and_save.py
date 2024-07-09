@@ -35,7 +35,7 @@ class DataGenerator:
                 input_batch[:, 1] ** 2,                 # elevation ^ 2
                 input_batch[:, 2] ** 2,                 # retardation ^ 2
                 input_batch[:, 3] ** 2,                 # mid1 ^ 2
-                input_batch[:, 4] ** 2                  # mid2 ^ 2
+                input_batch[:, 4] ** 2,                  # mid2 ^ 2
                 input_batch[:, 0] * input_batch[:, 0]  # pass energy * pass energy
             ])
 
