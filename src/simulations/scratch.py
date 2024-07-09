@@ -169,7 +169,7 @@ def main(xar, mid1_ratios, mid2_ratios):
 
 
 path = r"C:\Users\proxi\Documents\coding\TOF_data"
-ce_xar = load_xarray(path, "collection_efficiency")
+ce_xar = load_xarray(path, "gradients")
 retardations = [10, 5, 3, 1, 0, -1, -3, -5, -10]
 mid1_ratios = [0.08, 0.11248, 0.2, 0.8]  # Example list of mid1_ratio
 mid2_ratios = [0.1354, 0.3, 0.4]  # Example list of mid2_ratio

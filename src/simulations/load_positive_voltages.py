@@ -210,6 +210,7 @@ class DS_positive():
         r1 = 999
         for (retardation, mid1, mid2) in self.collection_efficiency.keys():
             if r1 != retardation:
+                # used for printing progress
                 r1 = retardation
                 print(retardation)
             kinetic_energies = sorted(self.collection_efficiency[(retardation, mid1, mid2)].keys())
@@ -365,8 +366,7 @@ if __name__ == '__main__':
     # Assuming the files are located in a directory named 'data_files' in the current working directory.
     data_loader = DS_positive()
     data_loader.load_data('simulation_data.json', xtof_range=(403.6, np.inf), ytof_range=(-13.74, 13.74),
-                          retardation_range=(9, 9), mid1_range=(0.11248, 0.11248), mid2_range=(0.1354, 0.1354),
-                          overwrite=False)
+                          retardation_range=(-10, 10))#, mid1_range=(0.11248, 0.11248), mid2_range=(0.1354, 0.1354))
     plot_ks_score(data_loader.data_masked, 0.11248, 0.1354, R=13.74, bootstrap=10, directory=None, filename=None,
                   kinetic_energies=[0.1, 4, 9, 12, 18])
     #ds = data_loader.create_combined_array()
