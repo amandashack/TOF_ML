@@ -20,6 +20,48 @@ from utilities.calculation_tools import calculate_ks_score, normalize_3D
 #location = r"C:\Users\proxi\Documents\coding\TOF_ML\simulations\TOF_simulation\simion_output\collection_efficiency"
 #efficiency_xarray = load_xarray(location, "collection_efficiency")
 
+def plot_xar_single_axis(xar, retardations, ratios, value_def="Collection Efficiency", directory=None, filename=None):
+    colors = plt.cm.viridis(np.linspace(0, 1, len(retardations)))
+    linestyles = ['-', '--', '-.', ':', (0, (3, 1, 1, 1)), (0, (5, 1))]
+    lineweights = np.linspace(1, 3, len(retardations))  # Adjust line weights from 1 to 3
+
+    if directory and filename:
+        output_path = os.path.join(directory, f'{filename}.pdf')
+        pdf_pages = PdfPages(output_path)
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+
+    for i, retardation in enumerate(retardations):
+        for j, (mid1_ratio, mid2_ratio) in enumerate(ratios):
+            cut = xar.sel({'retardation': retardation, 'mid1_ratio': mid1_ratio, 'mid2_ratio': mid2_ratio})
+            cut.plot(ax=ax, color=colors[i], linestyle=linestyles[j % len(linestyles)],
+                     linewidth=lineweights[i], label=f'Ret: {retardation}\nM1: {mid1_ratio}, M2: {mid2_ratio}')
+
+    ax.set_title(f'{value_def} vs. Kinetic Energy')
+    ax.set_xlabel('Kinetic Energy (eV)')
+    ax.set_ylabel(f'{value_def}')
+    ax.set_ylim([0, 1])
+    ax.grid(True)
+
+    # Create custom legend entries
+    handles = [plt.Line2D([0], [0], color=colors[i], linestyle=linestyles[j % len(linestyles)], linewidth=lineweights[i],
+                          label=f'Ret: {retardation}\nM1: {mid1_ratio}, M2: {mid2_ratio}')
+               for i, retardation in enumerate(retardations)
+               for j, (mid1_ratio, mid2_ratio) in enumerate(ratios)]
+
+    # Adding legends outside the plot
+    ax.legend(handles=handles, loc='center left', bbox_to_anchor=(1, 0.5), fontsize='medium')
+
+    plt.tight_layout()
+
+    if directory and filename:
+        pdf_pages.savefig(fig, bbox_inches='tight')
+        plt.close()
+        pdf_pages.close()
+    else:
+        plt.show()
+
+
 def plot_collection_efficiency(xar, retardations, mid1_ratios, mid2_ratios, directory=None, filename=None):
     colors = plt.cm.viridis(np.linspace(0, 1, len(mid1_ratios)))
     linestyles = ['-', '--', '-.', ':', (0, (3, 1, 1, 1)), (0, (5, 1))]
@@ -87,10 +129,10 @@ def plot_xar_instances(xar, retardations, mid1_ratios, mid2_ratios, value_def="C
         fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
 
         if retardation > 0:
-            ke = 0.1
+            ke = 10
             title_retardation = f'+{retardation} eV Retardation'
         else:
-            ke = np.abs(retardation) + 2
+            ke = np.abs(retardation) + 10
             title_retardation = f'-{np.abs(retardation)} eV Retardation'
 
         # First plot: mid1 and mid2 as x and y axes for a specific kinetic energy above the retardation
@@ -169,14 +211,16 @@ def main(xar, mid1_ratios, mid2_ratios):
 
 
 path = r"C:\Users\proxi\Documents\coding\TOF_data"
-ce_xar = load_xarray(path, "avg_tof")
-retardations = [10, 5, 3, 1, 0, -1, -3, -5, -10]
+ce_xar = load_xarray(path, "collection_efficiency")
+retardations = [0, -1, -5, -10]
 mid1_ratios = [0.08, 0.11248, 0.2, 0.8]  # Example list of mid1_ratio
 mid2_ratios = [0.1354, 0.3, 0.4]  # Example list of mid2_ratio
+ratios = [(0.11248, 0.1354), (0.2, 0.3), (0.5, 0.5), (0.8, 0.7), (0.9, 0.9)]
 d = r"C:\Users\proxi\Documents\coding\TOF_ML\figures\shack"
-#plot_xar_instances(ce_xar, retardations, mid1_ratios, mid2_ratios,
-#                   directory=d, filename="collection_efficiency_comb")
-plot_imagetool(ce_xar.sel({'kinetic_energy': 0.1}))
+#plot_xar_instances(ce_xar, retardations, mid1_ratios, mid2_ratios)
+plot_xar_single_axis(ce_xar, retardations, ratios,
+                   directory=d, filename="coll_eff_neg")
+#plot_imagetool(ce_xar.sel({'kinetic_energy': 0.1}))
 
 #data_loader = DS_positive()
 #data_loader.load_data('simulation_data.json', xtof_range=(403.6, np.inf), ytof_range=(-13.74, 13.74),

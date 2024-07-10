@@ -27,7 +27,7 @@ def create_model(params, steps_per_execution):
     learning_rate = float(params['learning_rate'])
     optimizer = params['optimizer']
 
-    inputs = tf.keras.Input(shape=(14,), name="inputs")
+    inputs = tf.keras.Input(shape=(18,), name="inputs")
     x = tf.keras.layers.Dense(layer_size, name="dense_1")(inputs)
     x = tf.keras.layers.LeakyReLU(alpha=0.02, name="leakyrelu_1")(x)
     x = tf.keras.layers.BatchNormalization(name="batchnorm_1")(x)
@@ -112,7 +112,7 @@ class LRFinder(tf.keras.callbacks.Callback):
 
 
 def run_model(train_dataset, val_dataset, params, checkpoint_dir):
-    epochs = 5
+    epochs = 200
     steps_per_epoch = params['steps_per_epoch']
     validation_steps = params['validation_steps']
     steps_per_execution = steps_per_epoch // 10

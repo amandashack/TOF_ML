@@ -402,11 +402,13 @@ if __name__ == '__main__':
     #h5_filename = r"C:\Users\proxi\Documents\coding\TOF_ML\src\simulations\combined_data.h5"
     #save_to_h5(ds, h5_filename)
     # Create the gradient array
-    gradients = data_loader.calculate_energy_resolution()
-    grad_xar = data_loader.create_avg_tof_xarray(gradients)
-    save_xarray(grad_xar, r"C:\Users\proxi\Documents\coding\TOF_data",
-                "avg_tof")
-
+    #gradients = data_loader.calculate_energy_resolution()
+    #grad_xar = data_loader.create_avg_tof_xarray(gradients)
+    #save_xarray(grad_xar, r"C:\Users\proxi\Documents\coding\TOF_data",
+    #            "avg_tof")
+    # create numpy array for model training
+    combined_array = data_loader.create_combined_array()
+    save_to_h5(combined_array, 'combined_masked')
 
     #gradients_array = gradients_to_numpy(gradients)
 

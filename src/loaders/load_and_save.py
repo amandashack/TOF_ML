@@ -5,8 +5,9 @@ import numpy as np
 
 
 class DataGenerator:
-    def __init__(self, data, batch_size=100):
+    def __init__(self, data, scalers, batch_size=100):
         self.data = data
+        self.scalers = scalers
         self.batch_size = batch_size
 
     def __call__(self):
@@ -14,34 +15,14 @@ class DataGenerator:
         i = 0
         while i < total_samples:
             batch = self.data[i:i + self.batch_size, :]
-            input_batch = batch[:, :5]
+            input_batch = self.calculate_interactions(batch[:, :5])
 
-            # Replace zeros with a small value to avoid divide by zero in log
-            input_batch[:, 0] = np.where(input_batch[:, 0] <= 0, 1e-10, input_batch[:, 0])
-            input_batch[:, 0] = np.log(input_batch[:, 0])
+            output_batch = batch[:, 5:6]  # time_of_flight
+            output_batch = np.where(output_batch <= 0, 1e-10, output_batch)
+            output_batch = np.log(output_batch)
 
-            # Interaction terms and higher-order polynomial terms
-            input_batch = np.column_stack([
-                input_batch,
-                input_batch[:, 0] * input_batch[:, 1],  # pass energy * elevation
-                input_batch[:, 0] * input_batch[:, 3],  # pass energy * mid1
-                input_batch[:, 0] * input_batch[:, 4],  # pass energy * mid2
-                input_batch[:, 1] * input_batch[:, 2],  # elevation * retardation
-                input_batch[:, 1] * input_batch[:, 3],  # elevation * mid1
-                input_batch[:, 1] * input_batch[:, 4],  # elevation * mid2
-                input_batch[:, 2] * input_batch[:, 3],  # retardation * mid1
-                input_batch[:, 2] * input_batch[:, 4],  # retardation * mid2
-                input_batch[:, 0] ** 2,                 # pass energy ^ 2
-                input_batch[:, 1] ** 2,                 # elevation ^ 2
-                input_batch[:, 2] ** 2,                 # retardation ^ 2
-                input_batch[:, 3] ** 2,                 # mid1 ^ 2
-                input_batch[:, 4] ** 2,                  # mid2 ^ 2
-                input_batch[:, 0] * input_batch[:, 0]  # pass energy * pass energy
-            ])
-
-            output_batch = batch[:, 5:8]  # Including TOF, y_tof, and mask
-            output_batch[:, 0] = np.where(output_batch[:, 0] <= 0, 1e-10, output_batch[:, 0])
-            output_batch[:, 0] = np.log(output_batch[:, 0])
+            # Apply scaling
+            input_batch = self.scale_input(input_batch)
 
             # Replace NaNs with the log of a small value (1e-10)
             input_batch = np.nan_to_num(input_batch, nan=np.log(1e-10))
@@ -56,6 +37,42 @@ class DataGenerator:
                 yield input_batch, output_batch  # Split into inputs and outputs
 
             i += self.batch_size
+
+    def calculate_interactions(self, input_batch):
+        # Replace zeros with a small value to avoid divide by zero in log
+        input_batch[:, 0] = np.where(input_batch[:, 0] <= 0, 1e-10, input_batch[:, 0])
+        input_batch[:, 0] = np.log(input_batch[:, 0])
+
+        # Interaction terms and higher-order polynomial terms
+        interaction_terms = np.column_stack([
+            input_batch,
+            input_batch[:, 0] * input_batch[:, 1],  # pass energy * elevation
+            input_batch[:, 0] * input_batch[:, 3],  # pass energy * mid1
+            input_batch[:, 0] * input_batch[:, 4],  # pass energy * mid2
+            input_batch[:, 1] * input_batch[:, 2],  # elevation * retardation
+            input_batch[:, 1] * input_batch[:, 3],  # elevation * mid1
+            input_batch[:, 1] * input_batch[:, 4],  # elevation * mid2
+            input_batch[:, 2] * input_batch[:, 3],  # retardation * mid1
+            input_batch[:, 2] * input_batch[:, 4],  # retardation * mid2
+            input_batch[:, 0] ** 2,                 # pass energy ^ 2
+            input_batch[:, 1] ** 2,                 # elevation ^ 2
+            input_batch[:, 2] ** 2,                 # retardation ^ 2
+            input_batch[:, 3] ** 2,                 # mid1 ^ 2
+            input_batch[:, 4] ** 2                  # mid2 ^ 2
+        ])
+        return interaction_terms
+
+    def scale_input(self, input_batch):
+        input_batch[:, 0] = self.scalers['log_standard'].transform(input_batch[:, :1]).flatten()
+        input_batch[:, 1:3] = self.scalers['robust'].transform(input_batch[:, 1:3])
+        input_batch[:, 3:] = self.scalers['maxabs'].transform(input_batch[:, 3:])
+        return input_batch
+
+    def inverse_scale_output(self, predictions):
+        predictions = predictions.copy()
+        predictions[:, 0] = np.exp(self.scalers['log_standard'].inverse_transform(predictions[:, :1]).flatten())  # Inverse log pass energy
+        return predictions
+
 
 
 def save_to_h5(array, filename):
@@ -99,10 +116,13 @@ def shuffle_h5(filename, out_filename):
         f.create_dataset('data', data=array)
 
 if __name__ == '__main__':
-    h5_filename = r"C:\Users\proxi\Documents\coding\TOF_ML\src\simulations\combined_data.h5"
-    out_filename = r"C:\Users\proxi\Documents\coding\TOF_ML\src\simulations\combined_data_shuffled.h5"
+    h5_filename = r"C:\Users\proxi\Documents\coding\TOF_ML_backup\src\simulations\combined_data.h5"
+    out_filename = r"C:\Users\proxi\Documents\coding\TOF_ML_backup\src\simulations\combined_data_shuffled.h5"
     #shuffle_h5(h5_filename, out_filename)
-    data = np.random.rand(1000, 8)
+    #data = np.random.rand(1000, 8)
+    with h5py.File(h5_filename, 'r') as hf:
+        data = hf["data"][:256]
+    print(data)
     gen = DataGenerator(data, batch_size=256)
     for x, y in gen():
         print("Inputs:", x.shape)

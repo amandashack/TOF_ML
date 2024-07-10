@@ -123,19 +123,20 @@ def update_json_with_new_files(original_json, new_files):
         json.dump(data, file, indent=4)
 
 # Paths
-base_dir = r'C:\Users\proxi\Documents\coding\TOF_ML\simulations\TOF_simulation\simion_output\collection_efficiency'
-json_file_path = 'simulation_data.json'  # Update this to the path of your JSON file
+#base_dir = r'C:\Users\proxi\Documents\coding\TOF_ML\simulations\TOF_simulation\simion_output\collection_efficiency'
+#json_file_path = 'simulation_data.json'  # Update this to the path of your JSON file
 
 # Create or update the JSON file with all filenames
-create_json_from_filenames(base_dir, json_file_path)
+#create_json_from_filenames(base_dir, json_file_path)
 
 # Organize data and create new H5 files
-organized_data = organize_data(json_file_path)
-new_files = create_new_h5_files(organized_data)
+#organized_data = organize_data(json_file_path)
+#new_files = create_new_h5_files(organized_data)
 
 # Update JSON with new files
-update_json_with_new_files(json_file_path, new_files)
+#update_json_with_new_files(json_file_path, new_files)
 
-print("New H5 files created and JSON file updated successfully.")
+#print("New H5 files created and JSON file updated successfully.")
+
 
 
