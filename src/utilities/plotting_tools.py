@@ -1,7 +1,6 @@
 from pyqtgraph.Qt import QtGui, QtWidgets
 from pyimagetool import ImageTool
 import numpy as np
-import matplotlib.pyplot as plt
 import os
 import sys
 import pandas as pd
@@ -12,6 +11,9 @@ from scipy.stats import ks_2samp
 from matplotlib.colors import Normalize
 from matplotlib.cm import ScalarMappable
 from matplotlib.backends.backend_pdf import PdfPages
+import matplotlib.pyplot as plt
+import matplotlib
+matplotlib.rcParams['pdf.fonttype'] = 42
 from pandas.plotting import parallel_coordinates
 import xarray as xr
 sys.path.insert(0, os.path.abspath('..'))
@@ -44,10 +46,13 @@ def plot_imagetool(*args):
         app.exec_()
         window.close()
 
+def random_sample_data(data, sample_size):
+    indices = np.random.choice(len(data), min(sample_size, len(data)), replace=False)
+    return np.array(data)[indices]
 
 def plot_relation(ax, ds, x_param, y_param, x_label, y_label, title=None,
                   plot_log=False, retardation=None, kinetic_energy=None, mid1_ratio=None, mid2_ratio=None,
-                  collection_efficiency=None, ks_score=None, verbose=False):
+                  collection_efficiency=None, ks_score=None, verbose=False, sample_size=1000):
     def in_range(value, value_range):
         return value_range is None or (value_range[0] <= value <= value_range[1])
 
@@ -60,6 +65,7 @@ def plot_relation(ax, ds, x_param, y_param, x_label, y_label, title=None,
            and in_range(item['collection_efficiency'], collection_efficiency)
            and in_range(item['ks_score'], ks_score)
     ]
+    data_to_plot = random_sample_data(data_to_plot, sample_size)
 
     grouped_data = {}
     for item in data_to_plot:
@@ -68,17 +74,21 @@ def plot_relation(ax, ds, x_param, y_param, x_label, y_label, title=None,
             grouped_data[key] = []
         grouped_data[key].append(item)
 
-    colors = get_cmap(len(grouped_data))
+    # Sort grouped_data by retardation in descending order
+    sorted_grouped_data = sorted(grouped_data.items(), key=lambda x: x[0][0], reverse=True)
 
-    for idx, (key, group) in enumerate(grouped_data.items()):
+    colors = get_cmap(len(sorted_grouped_data))
+
+    for idx, (key, group) in enumerate(sorted_grouped_data):
         color = colors(idx)
         for item in group:
-            if not plot_log:
-                ax.scatter(item[x_param], item[y_param], alpha=0.6, color=color,
-                           label=f"R={item['retardation']}, M1={item['mid1_ratio']}, M2={item['mid2_ratio']}")
-            else:
-                ax.scatter(np.log2(item[x_param]), np.log2(item[y_param]), alpha=0.5, color=color,
-                           label=f"R={item['retardation']}, M1={item['mid1_ratio']}, M2={item['mid2_ratio']}")
+            if int(item['retardation']) in [10, 7, 3, 1, -1, -3, -7, -10]:
+                if not plot_log:
+                    ax.scatter(item[x_param], item[y_param], alpha=0.6, color=color,
+                               label=f"R={item['retardation']}, M1={item['mid1_ratio']}, M2={item['mid2_ratio']}")
+                else:
+                    ax.scatter(np.log2(item[x_param]), np.log2(item[y_param]), alpha=0.5, color=color,
+                               label=f"R={item['retardation']}")
 
     handles, labels = ax.get_legend_handles_labels()
     unique_labels = {label: handle for handle, label in zip(handles, labels)}
@@ -162,8 +172,8 @@ def plot_parallel_coordinates(cuts, titles):
     plt.tight_layout()
     plt.show()
 
-
-def plot_ks_score(data_masked, mid1, mid2, R=13.74, bootstrap=None, directory=None, filename=None, kinetic_energies=None):
+def plot_ks_score(data_masked, retardations, mid1, mid2, R=13.74, bootstrap=None, directory=None,
+                  filename=None, kinetic_energies=None):
     """
     Plot particle distributions for each retardation, colored by kinetic energy.
 
@@ -187,14 +197,12 @@ def plot_ks_score(data_masked, mid1, mid2, R=13.74, bootstrap=None, directory=No
         pdf_path = os.path.join(directory, filename)
         pdf_pages = PdfPages(pdf_path)
 
-    # Get unique retardations
-    retardations = sorted(list(set(entry['retardation'] for entry in data_masked)))
-
     for retardation in retardations:
         fig, ax = plt.subplots(1, 2, figsize=(12, 6))
 
         # Filter data for the current retardation
-        filtered_data = [entry for entry in data_masked if entry['retardation'] == retardation]
+        filtered_data = [entry for entry in data_masked if entry['retardation'] == retardation and
+                         entry['mid1_ratio'] == mid1 and entry['mid2_ratio'] == mid2]
 
         # Filter data by specified kinetic energies if provided
         if kinetic_energies is not None:
@@ -257,12 +265,12 @@ def plot_ks_score(data_masked, mid1, mid2, R=13.74, bootstrap=None, directory=No
 
             color = cmap(norm(kinetic_energy))
             ax[0].scatter(x_uniform, y_uniform, alpha=0.5, color=color,
-                          label=f'KE: {kinetic_energy:.2f}, KS: {ks_score:.2f}' if len(filtered_data) <= 10 else None)
+                          label=f'KE: {kinetic_energy:.2f}, KS: {ks_score:.2f}')
             ax[1].scatter(x_final, y_final, alpha=0.5, color=color,
-                          label=f'KE: {kinetic_energy:.2f}, KS: {ks_score:.2f}' if len(filtered_data) <= 10 else None)
+                          label=f'KE: {kinetic_energy:.2f}, KS: {ks_score:.2f}')
 
         title_sign = '+' if retardation >= 0 else '-'
-        fig.suptitle(f'Detector distributions for {title_sign}{abs(retardation):.2f} V and {mid1} at Blade 22 and {mid2} at Blade 25')
+        fig.suptitle(f'Detector distributions for {title_sign}{abs(retardation):.2f} eV and {mid1} at Blade 22 and {mid2} at Blade 25')
 
         ax[0].set_xlabel('X')
         ax[0].set_ylabel('Y')

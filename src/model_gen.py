@@ -14,39 +14,43 @@ def swish(x):
     return x * tf.sigmoid(x)
 
 
-# Custom loss function to incorporate mask
-def time_of_flight_loss(y_true, y_pred):
-    time_of_flight_true = y_true[:, 0]
-    loss = tf.square(time_of_flight_true - y_pred)
-    return tf.reduce_mean(loss)
-
-
 def create_model(params, steps_per_execution):
+    """
+        Model providing function:
+
+        Create Keras model with double curly brackets dropped-in as needed.
+        Return value has to be a valid python dictionary with two customary keys:
+            - loss: Specify a numeric evaluation metric to be minimized
+            - status: Just use STATUS_OK and see hyperopt documentation if not feasible
+        The last one is optional, though recommended, namely:
+            - model: specify the model just created so that we can later use it again.
+        """
     layer_size = int(params['layer_size'])
     dropout_rate = float(params['dropout'])
     learning_rate = float(params['learning_rate'])
     optimizer = params['optimizer']
 
-    inputs = tf.keras.Input(shape=(18,), name="inputs")
-    x = tf.keras.layers.Dense(layer_size, name="dense_1")(inputs)
-    x = tf.keras.layers.LeakyReLU(alpha=0.02, name="leakyrelu_1")(x)
-    x = tf.keras.layers.BatchNormalization(name="batchnorm_1")(x)
-    x = tf.keras.layers.Dropout(dropout_rate, name="dropout_1")(x)
+    model = Sequential()
 
-    x = tf.keras.layers.Dense(layer_size * 2, name="dense_2")(x)
-    x = tf.keras.layers.LeakyReLU(alpha=0.02, name="leakyrelu_2")(x)
-    x = tf.keras.layers.BatchNormalization(name="batchnorm_2")(x)
-    x = tf.keras.layers.Dropout(dropout_rate, name="dropout_2")(x)
+    # Input layer
+    model.add(Dense(layer_size, input_shape=(18,)))
+    model.add(LeakyReLU(alpha=0.02))
+    model.add(BatchNormalization())
+    model.add(Dropout(dropout_rate))
 
-    x = tf.keras.layers.Dense(layer_size, name="dense_3")(x)
-    x = tf.keras.layers.Activation(swish, name="swish")(x)
-    x = tf.keras.layers.BatchNormalization(name="batchnorm_3")(x)
-    x = tf.keras.layers.Dropout(dropout_rate, name="dropout_3")(x)
+    # Hidden layers
+    model.add(Dense(layer_size * 2))
+    model.add(LeakyReLU(alpha=0.02))
+    model.add(BatchNormalization())
+    model.add(Dropout(dropout_rate))
 
-    time_of_flight_output = tf.keras.layers.Dense(1, activation='linear',
-                                                  name='time_of_flight')(x)
+    model.add(Dense(layer_size))
+    model.add(Activation('swish'))
+    model.add(BatchNormalization())
+    model.add(Dropout(dropout_rate))
 
-    model = tf.keras.Model(inputs=inputs, outputs=[time_of_flight_output])
+    # Output layer
+    model.add(Dense(1, activation='linear'))
 
     if optimizer == "Adam":
         optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate)
@@ -54,7 +58,7 @@ def create_model(params, steps_per_execution):
         optimizer = tf.keras.optimizers.RMSprop(learning_rate=learning_rate)
 
     model.compile(
-        loss={'time_of_flight': time_of_flight_loss},
+        loss='mean_squared_error',
         optimizer=optimizer,
         steps_per_execution=steps_per_execution
     )
@@ -112,39 +116,24 @@ class LRFinder(tf.keras.callbacks.Callback):
 
 
 def run_model(train_dataset, val_dataset, params, checkpoint_dir):
-    epochs = 200
+    epochs = params.get('epochs', 50)
     steps_per_epoch = params['steps_per_epoch']
     validation_steps = params['validation_steps']
     steps_per_execution = steps_per_epoch // 10
 
     model = create_model(params, steps_per_execution)
 
-    # Define ReduceLROnPlateau callback
+    # Define callbacks
     reduce_lr = tf.keras.callbacks.ReduceLROnPlateau(
-        monitor='val_loss',  # Monitor validation loss
-        factor=0.1,  # Factor by which the learning rate will be reduced (e.g., 0.5 means halving the LR)
-        patience=5,  # Number of epochs with no improvement after which learning rate will be reduced
-        min_lr=1e-8,  # Minimum learning rate
-        verbose=1  # 1: Update messages, 0: No update messages
+        monitor='val_loss', factor=0.1, patience=3, min_lr=1e-8, verbose=1
     )
-
-    # Define EarlyStopping callback
     early_stop = tf.keras.callbacks.EarlyStopping(
-        monitor='val_loss',  # Monitor validation loss
-        patience=10,  # Number of epochs with no improvement after which training will be stopped
-        restore_best_weights=True  # Restore model weights to the best observed during training
+        monitor='val_loss', patience=6, restore_best_weights=True
     )
-
-    # Define ModelCheckpoint callback
     checkpoint_path = os.path.join(checkpoint_dir, "cp-{epoch:04d}.ckpt")
     checkpoint = tf.keras.callbacks.ModelCheckpoint(
-        filepath=checkpoint_path,
-        monitor='val_loss',  # Monitor validation loss
-        save_best_only=True,  # Save only the best model
-        save_weights_only=True,  # Save only the model weights
-        verbose=1  # Verbosity mode
+        filepath=checkpoint_path, monitor='val_loss', save_best_only=True, save_weights_only=True, verbose=1
     )
-
     memory_callback = MemoryUsageCallback()
 
     # Create checkpoint directory if it doesn't exist
@@ -156,12 +145,9 @@ def run_model(train_dataset, val_dataset, params, checkpoint_dir):
         train_dataset,
         epochs=epochs,
         validation_data=val_dataset,
-        steps_per_epoch=steps_per_epoch,  # Specify steps per epoch
-        validation_steps=validation_steps,  # Specify validation steps
-        verbose=1,  # Suppress the default verbose output
-        callbacks=[reduce_lr, early_stop, checkpoint, memory_callback]  # Add callbacks here
+        steps_per_epoch=steps_per_epoch,
+        validation_steps=validation_steps,
+        callbacks=[reduce_lr, early_stop, checkpoint, memory_callback]
     )
 
-    print(f"early_stop {early_stop.stopped_epoch}")
-    print(f"best_epoch {np.argmin(history.history['val_loss']) + 1}")
     return model, history

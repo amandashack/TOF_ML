@@ -1,12 +1,11 @@
-import matplotlib.pyplot as plt
 import numpy as np
-import h5py
 import os
 import sys
-import json
-import xarray as xr
 import itertools
 from load_positive_voltages import DS_positive
+import matplotlib.pyplot as plt
+import matplotlib
+matplotlib.rcParams['pdf.fonttype'] = 42
 from matplotlib.backends.backend_pdf import PdfPages
 sys.path.insert(0, os.path.abspath('..'))
 from loaders.load_xarrays import save_xarray, load_xarray
@@ -22,8 +21,8 @@ from utilities.calculation_tools import calculate_ks_score, normalize_3D
 
 def plot_xar_single_axis(xar, retardations, ratios, value_def="Collection Efficiency", directory=None, filename=None):
     colors = plt.cm.viridis(np.linspace(0, 1, len(retardations)))
-    linestyles = ['-', '--', '-.', ':', (0, (3, 1, 1, 1)), (0, (5, 1))]
-    lineweights = np.linspace(1, 3, len(retardations))  # Adjust line weights from 1 to 3
+    linestyles = ['-', '--', ':']
+    lineweights = np.linspace(2, 3, len(retardations))  # Adjust line weights from 1 to 3
 
     if directory and filename:
         output_path = os.path.join(directory, f'{filename}.pdf')
@@ -115,6 +114,47 @@ def plot_collection_efficiency(xar, retardations, mid1_ratios, mid2_ratios, dire
 
     if directory and filename:
         pdf_pages.close()
+
+
+def plot_collection_efficiency_grid(xar, retardations, kinetic_energies, directory=None, filename=None):
+    num_plots = len(retardations)
+    num_cols = 2
+    num_rows = (num_plots + num_cols - 1) // num_cols  # Calculate number of rows needed
+
+    if directory and filename:
+        output_path = os.path.join(directory, f'{filename}.pdf')
+        pdf_pages = PdfPages(output_path)
+
+    fig, axes = plt.subplots(num_rows, num_cols, figsize=(num_cols * 5, num_rows * 5))
+    axes = axes.flatten()
+
+    for idx, (retardation, ke) in enumerate(zip(retardations, kinetic_energies)):
+        ax = axes[idx]
+        cut = xar.sel({'kinetic_energy': ke, 'retardation': retardation})
+        im = cut.plot(x='mid1_ratio', y='mid2_ratio', ax=ax, vmin=0, vmax=1, cmap='bwr')
+
+        if retardation > 0:
+            title_retardation = f'R = +{retardation} V, KE = {ke} eV'
+        else:
+            title_retardation = f'R = {retardation} V, KE = {ke} eV'
+
+        ax.set_title(title_retardation)
+        ax.set_xlabel('Blade 22')
+        ax.set_ylabel('Blade 25')
+        ax.grid(True)
+
+    # Hide any remaining empty subplots
+    for idx in range(len(retardations), len(axes)):
+        fig.delaxes(axes[idx])
+
+    plt.tight_layout()
+
+    if directory and filename:
+        pdf_pages.savefig(fig, bbox_inches='tight')
+        plt.close()
+        pdf_pages.close()
+    else:
+        plt.show()
 
 
 def plot_xar_instances(xar, retardations, mid1_ratios, mid2_ratios, value_def="Collection Efficiency", directory=None, filename=None):
@@ -212,26 +252,44 @@ def main(xar, mid1_ratios, mid2_ratios):
 
 path = r"C:\Users\proxi\Documents\coding\TOF_data"
 ce_xar = load_xarray(path, "collection_efficiency")
-retardations = [0, -1, -5, -10]
+retardations = [-1, -10]
 mid1_ratios = [0.08, 0.11248, 0.2, 0.8]  # Example list of mid1_ratio
 mid2_ratios = [0.1354, 0.3, 0.4]  # Example list of mid2_ratio
-ratios = [(0.11248, 0.1354), (0.2, 0.3), (0.5, 0.5), (0.8, 0.7), (0.9, 0.9)]
+ratios = [(0.11248, 0.1354), (0.2, 0.3), (0.8, 0.7)]
 d = r"C:\Users\proxi\Documents\coding\TOF_ML\figures\shack"
 #plot_xar_instances(ce_xar, retardations, mid1_ratios, mid2_ratios)
-plot_xar_single_axis(ce_xar, retardations, ratios,
-                   directory=d, filename="coll_eff_neg")
-#plot_imagetool(ce_xar.sel({'kinetic_energy': 0.1}))
+#plot_xar_single_axis(ce_xar, retardations, ratios,
+#                   directory=d, filename="collection_efficiency_neg", value_def="Collection Efficiency")
+#retardations = [10, 1, 10, 1]
+#kinetic_energies = [0.1, 3, 10, 11]
+#plot_collection_efficiency_grid(ce_xar, retardations, kinetic_energies,
+#                                directory=d, filename="ncollections_pos")
+plot_imagetool(ce_xar.sel({'retardation': 10}))
+print(ce_xar.sel({'retardation': 1, 'mid1_ratio': 0.3, 'mid2_ratio': 0.2, 'kinetic_energy': 0.1}),
+      ce_xar.sel({'retardation': 1, 'mid1_ratio': 0.3, 'mid2_ratio': 0.2, 'kinetic_energy': 4}),
+      ce_xar.sel({'retardation': 1, 'mid1_ratio': 0.3, 'mid2_ratio': 0.2, 'kinetic_energy': 9}),
+      ce_xar.sel({'retardation': 1, 'mid1_ratio': 0.3, 'mid2_ratio': 0.2, 'kinetic_energy': 12}),
+      ce_xar.sel({'retardation': 1, 'mid1_ratio': 0.3, 'mid2_ratio': 0.2, 'kinetic_energy': 18}))
 
 #data_loader = DS_positive()
 #data_loader.load_data('simulation_data.json', xtof_range=(403.6, np.inf), ytof_range=(-13.74, 13.74),
-#                      retardation_range=(-10, 10), mid1_range=(0.11248, 0.11248), mid2_range=(0.1354, 0.1354),
-#                      overwrite=False)
-#location = r"C:\Users\proxi\Documents\coding\TOF_ML\figures\shack"
-#avg_ks_scores = plot_ks_score(data_loader.data_masked, bootstrap=10, directory=location, filename="NM_ks_scores.pdf")
+#                      retardation_range=(-10, 10), overwrite=False, mid1_range=(0.11248, 0.11248), mid2_range=(0.1354, 0.1354))
+#avg_ks_scores = plot_ks_score(data_loader.data_masked, retardations, ratios[2][0], ratios[2][1],
+#                              bootstrap=10, directory=d, filename="ks_scores_neg10_8_7.pdf",
+#                              kinetic_energies=[0.1, 4, 9, 12, 18])
 
 # decide what you want to plot
 #filtered_data = [entry for entry in data_loader.data_masked if entry['retardation'] == 1
 #                 and entry['kinetic_energy'] == 20]
 #fig, ax = plt.subplots()
+#plot_relation(ax, data_loader.data_masked, 'initial_ke', 'tof_values', 'Kinetic Energy', 'Time of Flight', title=None,
+#                  plot_log=True, retardation=None, kinetic_energy=None, mid1_ratio=None, mid2_ratio=None,
+#                  collection_efficiency=None, ks_score=None, verbose=False)
+#output_path = os.path.join(d, 'tof_scaling.pdf')
+#pdf_pages = PdfPages(output_path)
+#pdf_pages.savefig(fig)
+#plt.close()
+#pdf_pages.close()
+
 #ax.hist(np.log(filtered_data[0]['tof_values']), bins=50, edgecolor='black', alpha=0.5)
 #plt.show()

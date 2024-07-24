@@ -1,5 +1,5 @@
 import tensorflow as tf
-
+import numpy as np
 
 def evaluate(model, test_dataset, batch_size=1024):
     """
@@ -15,8 +15,8 @@ def evaluate(model, test_dataset, batch_size=1024):
     test_loss: Loss on the test dataset.
     """
     print("Starting evaluation...")  # Debugging statement
-    #test_dataset = tf.data.Dataset.from_tensor_slices((test_inputs, test_outputs)).batch(batch_size)
-    print("Test dataset created.")  # Debugging statement
-    loss = model.evaluate(test_dataset)
+    # Calculate the number of steps
+    steps = np.ceil(len(test_dataset) / batch_size).astype(int)
+    loss = model.evaluate(test_dataset, steps=steps)
     print("Evaluation completed.")  # Debugging statement
     return loss

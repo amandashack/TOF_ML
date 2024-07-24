@@ -185,6 +185,7 @@ if __name__ == "__main__":
     # Check if the retardation value is passed as a command-line argument
     if len(sys.argv) > 1:
         retardationValue = float(sys.argv[1])
+
     else:
         # If not provided, set a default value or exit the script
         print("Please provide a retardation value as a command-line argument.")
@@ -194,6 +195,6 @@ if __name__ == "__main__":
     voltage_array, resistor_values = calculateVoltage_NelderMeade(retardationValue)
 
     # Generate the netlist file
-    n = generate_netlist(voltage_array, resistor_values)
-    print(n)
+    #n = generate_netlist(voltage_array, resistor_values)
+    print(voltage_array)
 

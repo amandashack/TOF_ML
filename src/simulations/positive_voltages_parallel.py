@@ -7,13 +7,13 @@ import shutil
 import tempfile
 import time
 import matplotlib.pyplot as plt
+from run_simion import parse_and_process_data, runSimion, generate_fly2File_lognorm
 sys.path.insert(0, os.path.abspath('..'))
 from voltage_generator import calculateVoltage_NelderMeade
-from run_simion import parse_and_process_data, runSimion, generate_fly2File_lognorm
 
 
 ResultsDir = r"C:\Users\proxi\Documents\coding\TOF_data"
-SimionDir = r"C:\Users\proxi\Documents\coding\TOF_ML\simulations\TOF_simulation"
+SimionDir = r"C:\Users\proxi\Documents\coding\TOF_ML_backup\simulations\TOF_simulation"
 iobFileLoc = SimionDir + "/TOF_simulation.iob"
 recordingFile = SimionDir + "/TOF_simulation.rec"
 potArrLoc = SimionDir + "/copiedArray.PA0"

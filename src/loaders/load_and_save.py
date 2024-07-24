@@ -18,8 +18,6 @@ class DataGenerator:
             input_batch = self.calculate_interactions(batch[:, :5])
 
             output_batch = batch[:, 5:6]  # time_of_flight
-            output_batch = np.where(output_batch <= 0, 1e-10, output_batch)
-            output_batch = np.log(output_batch)
 
             # Apply scaling
             input_batch = self.scale_input(input_batch)
@@ -28,21 +26,12 @@ class DataGenerator:
             input_batch = np.nan_to_num(input_batch, nan=np.log(1e-10))
             output_batch = np.nan_to_num(output_batch, nan=np.log(1e-10))
 
-            mask = batch[:, 7].astype(bool)  # Use the mask to filter the data
-
-            input_batch = input_batch[mask]
-            output_batch = output_batch[mask]
-
             if len(input_batch) > 0:  # Only yield if there are valid rows remaining
                 yield input_batch, output_batch  # Split into inputs and outputs
 
             i += self.batch_size
 
     def calculate_interactions(self, input_batch):
-        # Replace zeros with a small value to avoid divide by zero in log
-        input_batch[:, 0] = np.where(input_batch[:, 0] <= 0, 1e-10, input_batch[:, 0])
-        input_batch[:, 0] = np.log(input_batch[:, 0])
-
         # Interaction terms and higher-order polynomial terms
         interaction_terms = np.column_stack([
             input_batch,
@@ -63,14 +52,11 @@ class DataGenerator:
         return interaction_terms
 
     def scale_input(self, input_batch):
-        input_batch[:, 0] = self.scalers['log_standard'].transform(input_batch[:, :1]).flatten()
-        input_batch[:, 1:3] = self.scalers['robust'].transform(input_batch[:, 1:3])
-        input_batch[:, 3:] = self.scalers['maxabs'].transform(input_batch[:, 3:])
+        input_batch[:, 2:] = self.scalers['minmax'].transform(input_batch[:, 2:])
         return input_batch
 
     def inverse_scale_output(self, predictions):
-        predictions = predictions.copy()
-        predictions[:, 0] = np.exp(self.scalers['log_standard'].inverse_transform(predictions[:, :1]).flatten())  # Inverse log pass energy
+        predictions = np.exp(predictions)
         return predictions
 
 

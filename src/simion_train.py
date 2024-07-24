@@ -5,9 +5,10 @@ from plotter import one_plot_multi_scatter, pass_versus_counts
 from sklearn.model_selection import train_test_split
 import matplotlib.pyplot as plt
 import pickle
-from sklearn.preprocessing import StandardScaler, RobustScaler, MaxAbsScaler
+from sklearn.preprocessing import StandardScaler, RobustScaler, MaxAbsScaler, MinMaxScaler
 import numpy as np
 from model_gen import run_model
+from sklearn.model_selection import KFold
 import sys
 import os
 import tensorflow as tf
@@ -41,13 +42,10 @@ def calculate_scalers(data, scalers_path):
 
         # Define and fit scalers
         scalers = {
-            'log_standard': StandardScaler(),
-            'robust': RobustScaler(),
-            'maxabs': MaxAbsScaler()
+            'minmax': MinMaxScaler()
         }
-        scalers['log_standard'].fit(data_with_interactions[:, :1])  # Log pass energy
-        scalers['robust'].fit(data_with_interactions[:, 1:3])  # Elevation and retardation
-        scalers['maxabs'].fit(data_with_interactions[:, 3:])  # Ratios and interaction terms
+        #scalers['log_standard'].fit(data_with_interactions[:, :1])  # Log pass energy
+        scalers['minmax'].fit(data_with_interactions[:, 1:])  # Interaction terms and ratios
 
         # Save scalers
         with open(scalers_path, 'wb') as f:
@@ -57,16 +55,14 @@ def calculate_scalers(data, scalers_path):
     return scalers
 
 
-def partition_data(data, train_size=0.7, val_size=0.15):
+def partition_data(data, train_size=0.8):
     train_end = int(train_size * len(data))
-    val_end = int(val_size * len(data)) + train_end
 
     np.random.shuffle(data)
     train_data = data[:train_end]
-    val_data = data[train_end:val_end]
-    test_data = data[val_end:]
+    test_data = data[train_end:]
 
-    return train_data, val_data, test_data
+    return train_data, test_data
 
 
 def save_test_data(test_data, out_path):
@@ -82,77 +78,81 @@ def save_test_data(test_data, out_path):
     print(f"Test data saved to {test_data_path}")
 
 
-def run_train(out_path, params, h5_filename, checkpoint_dir):
-    """
-    Load data from an HDF5 file, split it into training, validation, and test sets,
-    and train the model using a generator.
-
-    Parameters:
-    out_path (str): The path to save the trained model.
-    params (dict): Parameters for the model.
-    h5_filename (str): The name of the HDF5 file containing the data.
-    checkpoint_dir (str): Directory to save model checkpoints.
-    """
+def run_train(out_path, params, h5_filename, checkpoint_dir, n_splits=5):
     # Load data from the HDF5 file
     with h5py.File(h5_filename, 'r') as hf:
         data = hf["data"][:]
+        mask = data[:, 7].astype(bool)  # Use the mask to filter the data
+        data = data[mask]
+        data[:, 0] = np.log(data[:, 0] + data[:, 2])  # initial kinetic energy (was in pass energy)
+        data[:, 5] = np.log(data[:, 5])
+
+    # Split data into train and test sets
+    train_data, test_data = partition_data(data)
+
+    # Save test data
+    save_test_data(test_data, out_path)
 
     # Define the path for scalers
     scalers_path = os.path.join(out_path, 'scalers.pkl')
 
     # Calculate or load scalers
-    scalers = calculate_scalers(data, scalers_path)
+    scalers = calculate_scalers(train_data, scalers_path)
 
-    # Split data into train, val, test sets
-    train_data, val_data, test_data = partition_data(data)
-
-    # Save test data
-    save_test_data(test_data, out_path)
-
-    # Define batch size and steps per epoch
+    # Define batch size
     batch_size = int(params["batch_size"])
-    params['steps_per_epoch'] = np.ceil(len(train_data) / batch_size).astype(int)
-    params['validation_steps'] = np.ceil(len(val_data) / batch_size).astype(int)
 
-    # Create generator instances for training, validation, and test datasets
-    train_gen = DataGenerator(train_data, scalers, batch_size=batch_size)
-    val_gen = DataGenerator(val_data, scalers, batch_size=batch_size)
+    # Prepare cross-validation
+    kfold = KFold(n_splits=n_splits, shuffle=True, random_state=42)
+    fold = 1
+    for train_index, val_index in kfold.split(train_data):
+        train_fold_data = train_data[train_index]
+        val_fold_data = train_data[val_index]
+
+        # Calculate steps per epoch
+        params['steps_per_epoch'] = np.ceil(len(train_fold_data) / batch_size).astype(int)
+        params['validation_steps'] = np.ceil(len(val_fold_data) / batch_size).astype(int)
+
+        # Create generator instances for training and validation datasets
+        train_gen = DataGenerator(train_fold_data, scalers, batch_size=batch_size)
+        val_gen = DataGenerator(val_fold_data, scalers, batch_size=batch_size)
+
+        # Create tf.data.Dataset from the generators
+        train_dataset = tf.data.Dataset.from_generator(
+            train_gen, output_signature=(
+                tf.TensorSpec(shape=(None, 18), dtype=tf.float32),
+                tf.TensorSpec(shape=(None, 1), dtype=tf.float32)
+            )
+        ).take(len(train_fold_data)).cache().repeat().prefetch(tf.data.experimental.AUTOTUNE)
+
+        val_dataset = tf.data.Dataset.from_generator(
+            val_gen, output_signature=(
+                tf.TensorSpec(shape=(None, 18), dtype=tf.float32),
+                tf.TensorSpec(shape=(None, 1), dtype=tf.float32)
+            )
+        ).take(len(val_fold_data)).cache().repeat().prefetch(tf.data.experimental.AUTOTUNE)
+
+        # Train the model
+        print(f"Training on fold {fold}/{n_splits}...")
+        model, history = run_model(train_dataset, val_dataset, params, checkpoint_dir)
+        model.save(os.path.join(out_path, f"model_fold_{fold}.h5"))
+        fold += 1
+
+    # Evaluate the final model on the test set
     test_gen = DataGenerator(test_data, scalers, batch_size=batch_size)
-
-    # Create tf.data.Dataset from the generators
-    train_dataset = tf.data.Dataset.from_generator(
-        train_gen, output_signature=(
-            tf.TensorSpec(shape=(None, 18), dtype=tf.float32),
-            tf.TensorSpec(shape=(None, 1), dtype=tf.float32)
-        )
-    ).take(len(train_data)).cache().repeat().prefetch(tf.data.experimental.AUTOTUNE)
-
-    val_dataset = tf.data.Dataset.from_generator(
-        val_gen, output_signature=(
-            tf.TensorSpec(shape=(None, 18), dtype=tf.float32),
-            tf.TensorSpec(shape=(None, 1), dtype=tf.float32)
-        )
-    ).take(len(val_data)).cache().repeat().prefetch(tf.data.experimental.AUTOTUNE)
-
     test_dataset = tf.data.Dataset.from_generator(
         test_gen, output_signature=(
             tf.TensorSpec(shape=(None, 18), dtype=tf.float32),
             tf.TensorSpec(shape=(None, 1), dtype=tf.float32)
         )
-    ).take(len(test_data)).cache().repeat().prefetch(tf.data.experimental.AUTOTUNE)
+    ).take(len(test_data)).cache().prefetch(tf.data.experimental.AUTOTUNE)
 
-    # Train the model
-    model, history = run_model(train_dataset, val_dataset, params, checkpoint_dir)
-
-    model.save(out_path)
-
-    # Evaluate the model
     loss_test = evaluate(model, test_dataset, batch_size=batch_size)
-    print(f"test_loss {loss_test}")
+    print(f"Test loss: {loss_test}")
 
 if __name__ == '__main__':
     h5_filename = r"C:\Users\proxi\Documents\coding\TOF_ML_backup\src\simulations\combined_data_shuffled.h5"
-    run_train("/Users/proxi/Documents/coding/stored_models/test_001/15",
-              {"layer_size": 64, "batch_size": 256, 'dropout': 0.4,
-               'learning_rate': 0.1, 'optimizer': 'Adam'},
-              h5_filename, r"C:\Users\proxi\Documents\coding\stored_models\test_001\14\checkpoints")
+    run_train("/Users/proxi/Documents/coding/stored_models/test_001/19",
+              {"layer_size": 64, "batch_size": 256, 'dropout': 0.2,
+               'learning_rate': 0.1, 'optimizer': 'RMSprop'},
+              h5_filename, r"C:\Users\proxi\Documents\coding\stored_models\test_001\19\checkpoints")

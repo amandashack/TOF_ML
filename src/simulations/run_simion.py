@@ -12,8 +12,8 @@ import re
 import h5py
 import matplotlib.pyplot as plt
 import csv
-
-from ltspice_runner import modify_cir_file, run_simulation, check_currents
+import sys
+sys.path.insert(0, os.path.abspath('..'))
 from voltage_generator import calculateVoltage_NelderMeade
 import time
 import numpy as np

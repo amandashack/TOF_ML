@@ -395,9 +395,10 @@ if __name__ == '__main__':
     # Assuming the files are located in a directory named 'data_files' in the current working directory.
     data_loader = DS_positive()
     data_loader.load_data('simulation_data.json', xtof_range=(403.6, np.inf), ytof_range=(-13.74, 13.74),
-                          retardation_range=(-10, 10), overwrite=False)#, mid1_range=(0.11248, 0.11248), mid2_range=(0.1354, 0.1354))
-    #plot_ks_score(data_loader.data_masked, 0.11248, 0.1354, R=13.74, bootstrap=10, directory=None, filename=None,
-    #              kinetic_energies=[0.1, 4, 9, 12, 18])
+                          retardation_range=(-10, -10), overwrite=False)#, mid1_range=(0.11248, 0.11248), mid2_range=(0.1354, 0.1354))
+    d = r"C:\Users\proxi\Documents\coding\TOF_ML\figures\shack"
+    plot_ks_score(data_loader.data_masked, 0.11248, 0.1354, R=13.74, bootstrap=10, directory=d, filename="ks_",
+                  kinetic_energies=[0.1, 4, 9, 12, 18])
     #ds = data_loader.create_combined_array()
     #h5_filename = r"C:\Users\proxi\Documents\coding\TOF_ML\src\simulations\combined_data.h5"
     #save_to_h5(ds, h5_filename)
@@ -407,8 +408,8 @@ if __name__ == '__main__':
     #save_xarray(grad_xar, r"C:\Users\proxi\Documents\coding\TOF_data",
     #            "avg_tof")
     # create numpy array for model training
-    combined_array = data_loader.create_combined_array()
-    save_to_h5(combined_array, 'combined_masked')
+    #combined_array = data_loader.create_combined_array()
+    #save_to_h5(combined_array, 'combined_masked')
 
     #gradients_array = gradients_to_numpy(gradients)
 
