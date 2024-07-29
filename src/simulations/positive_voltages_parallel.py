@@ -246,14 +246,15 @@ if __name__ == '__main__':
                        for mid1_ratio in args.mid1_ratio
                        for mid2_ratio in args.mid2_ratio
                        for ke in args.kinetic_energy]
+    print(len(simulation_args))
 
     # Filter out existing simulations
-    with Pool(processes=cpu_count()) as pool:
-        simulation_args = list(filter(None, pool.map(check_existing_simulation, simulation_args)))
+    #with Pool(processes=cpu_count()) as pool:
+    #    simulation_args = list(filter(None, pool.map(check_existing_simulation, simulation_args)))
 
     # Determine the number of CPU cores to use
-    num_cores = cpu_count()  # Specify the number of cores to use
+    #num_cores = cpu_count()  # Specify the number of cores to use
 
     # Record execution time for parallel execution
-    parallel_times = record_execution_time(num_cores, simulation_args)
-    print(parallel_times)
+    #parallel_times = record_execution_time(num_cores, simulation_args)
+    #print(parallel_times)

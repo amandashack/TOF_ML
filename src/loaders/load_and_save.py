@@ -17,7 +17,7 @@ class DataGenerator:
             batch = self.data[i:i + self.batch_size, :]
             input_batch = self.calculate_interactions(batch[:, :5])
 
-            output_batch = batch[:, 5:6]  # time_of_flight
+            output_batch = batch[:, 7:8]  # mask
 
             # Apply scaling
             input_batch = self.scale_input(input_batch)
@@ -31,7 +31,8 @@ class DataGenerator:
 
             i += self.batch_size
 
-    def calculate_interactions(self, input_batch):
+    @staticmethod
+    def calculate_interactions(input_batch):
         # Interaction terms and higher-order polynomial terms
         interaction_terms = np.column_stack([
             input_batch,
@@ -52,13 +53,46 @@ class DataGenerator:
         return interaction_terms
 
     def scale_input(self, input_batch):
-        input_batch[:, 2:] = self.scalers['minmax'].transform(input_batch[:, 2:])
+        input_batch[:, 1:] = self.scalers['minmax'].transform(input_batch[:, 1:])
         return input_batch
 
     def inverse_scale_output(self, predictions):
         predictions = np.exp(predictions)
         return predictions
 
+
+class DataGeneratorWithVeto(DataGenerator):
+    def __init__(self, data, scalers, veto_model, batch_size=100):
+        super().__init__(data, scalers, batch_size)
+        self.veto_model = veto_model
+
+    def __call__(self):
+        total_samples = self.data.shape[0]
+        i = 0
+        while i < total_samples:
+            batch = self.data[i:i + self.batch_size, :]
+            input_batch = self.calculate_interactions(batch[:, :5])
+
+            output_batch = batch[:, 5:7]  # time_of_flight and y_tof
+
+            # Apply scaling
+            input_batch = self.scale_input(input_batch)
+
+            # Replace NaNs with the log of a small value (1e-10)
+            input_batch = np.nan_to_num(input_batch, nan=np.log(1e-10))
+            output_batch = np.nan_to_num(output_batch, nan=np.log(1e-10))
+
+            # Generate the mask using the veto model
+            mask = self.veto_model.predict(input_batch, verbose=0) > 0.5
+            mask = mask.flatten().astype(bool)
+
+            # Add mask to the output batch
+            output_batch = np.column_stack([output_batch, mask])
+
+            if len(input_batch) > 0:  # Only yield if there are valid rows remaining
+                yield input_batch, output_batch  # Split into inputs and outputs
+
+            i += self.batch_size
 
 
 def save_to_h5(array, filename):

@@ -7,14 +7,14 @@ import matplotlib.pyplot as plt
 import pickle
 from sklearn.preprocessing import StandardScaler, RobustScaler, MaxAbsScaler, MinMaxScaler
 import numpy as np
-from model_gen import run_model
+from model_gen import train_main_model, train_veto_model, CompositeModel
 from sklearn.model_selection import KFold
 import sys
 import os
 import tensorflow as tf
 from model_eval import evaluate
 import re
-from loaders.load_and_save import load_from_h5, DataGenerator
+from loaders.load_and_save import load_from_h5, DataGenerator, DataGeneratorWithVeto
 import h5py
 
 # Check GPU availability and set memory growth
@@ -29,6 +29,26 @@ if gpus:
         print(e)
 
 
+def load_or_train_veto_model(train_dataset, val_dataset, params, checkpoint_dir, fold):
+    veto_model_path = os.path.join(checkpoint_dir, f"veto_model_fold_{fold}.h5")
+    parent_dir = os.path.dirname(checkpoint_dir)
+    veto_model_parent_path = os.path.join(parent_dir, f"veto_model_fold_{fold}.h5")
+
+    if os.path.exists(veto_model_path):
+        print(f"Loading existing veto model from {veto_model_path}")
+        veto_model = tf.keras.models.load_model(veto_model_path)
+        return veto_model
+    elif os.path.exists(veto_model_parent_path):
+        print(f"Loading existing veto model from {veto_model_parent_path}")
+        veto_model = tf.keras.models.load_model(veto_model_parent_path)
+        return veto_model
+    else:
+        print("Veto model not found, training a new veto model.")
+        veto_model, _ = train_veto_model(train_dataset, val_dataset, params, checkpoint_dir)
+        veto_model.save(veto_model_path)
+        return veto_model
+
+
 def calculate_scalers(data, scalers_path):
     if os.path.exists(scalers_path):
         # Load scalers from file
@@ -37,14 +57,13 @@ def calculate_scalers(data, scalers_path):
         print(f"Scalers loaded from {scalers_path}")
     else:
         # Calculate interaction terms for the entire data
-        generator = DataGenerator(data, None, batch_size=len(data))
+        generator = DataGenerator(data, None, None, batch_size=len(data))
         data_with_interactions = generator.calculate_interactions(data[:, :5])
 
         # Define and fit scalers
         scalers = {
             'minmax': MinMaxScaler()
         }
-        #scalers['log_standard'].fit(data_with_interactions[:, :1])  # Log pass energy
         scalers['minmax'].fit(data_with_interactions[:, 1:])  # Interaction terms and ratios
 
         # Save scalers
@@ -78,12 +97,10 @@ def save_test_data(test_data, out_path):
     print(f"Test data saved to {test_data_path}")
 
 
-def run_train(out_path, params, h5_filename, checkpoint_dir, n_splits=5):
+def run_train(out_path, params, h5_filename, checkpoint_dir, n_splits=2):
     # Load data from the HDF5 file
     with h5py.File(h5_filename, 'r') as hf:
         data = hf["data"][:]
-        mask = data[:, 7].astype(bool)  # Use the mask to filter the data
-        data = data[mask]
         data[:, 0] = np.log(data[:, 0] + data[:, 2])  # initial kinetic energy (was in pass energy)
         data[:, 5] = np.log(data[:, 5])
 
@@ -113,29 +130,57 @@ def run_train(out_path, params, h5_filename, checkpoint_dir, n_splits=5):
         params['steps_per_epoch'] = np.ceil(len(train_fold_data) / batch_size).astype(int)
         params['validation_steps'] = np.ceil(len(val_fold_data) / batch_size).astype(int)
 
-        # Create generator instances for training and validation datasets
-        train_gen = DataGenerator(train_fold_data, scalers, batch_size=batch_size)
-        val_gen = DataGenerator(val_fold_data, scalers, batch_size=batch_size)
+        # Create generator instances for training and validation datasets for veto model
+        veto_train_gen = DataGenerator(train_fold_data, scalers, batch_size=batch_size)
+        veto_val_gen = DataGenerator(val_fold_data, scalers, batch_size=batch_size)
+
+        # Create tf.data.Dataset from the generators for veto model
+        veto_train_dataset = tf.data.Dataset.from_generator(
+            veto_train_gen, output_signature=(
+                tf.TensorSpec(shape=(None, 18), dtype=tf.float32),
+                tf.TensorSpec(shape=(None, 1), dtype=tf.float32)  # mask as the target
+            )
+        ).take(len(train_fold_data)).cache().repeat().prefetch(tf.data.experimental.AUTOTUNE)
+
+        veto_val_dataset = tf.data.Dataset.from_generator(
+            veto_val_gen, output_signature=(
+                tf.TensorSpec(shape=(None, 18), dtype=tf.float32),
+                tf.TensorSpec(shape=(None, 1), dtype=tf.float32)  # mask as the target
+            )
+        ).take(len(val_fold_data)).cache().repeat().prefetch(tf.data.experimental.AUTOTUNE)
+
+        # Train the veto model
+        print(f"Training/loading veto model on fold {fold}/{n_splits}...")
+        veto_model = load_or_train_veto_model(veto_train_dataset, veto_val_dataset, params, checkpoint_dir, fold)
+
+        # Create generator instances for training and validation datasets using veto model
+        train_gen = DataGeneratorWithVeto(train_fold_data, scalers, veto_model, batch_size=batch_size)
+        val_gen = DataGeneratorWithVeto(val_fold_data, scalers, veto_model, batch_size=batch_size)
 
         # Create tf.data.Dataset from the generators
         train_dataset = tf.data.Dataset.from_generator(
             train_gen, output_signature=(
                 tf.TensorSpec(shape=(None, 18), dtype=tf.float32),
-                tf.TensorSpec(shape=(None, 1), dtype=tf.float32)
+                tf.TensorSpec(shape=(None, 3), dtype=tf.float32)
             )
         ).take(len(train_fold_data)).cache().repeat().prefetch(tf.data.experimental.AUTOTUNE)
 
         val_dataset = tf.data.Dataset.from_generator(
             val_gen, output_signature=(
                 tf.TensorSpec(shape=(None, 18), dtype=tf.float32),
-                tf.TensorSpec(shape=(None, 1), dtype=tf.float32)
+                tf.TensorSpec(shape=(None, 3), dtype=tf.float32)
             )
         ).take(len(val_fold_data)).cache().repeat().prefetch(tf.data.experimental.AUTOTUNE)
 
-        # Train the model
-        print(f"Training on fold {fold}/{n_splits}...")
-        model, history = run_model(train_dataset, val_dataset, params, checkpoint_dir)
-        model.save(os.path.join(out_path, f"model_fold_{fold}.h5"))
+        # Train the main model
+        print(f"Training main model on fold {fold}/{n_splits}...")
+        model, history = train_main_model(train_dataset, val_dataset, params, checkpoint_dir)
+
+        model.save(os.path.join(out_path, f"main_model_fold_{fold}.h5"))
+        with open(os.path.join(out_path, f"history_fold_{fold}.pkl"), 'wb') as f:
+            pickle.dump(history.history, f)
+
+        print(f"Models and history for fold {fold} saved.")
         fold += 1
 
     # Evaluate the final model on the test set
@@ -143,16 +188,18 @@ def run_train(out_path, params, h5_filename, checkpoint_dir, n_splits=5):
     test_dataset = tf.data.Dataset.from_generator(
         test_gen, output_signature=(
             tf.TensorSpec(shape=(None, 18), dtype=tf.float32),
-            tf.TensorSpec(shape=(None, 1), dtype=tf.float32)
+            tf.TensorSpec(shape=(None, 3), dtype=tf.float32)
         )
     ).take(len(test_data)).cache().prefetch(tf.data.experimental.AUTOTUNE)
 
-    loss_test = evaluate(model, test_dataset, batch_size=batch_size)
+    loss_test = model.evaluate(test_dataset, batch_size=batch_size)
     print(f"Test loss: {loss_test}")
 
 if __name__ == '__main__':
     h5_filename = r"C:\Users\proxi\Documents\coding\TOF_ML_backup\src\simulations\combined_data_shuffled.h5"
-    run_train("/Users/proxi/Documents/coding/stored_models/test_001/19",
+    run_train("/Users/proxi/Documents/coding/stored_models/test_001/20",
               {"layer_size": 64, "batch_size": 256, 'dropout': 0.2,
                'learning_rate': 0.1, 'optimizer': 'RMSprop'},
-              h5_filename, r"C:\Users\proxi\Documents\coding\stored_models\test_001\19\checkpoints")
+              h5_filename, r"C:\Users\proxi\Documents\coding\stored_models\test_001\20\checkpoints")
+
+

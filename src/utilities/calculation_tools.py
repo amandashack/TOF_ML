@@ -2,7 +2,48 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.stats import ks_2samp
 import xarray as xr
+import tensorflow as tf
 
+
+class LRFinder(tf.keras.callbacks.Callback):
+    def __init__(self, min_lr=1e-8, max_lr=10, steps_per_epoch=None, epochs=1):
+        super().__init__()
+        self.min_lr = min_lr
+        self.max_lr = max_lr
+        self.total_steps = steps_per_epoch * epochs
+        self.step = 0
+        self.lr_mult = (max_lr / min_lr) ** (1 / self.total_steps)
+        self.losses = []
+        self.lrs = []
+
+    def on_batch_end(self, batch, logs=None):
+        self.step += 1
+        lr = tf.keras.backend.get_value(self.model.optimizer.lr)
+        lr *= self.lr_mult
+        tf.keras.backend.set_value(self.model.optimizer.lr, lr)
+        self.lrs.append(lr)
+        self.losses.append(np.log(logs['loss']))
+
+        # Debugging: Print the learning rate and loss
+        print(f"Step: {self.step}, Learning Rate: {lr}, Loss: {logs['loss']}")
+
+        if self.step >= self.total_steps:
+            self.model.stop_training = True
+
+    def plot_loss(self, sma=1):
+        # Apply simple moving average (SMA) to smooth the loss plot
+        def sma_smoothing(values, window):
+            weights = np.repeat(1.0, window) / window
+            return np.convolve(values, weights, 'valid')
+
+        smoothed_losses = sma_smoothing(self.losses, sma)
+
+        plt.plot(self.lrs[:len(smoothed_losses)], smoothed_losses)
+        plt.xscale('log')
+        plt.xlabel('Learning Rate')
+        plt.ylabel('Loss')
+        plt.title('Learning Rate Finder')
+        plt.show()
 
 def calculate_ks_score(y_pos, num_bootstrap=10, R=13.74, plot=False, print_ks=False):
     ks_scores = []
