@@ -19,12 +19,11 @@ class DataGenerator:
 
             output_batch = batch[:, 7:8]  # mask
 
-            # Apply scaling
-            input_batch = self.scale_input(input_batch)
+            # Apply scaling -- this is done to add zeros for columns that don't exist and then remove them
+            input_batch = self.scale_input(np.column_stack([input_batch, np.zeros_like(input_batch[:, :2])]))[:, :-2]
 
             # Replace NaNs with the log of a small value (1e-10)
             input_batch = np.nan_to_num(input_batch, nan=np.log(1e-10))
-            output_batch = np.nan_to_num(output_batch, nan=np.log(1e-10))
 
             if len(input_batch) > 0:  # Only yield if there are valid rows remaining
                 yield input_batch, output_batch  # Split into inputs and outputs
@@ -52,12 +51,12 @@ class DataGenerator:
         ])
         return interaction_terms
 
-    def scale_input(self, input_batch):
-        input_batch[:, 1:] = self.scalers['minmax'].transform(input_batch[:, 1:])
-        return input_batch
+    def scale_input(self, scale_batch):
+        scale_batch = self.scalers.transform(scale_batch)
+        return scale_batch
 
     def inverse_scale_output(self, predictions):
-        predictions = np.exp(predictions)
+        predictions = self.scalers.inverse_trainsform(predictions)
         return predictions
 
 
@@ -76,11 +75,11 @@ class DataGeneratorWithVeto(DataGenerator):
             output_batch = batch[:, 5:7]  # time_of_flight and y_tof
 
             # Apply scaling
-            input_batch = self.scale_input(input_batch)
+            full_batch = self.scale_input(np.column_stack([input_batch, output_batch]))
 
             # Replace NaNs with the log of a small value (1e-10)
-            input_batch = np.nan_to_num(input_batch, nan=np.log(1e-10))
-            output_batch = np.nan_to_num(output_batch, nan=np.log(1e-10))
+            input_batch = np.nan_to_num(full_batch[:, :-3], nan=np.log(1e-10))
+            output_batch = np.nan_to_num(full_batch[:, -2:], nan=np.log(1e-10))
 
             # Generate the mask using the veto model
             mask = self.veto_model.predict(input_batch, verbose=0) > 0.5
@@ -119,9 +118,17 @@ def load_from_h5(filename):
     np.ndarray: The loaded NumPy array.
     """
     with h5py.File(filename, 'r') as h5f:
-        array = h5f['data'][:]
+        array = h5f['data1'][:]
     print(f"Data loaded from {filename}")
     return array
+
+
+def read_h5_data(file_path):
+    with h5py.File(file_path, 'r') as f:
+        data = {}
+        for key in f['data1'].keys():
+            data[key] = f['data1'][key][:]
+    return data
 
 
 def shuffle_h5(filename, out_filename):

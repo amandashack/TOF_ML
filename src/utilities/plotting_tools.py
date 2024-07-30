@@ -309,6 +309,200 @@ def plot_ks_score(data_masked, retardations, mid1, mid2, R=13.74, bootstrap=None
     return avg_ks_scores
 
 
+def plot_collection_efficiency(xar, retardations, mid1_ratios, mid2_ratios, directory=None, filename=None):
+    colors = plt.cm.viridis(np.linspace(0, 1, len(mid1_ratios)))
+    linestyles = ['-', '--', '-.', ':', (0, (3, 1, 1, 1)), (0, (5, 1))]
+
+    if directory and filename:
+        output_path = os.path.join(directory, f'{filename}.pdf')
+        pdf_pages = PdfPages(output_path)
+
+    for retardation in retardations:
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
+
+        if retardation > 0:
+            ke = 0.1
+            title_retardation = f'+{retardation} eV Retardation'
+        else:
+            ke = np.abs(retardation) + 2
+            title_retardation = f'-{np.abs(retardation)} eV Retardation'
+
+        # First plot: mid1 and mid2 as x and y axes for a specific kinetic energy above the retardation
+        cut = xar.sel({'kinetic_energy': ke, 'retardation': retardation})
+        cut.plot(x='mid1_ratio', y='mid2_ratio', ax=ax1)
+
+        ax1.set_title(f'Collection Efficiency for {title_retardation} and {ke} eV KE')
+        ax1.set_xlabel('mid1_ratio')
+        ax1.set_ylabel('mid2_ratio')
+        ax1.grid(True)
+
+        # Second plot: Kinetic energy on x axis with mid1 as the same color but different linestyle for each mid2
+        for i, mid1_ratio in enumerate(mid1_ratios):
+            for j, mid2_ratio in enumerate(mid2_ratios):
+                cut = xar.sel({'retardation': retardation, 'mid1_ratio': mid1_ratio, 'mid2_ratio': mid2_ratio})
+                cut.plot(ax=ax2, color=colors[i], linestyle=linestyles[j % len(linestyles)])
+
+        ax2.set_title(f'Collection Efficiency vs. Kinetic Energy for {title_retardation}')
+        ax2.set_xlabel('Kinetic Energy (eV)')
+        ax2.set_ylabel('Collection Efficiency')
+        ax2.grid(True)
+
+        # Create custom legend entries
+        handles1 = [plt.Line2D([0], [0], color=colors[i], lw=4, label=f'mid1: {mid1_ratio}') for i, mid1_ratio in enumerate(mid1_ratios)]
+        handles2 = [plt.Line2D([0], [0], color='black', linestyle=linestyles[j % len(linestyles)], label=f'mid2: {mid2_ratio}') for j, mid2_ratio in enumerate(mid2_ratios)]
+
+        # Adding legends
+        ax2.legend(handles=handles1 + handles2, loc='best')
+
+        if directory and filename:
+            pdf_pages.savefig(fig)
+            plt.close()
+        else:
+            plt.show()
+
+    if directory and filename:
+        pdf_pages.close()
+
+
+def plot_collection_efficiency_grid(xar, retardations, kinetic_energies, directory=None, filename=None):
+    num_plots = len(retardations)
+    num_cols = 2
+    num_rows = (num_plots + num_cols - 1) // num_cols  # Calculate number of rows needed
+
+    if directory and filename:
+        output_path = os.path.join(directory, f'{filename}.pdf')
+        pdf_pages = PdfPages(output_path)
+
+    fig, axes = plt.subplots(num_rows, num_cols, figsize=(num_cols * 5, num_rows * 5))
+    axes = axes.flatten()
+
+    for idx, (retardation, ke) in enumerate(zip(retardations, kinetic_energies)):
+        ax = axes[idx]
+        cut = xar.sel({'kinetic_energy': ke, 'retardation': retardation})
+        im = cut.plot(x='mid1_ratio', y='mid2_ratio', ax=ax, vmin=0, vmax=1, cmap='bwr')
+
+        if retardation > 0:
+            title_retardation = f'R = +{retardation} V, KE = {ke} eV'
+        else:
+            title_retardation = f'R = {retardation} V, KE = {ke} eV'
+
+        ax.set_title(title_retardation)
+        ax.set_xlabel('Blade 22')
+        ax.set_ylabel('Blade 25')
+        ax.grid(True)
+
+    # Hide any remaining empty subplots
+    for idx in range(len(retardations), len(axes)):
+        fig.delaxes(axes[idx])
+
+    plt.tight_layout()
+
+    if directory and filename:
+        pdf_pages.savefig(fig, bbox_inches='tight')
+        plt.close()
+        pdf_pages.close()
+    else:
+        plt.show()
+
+
+def plot_xar_instances(xar, retardations, mid1_ratios, mid2_ratios, value_def="Collection Efficiency", directory=None, filename=None):
+    colors = plt.cm.viridis(np.linspace(0, 1, len(mid1_ratios)))
+    linestyles = ['-', '--', '-.', ':', (0, (3, 1, 1, 1)), (0, (5, 1))]
+
+    if directory and filename:
+        output_path = os.path.join(directory, f'{filename}.pdf')
+        pdf_pages = PdfPages(output_path)
+
+    for retardation in retardations:
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
+
+        if retardation > 0:
+            ke = 10
+            title_retardation = f'+{retardation} eV Retardation'
+        else:
+            ke = np.abs(retardation) + 10
+            title_retardation = f'-{np.abs(retardation)} eV Retardation'
+
+        # First plot: mid1 and mid2 as x and y axes for a specific kinetic energy above the retardation
+        cut = xar.sel({'kinetic_energy': ke, 'retardation': retardation})
+        cut.plot(x='mid1_ratio', y='mid2_ratio', ax=ax1, cmap='bwr')
+
+        ax1.set_title(f'{value_def} for {title_retardation} and {ke} eV KE')
+        ax1.set_xlabel('Blade 22')
+        ax1.set_ylabel('Blade 25')
+        ax1.grid(True)
+
+        # Second plot: Kinetic energy on x axis with mid1 as the same color but different linestyle for each mid2
+        for i, mid1_ratio in enumerate(mid1_ratios):
+            for j, mid2_ratio in enumerate(mid2_ratios):
+                cut = xar.sel({'retardation': retardation, 'mid1_ratio': mid1_ratio, 'mid2_ratio': mid2_ratio})
+                cut.plot(ax=ax2, color=colors[i], linestyle=linestyles[j % len(linestyles)])
+
+        ax2.set_title(f'{value_def} vs. Kinetic Energy for {title_retardation}')
+        ax2.set_xlabel('Kinetic Energy (eV)')
+        ax2.set_ylabel(f'{value_def}')
+        ax2.grid(True)
+
+        # Create custom legend entries
+        handles1 = [plt.Line2D([0], [0], color=colors[i], lw=4, label=f'Blade 22: {mid1_ratio}')
+                    for i, mid1_ratio in enumerate(mid1_ratios)]
+        handles2 = [plt.Line2D([0], [0], color='black', linestyle=linestyles[j % len(linestyles)],
+                               label=f'Blade 25: {mid2_ratio}') for j, mid2_ratio in enumerate(mid2_ratios)]
+
+        # Adding legends
+        ax2.legend(handles=handles1 + handles2, loc='best')
+
+        if directory and filename:
+            pdf_pages.savefig(fig)
+            plt.close()
+        else:
+            plt.show()
+
+    if directory and filename:
+        pdf_pages.close()
+
+def plot_xar_single_axis(xar, retardations, ratios, value_def="Collection Efficiency", directory=None, filename=None):
+    colors = plt.cm.viridis(np.linspace(0, 1, len(retardations)))
+    linestyles = ['-', '--', ':']
+    lineweights = np.linspace(2, 3, len(retardations))  # Adjust line weights from 1 to 3
+
+    if directory and filename:
+        output_path = os.path.join(directory, f'{filename}.pdf')
+        pdf_pages = PdfPages(output_path)
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+
+    for i, retardation in enumerate(retardations):
+        for j, (mid1_ratio, mid2_ratio) in enumerate(ratios):
+            cut = xar.sel({'retardation': retardation, 'mid1_ratio': mid1_ratio, 'mid2_ratio': mid2_ratio})
+            cut.plot(ax=ax, color=colors[i], linestyle=linestyles[j % len(linestyles)],
+                     linewidth=lineweights[i], label=f'Ret: {retardation}\nM1: {mid1_ratio}, M2: {mid2_ratio}')
+
+    ax.set_title(f'{value_def} vs. Kinetic Energy')
+    ax.set_xlabel('Kinetic Energy (eV)')
+    ax.set_ylabel(f'{value_def}')
+    ax.set_ylim([0, 1])
+    ax.grid(True)
+
+    # Create custom legend entries
+    handles = [plt.Line2D([0], [0], color=colors[i], linestyle=linestyles[j % len(linestyles)], linewidth=lineweights[i],
+                          label=f'Ret: {retardation}\nM1: {mid1_ratio}, M2: {mid2_ratio}')
+               for i, retardation in enumerate(retardations)
+               for j, (mid1_ratio, mid2_ratio) in enumerate(ratios)]
+
+    # Adding legends outside the plot
+    ax.legend(handles=handles, loc='center left', bbox_to_anchor=(1, 0.5), fontsize='medium')
+
+    plt.tight_layout()
+
+    if directory and filename:
+        pdf_pages.savefig(fig, bbox_inches='tight')
+        plt.close()
+        pdf_pages.close()
+    else:
+        plt.show()
+
+
 def plot_heatmap(collection_efficiency):
     data = []
     for retardation, energies in collection_efficiency.items():

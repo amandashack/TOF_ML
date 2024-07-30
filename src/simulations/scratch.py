@@ -1,295 +1,275 @@
 import numpy as np
 import os
 import sys
-import itertools
-from load_positive_voltages import DS_positive
+import argparse
 import matplotlib.pyplot as plt
 import matplotlib
+import tempfile
+import shutil
+from multiprocessing import Pool, cpu_count
+from collections import defaultdict
 matplotlib.rcParams['pdf.fonttype'] = 42
 from matplotlib.backends.backend_pdf import PdfPages
 sys.path.insert(0, os.path.abspath('..'))
-from loaders.load_xarrays import save_xarray, load_xarray
-from utilities.plotting_tools import (plot_imagetool, plot_relation, plot_heatmap, plot_histogram,
-                                      plot_energy_resolution, plot_parallel_coordinates, plot_ks_score)
-from utilities.mask_data import create_mask
-from utilities.calculation_tools import calculate_ks_score, normalize_3D
+from voltage_generator import calculateVoltage_NelderMeade
+from run_simion import parse_and_process_data, runSimion
+from loaders.load_and_save import read_h5_data
 
 
-# decide what you want to load in
-#location = r"C:\Users\proxi\Documents\coding\TOF_ML\simulations\TOF_simulation\simion_output\collection_efficiency"
-#efficiency_xarray = load_xarray(location, "collection_efficiency")
-
-def plot_xar_single_axis(xar, retardations, ratios, value_def="Collection Efficiency", directory=None, filename=None):
-    colors = plt.cm.viridis(np.linspace(0, 1, len(retardations)))
-    linestyles = ['-', '--', ':']
-    lineweights = np.linspace(2, 3, len(retardations))  # Adjust line weights from 1 to 3
-
-    if directory and filename:
-        output_path = os.path.join(directory, f'{filename}.pdf')
-        pdf_pages = PdfPages(output_path)
-
-    fig, ax = plt.subplots(figsize=(10, 6))
-
-    for i, retardation in enumerate(retardations):
-        for j, (mid1_ratio, mid2_ratio) in enumerate(ratios):
-            cut = xar.sel({'retardation': retardation, 'mid1_ratio': mid1_ratio, 'mid2_ratio': mid2_ratio})
-            cut.plot(ax=ax, color=colors[i], linestyle=linestyles[j % len(linestyles)],
-                     linewidth=lineweights[i], label=f'Ret: {retardation}\nM1: {mid1_ratio}, M2: {mid2_ratio}')
-
-    ax.set_title(f'{value_def} vs. Kinetic Energy')
-    ax.set_xlabel('Kinetic Energy (eV)')
-    ax.set_ylabel(f'{value_def}')
-    ax.set_ylim([0, 1])
-    ax.grid(True)
-
-    # Create custom legend entries
-    handles = [plt.Line2D([0], [0], color=colors[i], linestyle=linestyles[j % len(linestyles)], linewidth=lineweights[i],
-                          label=f'Ret: {retardation}\nM1: {mid1_ratio}, M2: {mid2_ratio}')
-               for i, retardation in enumerate(retardations)
-               for j, (mid1_ratio, mid2_ratio) in enumerate(ratios)]
-
-    # Adding legends outside the plot
-    ax.legend(handles=handles, loc='center left', bbox_to_anchor=(1, 0.5), fontsize='medium')
-
-    plt.tight_layout()
-
-    if directory and filename:
-        pdf_pages.savefig(fig, bbox_inches='tight')
-        plt.close()
-        pdf_pages.close()
-    else:
-        plt.show()
+ResultsDir = r"C:\Users\proxi\Documents\coding\TOF_data\discrete_test"
+SimionDir = r"C:\Users\proxi\Documents\coding\TOF_ML_backup\simulations\TOF_simulation"
+iobFileLoc = SimionDir + "/TOF_simulation.iob"
+recordingFile = SimionDir + "/TOF_simulation.rec"
+potArrLoc = SimionDir + "/copiedArray.PA0"
+lua_path = SimionDir + "/TOF_simulation.lua"
+Fly2File = SimionDir + "/TOF_simulation.fly2"
 
 
-def plot_collection_efficiency(xar, retardations, mid1_ratios, mid2_ratios, directory=None, filename=None):
-    colors = plt.cm.viridis(np.linspace(0, 1, len(mid1_ratios)))
-    linestyles = ['-', '--', '-.', ':', (0, (3, 1, 1, 1)), (0, (5, 1))]
+def generate_fly2File_logarithmic(filenameToWriteTo, min_energy, max_energy,
+                                  num_particles=20000, num_log_points=100, max_angle=3):
+    # Generate 100 logarithmically spaced points between min_energy and max_energy
+    log_points = np.logspace(np.log10(min_energy), np.log10(max_energy), num=num_log_points)
 
-    if directory and filename:
-        output_path = os.path.join(directory, f'{filename}.pdf')
-        pdf_pages = PdfPages(output_path)
+    # Select 25,000 data points from the logarithmic distribution
+    sampled_points = np.random.choice(log_points, size=num_particles, replace=True)
 
-    for retardation in retardations:
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
+    # Check if .fly2 file with this name already exists
+    fileExists = os.path.isfile(filenameToWriteTo)
 
-        if retardation > 0:
-            ke = 0.1
-            title_retardation = f'+{retardation} eV Retardation'
-        else:
-            ke = np.abs(retardation) + 2
-            title_retardation = f'-{np.abs(retardation)} eV Retardation'
+    # Delete previous copy, if there is one
+    if fileExists:
+        os.remove(filenameToWriteTo)
 
-        # First plot: mid1 and mid2 as x and y axes for a specific kinetic energy above the retardation
-        cut = xar.sel({'kinetic_energy': ke, 'retardation': retardation})
-        cut.plot(x='mid1_ratio', y='mid2_ratio', ax=ax1)
+    # Open up file to write to
+    with open(filenameToWriteTo, "w") as fileOut:
+        # Write the Lua function for the custom logarithmic distribution at the beginning of the file
+        fileOut.write("-- Define custom logarithmic distribution function\n")
+        fileOut.write("local math = require('math')\n")
+        fileOut.write("local distribution_points = {\n")
+        for point in sampled_points:
+            fileOut.write(f"  {point},\n")
+        fileOut.write("}\n")
+        fileOut.write("function sample_from_distribution()\n")
+        fileOut.write("  return distribution_points[math.random(1, #distribution_points)]\n")
+        fileOut.write("end\n\n")
 
-        ax1.set_title(f'Collection Efficiency for {title_retardation} and {ke} eV KE')
-        ax1.set_xlabel('mid1_ratio')
-        ax1.set_ylabel('mid2_ratio')
-        ax1.grid(True)
+        fileOut.write("function generate_radial_distribution(theta_max)\n")
+        fileOut.write("  local d = 406.7-24.4\n")
+        fileOut.write("  return function()\n")
+        fileOut.write("    local angle\n")
+        fileOut.write("    local radius_max = d * math.tan(theta_max * math.pi / 180)\n")
+        fileOut.write("    repeat\n")
+        fileOut.write("      local random_value = math.random() * radius_max\n")
+        fileOut.write("      angle = math.acos(random_value/radius_max) * theta_max^2 \n")
+        fileOut.write("    until angle >= 0 and angle <= theta_max\n")
+        fileOut.write("    return angle\n")
+        fileOut.write("  end\n")
+        fileOut.write("end\n\n")
 
-        # Second plot: Kinetic energy on x axis with mid1 as the same color but different linestyle for each mid2
-        for i, mid1_ratio in enumerate(mid1_ratios):
-            for j, mid2_ratio in enumerate(mid2_ratios):
-                cut = xar.sel({'retardation': retardation, 'mid1_ratio': mid1_ratio, 'mid2_ratio': mid2_ratio})
-                cut.plot(ax=ax2, color=colors[i], linestyle=linestyles[j % len(linestyles)])
-
-        ax2.set_title(f'Collection Efficiency vs. Kinetic Energy for {title_retardation}')
-        ax2.set_xlabel('Kinetic Energy (eV)')
-        ax2.set_ylabel('Collection Efficiency')
-        ax2.grid(True)
-
-        # Create custom legend entries
-        handles1 = [plt.Line2D([0], [0], color=colors[i], lw=4, label=f'mid1: {mid1_ratio}') for i, mid1_ratio in enumerate(mid1_ratios)]
-        handles2 = [plt.Line2D([0], [0], color='black', linestyle=linestyles[j % len(linestyles)], label=f'mid2: {mid2_ratio}') for j, mid2_ratio in enumerate(mid2_ratios)]
-
-        # Adding legends
-        ax2.legend(handles=handles1 + handles2, loc='best')
-
-        if directory and filename:
-            pdf_pages.savefig(fig)
-            plt.close()
-        else:
-            plt.show()
-
-    if directory and filename:
-        pdf_pages.close()
-
-
-def plot_collection_efficiency_grid(xar, retardations, kinetic_energies, directory=None, filename=None):
-    num_plots = len(retardations)
-    num_cols = 2
-    num_rows = (num_plots + num_cols - 1) // num_cols  # Calculate number of rows needed
-
-    if directory and filename:
-        output_path = os.path.join(directory, f'{filename}.pdf')
-        pdf_pages = PdfPages(output_path)
-
-    fig, axes = plt.subplots(num_rows, num_cols, figsize=(num_cols * 5, num_rows * 5))
-    axes = axes.flatten()
-
-    for idx, (retardation, ke) in enumerate(zip(retardations, kinetic_energies)):
-        ax = axes[idx]
-        cut = xar.sel({'kinetic_energy': ke, 'retardation': retardation})
-        im = cut.plot(x='mid1_ratio', y='mid2_ratio', ax=ax, vmin=0, vmax=1, cmap='bwr')
-
-        if retardation > 0:
-            title_retardation = f'R = +{retardation} V, KE = {ke} eV'
-        else:
-            title_retardation = f'R = {retardation} V, KE = {ke} eV'
-
-        ax.set_title(title_retardation)
-        ax.set_xlabel('Blade 22')
-        ax.set_ylabel('Blade 25')
-        ax.grid(True)
-
-    # Hide any remaining empty subplots
-    for idx in range(len(retardations), len(axes)):
-        fig.delaxes(axes[idx])
-
-    plt.tight_layout()
-
-    if directory and filename:
-        pdf_pages.savefig(fig, bbox_inches='tight')
-        plt.close()
-        pdf_pages.close()
-    else:
-        plt.show()
+        # Now define the particle distribution using the custom logarithmic distribution
+        fileOut.write("particles {\n")
+        fileOut.write("  coordinates = 0,\n")
+        fileOut.write("  standard_beam {\n")
+        fileOut.write(f"    n = {num_particles},\n")
+        fileOut.write("    tob = 0,\n")
+        fileOut.write("    mass = 0.000548579903,\n")
+        fileOut.write("    charge = -1,\n")
+        fileOut.write("    ke = distribution(sample_from_distribution),\n")
+        fileOut.write("    az =  single_value {0},\n")
+        fileOut.write(f"    el =  distribution(generate_radial_distribution({max_angle})), \n")
+        fileOut.write("    cwf = 1,\n")
+        fileOut.write("    color = 0,\n")
+        fileOut.write("    position =  sphere_distribution {\n")
+        fileOut.write("      center = vector(24.4, 0, 0),\n")
+        fileOut.write("      radius = 2,\n")
+        fileOut.write("      fill = true")
+        fileOut.write("    }\n")
+        fileOut.write("  }\n")
+        fileOut.write("}")
 
 
-def plot_xar_instances(xar, retardations, mid1_ratios, mid2_ratios, value_def="Collection Efficiency", directory=None, filename=None):
-    colors = plt.cm.viridis(np.linspace(0, 1, len(mid1_ratios)))
-    linestyles = ['-', '--', '-.', ':', (0, (3, 1, 1, 1)), (0, (5, 1))]
 
-    if directory and filename:
-        output_path = os.path.join(directory, f'{filename}.pdf')
-        pdf_pages = PdfPages(output_path)
+def run_simulation(args):
+    num_points, retardation, mid1_ratio, mid2_ratio, baseDir = args
 
-    for retardation in retardations:
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
+    # Create a temporary directory for this simulation
+    temp_dir = tempfile.mkdtemp()
 
-        if retardation > 0:
-            ke = 10
-            title_retardation = f'+{retardation} eV Retardation'
-        else:
-            ke = np.abs(retardation) + 10
-            title_retardation = f'-{np.abs(retardation)} eV Retardation'
+    try:
+        # Copy necessary files to the temporary directory
+        iobFileLoc = shutil.copy(os.path.join(SimionDir, "TOF_simulation.iob"), temp_dir)
+        recordingFile = shutil.copy(os.path.join(SimionDir, "TOF_simulation.rec"), temp_dir)
+        lua_path = shutil.copy(os.path.join(SimionDir, "TOF_simulation.lua"), temp_dir)
+        Fly2File = shutil.copy(os.path.join(SimionDir, "TOF_simulation.fly2"), temp_dir)
 
-        # First plot: mid1 and mid2 as x and y axes for a specific kinetic energy above the retardation
-        cut = xar.sel({'kinetic_energy': ke, 'retardation': retardation})
-        cut.plot(x='mid1_ratio', y='mid2_ratio', ax=ax1, cmap='bwr')
+        # Copy all PA files to the temporary directory
+        for pa_file in os.listdir(SimionDir):
+            if pa_file.startswith("copiedArray.PA"):
+                shutil.copy(os.path.join(SimionDir, pa_file), temp_dir)
 
-        ax1.set_title(f'{value_def} for {title_retardation} and {ke} eV KE')
-        ax1.set_xlabel('Blade 22')
-        ax1.set_ylabel('Blade 25')
-        ax1.grid(True)
+        potArrLoc = os.path.join(temp_dir, "copiedArray.PA0")
 
-        # Second plot: Kinetic energy on x axis with mid1 as the same color but different linestyle for each mid2
-        for i, mid1_ratio in enumerate(mid1_ratios):
-            for j, mid2_ratio in enumerate(mid2_ratios):
-                cut = xar.sel({'retardation': retardation, 'mid1_ratio': mid1_ratio, 'mid2_ratio': mid2_ratio})
-                cut.plot(ax=ax2, color=colors[i], linestyle=linestyles[j % len(linestyles)])
+        new_voltages, resistor_values = calculateVoltage_NelderMeade(retardation, voltage_front=0,
+                                                                     mid1_ratio=mid1_ratio,
+                                                                     mid2_ratio=mid2_ratio)
+        generate_fly2File_logarithmic(Fly2File, 0.3, 1000,
+                                      num_log_points=num_points, max_angle=5)
 
-        ax2.set_title(f'{value_def} vs. Kinetic Energy for {title_retardation}')
-        ax2.set_xlabel('Kinetic Energy (eV)')
-        ax2.set_ylabel(f'{value_def}')
-        ax2.grid(True)
+        output_dir = os.path.join(baseDir, f"R{np.abs(retardation)}")
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
 
-        # Create custom legend entries
-        handles1 = [plt.Line2D([0], [0], color=colors[i], lw=4, label=f'Blade 22: {mid1_ratio}')
-                    for i, mid1_ratio in enumerate(mid1_ratios)]
-        handles2 = [plt.Line2D([0], [0], color='black', linestyle=linestyles[j % len(linestyles)],
-                               label=f'Blade 25: {mid2_ratio}') for j, mid2_ratio in enumerate(mid2_ratios)]
+        simion_output_path = os.path.join(output_dir, f"NM_R1_{num_points}.txt")
 
-        # Adding legends
-        ax2.legend(handles=handles1 + handles2, loc='best')
+        runSimion(Fly2File, new_voltages, simion_output_path, recordingFile, iobFileLoc, potArrLoc, temp_dir)
+        parse_and_process_data(simion_output_path)
 
-        if directory and filename:
-            pdf_pages.savefig(fig)
-            plt.close()
-        else:
-            plt.show()
+        return simion_output_path
+    except Exception as e:
+        print(f"Error in simulation: {e}")
+    finally:
+        # Clean up the temporary directory
+        shutil.rmtree(temp_dir)
 
-    if directory and filename:
-        pdf_pages.close()
+def parallel_pool(num_cores, simulation_args):
+    with Pool(processes=num_cores) as pool:
+        results = list(pool.imap_unordered(run_simulation, simulation_args))
+    return results
 
-def main(xar, mid1_ratios, mid2_ratios):
-    fig, ax = plt.subplots()
-    what_you_want = {'retardation': [5, 4, 2, 1, 0, -1, -2, -5]}
 
-    colors = plt.cm.viridis(np.linspace(0, 1, len(what_you_want['retardation'])))
-    linestyles = ['-', '--', '-.', ':', (0, (3, 1, 1, 1)), (0, (5, 1))]
+def plot_tof_vs_ke_with_derivative(data, output_dir, file_name):
+    ke = data['initial_ke']
+    tof = data['tof']
+    x_tof = data['x']
 
-    for i, retardation in enumerate(what_you_want['retardation']):
-        color = colors[i]
-        for j, (mid1_ratio, mid2_ratio) in enumerate(itertools.product(mid1_ratios, mid2_ratios)):
-            linestyle = linestyles[j % len(linestyles)]
-            cut = xar.sel({'retardation': retardation, 'mid1_ratio': mid1_ratio, 'mid2_ratio': mid2_ratio})
-            cut.plot(ax=ax, color=color, linestyle=linestyle,
-                     label=f'Retardation: {retardation} eV, mid1: {mid1_ratio}, mid2: {mid2_ratio}')
+    # Mask the data where x_tof is greater than 403.6
+    mask = x_tof > 403.6
+    ke = ke[mask]
+    tof = tof[mask]
 
-    # Create custom legend entries
-    handles = []
+    # Group by kinetic energy and calculate the mean TOF for each KE
+    ke_to_tof = defaultdict(list)
+    for k, t in zip(ke, tof):
+        ke_to_tof[k].append(t)
+    ke_unique = np.array(list(ke_to_tof.keys()))
+    tof_mean = np.array([np.mean(ke_to_tof[k]) for k in ke_unique])
 
-    # Colors for retardations
-    for i, retardation in enumerate(what_you_want['retardation']):
-        handles.append(plt.Line2D([0], [0], color=colors[i], lw=4, label=f'Retardation: {retardation} eV'))
+    # Sort by kinetic energy
+    sorted_indices = np.argsort(ke_unique)
+    ke_sorted = np.log2(ke_unique[sorted_indices])
+    tof_sorted = np.log2(tof_mean[sorted_indices])
 
-    # Linestyles for mid1_ratio and mid2_ratio combinations
-    for j, (mid1_ratio, mid2_ratio) in enumerate(itertools.product(mid1_ratios, mid2_ratios)):
-        handles.append(plt.Line2D([0], [0], color='black', linestyle=linestyles[j % len(linestyles)],
-                                  label=f'mid1: {mid1_ratio}, mid2: {mid2_ratio}'))
+    # Calculate the derivative of TOF with respect to KE
+    derivative = np.gradient(tof_sorted, ke_sorted)
 
-    ax.set_title('Collection Efficiency vs. Kinetic Energy')
-    ax.set_xlabel('Kinetic Energy (eV)')
-    ax.set_ylabel('Collection Efficiency')
-    ax.grid(True)
+    # Create a figure with two y-axes
+    fig, ax1 = plt.subplots()
 
-    ax.legend(handles=handles, loc='best')
+    # Scatter plot TOF vs. KE
+    color = 'tab:blue'
+    ax1.set_xlabel('Kinetic Energy (eV)')
+    ax1.set_ylabel('Time of Flight (µs)', color=color)
+    ax1.scatter(ke_sorted, tof_sorted, color=color)
+    ax1.tick_params(axis='y', labelcolor=color)
 
+    # Create a secondary y-axis for the derivative plot
+    ax2 = ax1.twinx()
+    color = 'tab:red'
+    ax2.set_ylabel('Derivative of TOF with respect to KE', color=color)
+    ax2.plot(ke_sorted, derivative, color=color)
+    ax2.tick_params(axis='y', labelcolor=color)
+
+    # Adjust layout to prevent overlap and save the plot
+    plt.title("TOF vs. KE and its Derivative")
+    fig.tight_layout()
+    output_file = os.path.join(output_dir, f'tof_vs_ke_with_derivative_{file_name}.png')
+    plt.savefig(output_file)
+    plt.close()
+
+    print(f"Plot saved to: {output_file}")
+
+
+def process_simulation_results(results_dir):
+    # Iterate through each H5 file in the results directory
+    results_dir = os.path.join(results_dir, 'R1')
+    for file_name in os.listdir(results_dir):
+        if file_name.endswith('.h5'):
+            file_path = os.path.join(results_dir, file_name)
+            print(f"Processing file: {file_path}")
+
+            # Read data from H5 file
+            data = read_h5_data(file_path)
+
+            # Plot TOF vs. KE with the derivative
+            plot_tof_vs_ke_with_derivative(data, results_dir, os.path.splitext(file_name)[0])
+
+
+def display_points_hist(min_energy, max_energy, n_points, n_samples):
+    # Step 1: Generate 100 points logarithmically spaced between 0.1 and 1000
+    log_points = np.logspace(np.log2(min_energy), np.log2(max_energy), num=n_points, base=2)
+
+    # Step 2: Randomly sample 25,000 data points from the 100 discrete points
+    sampled_points = np.random.choice(log_points, size=n_samples, replace=True)
+    # Optional: Plot the distribution of sampled points to verify
+    plt.hist(sampled_points, bins=n_points, log=False)
+    plt.xlabel('Value')
+    plt.ylabel('Frequency')
+    plt.title('Histogram of Sampled Points from Logarithmic Distribution')
     plt.show()
 
 
-path = r"C:\Users\proxi\Documents\coding\TOF_data"
-ce_xar = load_xarray(path, "collection_efficiency")
-retardations = [-1, -10]
-mid1_ratios = [0.08, 0.11248, 0.2, 0.8]  # Example list of mid1_ratio
-mid2_ratios = [0.1354, 0.3, 0.4]  # Example list of mid2_ratio
-ratios = [(0.11248, 0.1354), (0.2, 0.3), (0.8, 0.7)]
-d = r"C:\Users\proxi\Documents\coding\TOF_ML\figures\shack"
-#plot_xar_instances(ce_xar, retardations, mid1_ratios, mid2_ratios)
-#plot_xar_single_axis(ce_xar, retardations, ratios,
-#                   directory=d, filename="collection_efficiency_neg", value_def="Collection Efficiency")
-#retardations = [10, 1, 10, 1]
-#kinetic_energies = [0.1, 3, 10, 11]
-#plot_collection_efficiency_grid(ce_xar, retardations, kinetic_energies,
-#                                directory=d, filename="ncollections_pos")
-plot_imagetool(ce_xar.sel({'retardation': 10}))
-print(ce_xar.sel({'retardation': 1, 'mid1_ratio': 0.3, 'mid2_ratio': 0.2, 'kinetic_energy': 0.1}),
-      ce_xar.sel({'retardation': 1, 'mid1_ratio': 0.3, 'mid2_ratio': 0.2, 'kinetic_energy': 4}),
-      ce_xar.sel({'retardation': 1, 'mid1_ratio': 0.3, 'mid2_ratio': 0.2, 'kinetic_energy': 9}),
-      ce_xar.sel({'retardation': 1, 'mid1_ratio': 0.3, 'mid2_ratio': 0.2, 'kinetic_energy': 12}),
-      ce_xar.sel({'retardation': 1, 'mid1_ratio': 0.3, 'mid2_ratio': 0.2, 'kinetic_energy': 18}))
+if __name__ == '__main__':
+    def dir_path(string):
+        if os.path.isdir(string):
+            return string
+        else:
+            raise argparse.ArgumentTypeError(f"readable_dir:{string} is not a valid path")
 
-#data_loader = DS_positive()
-#data_loader.load_data('simulation_data.json', xtof_range=(403.6, np.inf), ytof_range=(-13.74, 13.74),
-#                      retardation_range=(-10, 10), overwrite=False, mid1_range=(0.11248, 0.11248), mid2_range=(0.1354, 0.1354))
-#avg_ks_scores = plot_ks_score(data_loader.data_masked, retardations, ratios[2][0], ratios[2][1],
-#                              bootstrap=10, directory=d, filename="ks_scores_neg10_8_7.pdf",
-#                              kinetic_energies=[0.1, 4, 9, 12, 18])
+    parser = argparse.ArgumentParser(
+        description='code for running Simion simulations for collection efficiency analysis')
 
-# decide what you want to plot
-#filtered_data = [entry for entry in data_loader.data_masked if entry['retardation'] == 1
-#                 and entry['kinetic_energy'] == 20]
-#fig, ax = plt.subplots()
-#plot_relation(ax, data_loader.data_masked, 'initial_ke', 'tof_values', 'Kinetic Energy', 'Time of Flight', title=None,
-#                  plot_log=True, retardation=None, kinetic_energy=None, mid1_ratio=None, mid2_ratio=None,
-#                  collection_efficiency=None, ks_score=None, verbose=False)
-#output_path = os.path.join(d, 'tof_scaling.pdf')
-#pdf_pages = PdfPages(output_path)
-#pdf_pages.savefig(fig)
-#plt.close()
-#pdf_pages.close()
+    parser.add_argument(
+        "--num_points",
+        nargs="*",
+        type=int,
+        default=[30, 100, 1000, 5000],
+    )
 
-#ax.hist(np.log(filtered_data[0]['tof_values']), bins=50, edgecolor='black', alpha=0.5)
-#plt.show()
+    parser.add_argument(
+        "--retardation",
+        nargs="*",
+        type=int,
+        default=[1],
+    )
+
+    parser.add_argument(
+        "--mid1_ratio",
+        nargs="*",
+        type=float,
+        default=[0.11248],
+    )
+
+    parser.add_argument(
+        "--mid2_ratio",
+        nargs="*",
+        type=float,
+        default=[0.1354],
+    )
+
+    args = parser.parse_args()
+
+    # Prepare list of all combinations
+    simulation_args = [(num_points, retardation, mid1_ratio, mid2_ratio, ResultsDir)
+                       for num_points in args.num_points
+                       for retardation in args.retardation
+                       for mid1_ratio in args.mid1_ratio
+                       for mid2_ratio in args.mid2_ratio]
+
+    # Determine the number of CPU cores to use
+    num_cores = cpu_count()  # Specify the number of cores to use
+
+    # Record execution time for parallel execution
+    #parallel_times = parallel_pool(num_cores, simulation_args)
+    process_simulation_results(ResultsDir)
+
+

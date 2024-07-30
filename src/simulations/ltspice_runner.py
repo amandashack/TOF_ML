@@ -4,6 +4,9 @@ import h5py
 from PyLTSpice import RawRead
 import os
 import argparse
+import numpy as np
+import sys
+sys.path.insert(0, os.path.abspath('..'))
 from voltage_generator import *
 
 
@@ -41,11 +44,31 @@ def modify_cir_file(cir_file_path, new_voltages, new_filepath):
     return new_filepath  # Return the path to the new file for further processing
 
 
+def modify_net_file(current_net_filepath, new_voltages, new_filepath):
+    # Read the current netlist file
+    with open(current_net_filepath, 'r') as file:
+        lines = file.readlines()
+
+    # Map to find the voltage lines that need to be updated
+    voltage_map = {"V22": -new_voltages[22], "V25": -new_voltages[25], "V1": -new_voltages[27]}
+
+    # Iterate over lines and replace voltages where necessary
+    with open(new_filepath, 'w') as new_file:
+        for line in lines:
+            for key in voltage_map:
+                if f'"{key}"' in line:
+                    parts = line.split()
+                    new_value = f'"{voltage_map[key]:.6f}"'
+                    parts[1] = new_value  # Replace the old voltage value
+                    line = ' '.join(parts) + '\n'
+            new_file.write(line)
+
+
 # Function to run the LTspice simulation
-def run_simulation(spice_path, cir_file_path):
+def run_spice_simulation(spice_path, net_file_path):
     try:
-        subprocess.run([spice_path, "-b", "-Run", cir_file_path],
-                       cwd=os.path.dirname(cir_file_path), check=True)
+        subprocess.run([spice_path, "-b", "-Run", net_file_path],
+                       cwd=os.path.dirname(net_file_path), check=True)
     except FileNotFoundError:
         print(f"LTspice executable not found at {spice_path}. Please check the path.")
     except subprocess.CalledProcessError:
@@ -77,7 +100,7 @@ def check_currents(fp):
         current_value = abs(current_trace.data[-1])  # 0 for DC operating point analysis
 
         if current_value > max_val: max_val = current_value
-    if abs(max_val) > 0.01:
+    if abs(max_val) > 0.001:
         return 0, max_val
     else:
         return 1, max_val
@@ -86,9 +109,9 @@ def check_currents(fp):
 # Example usage
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='code for running LTSpice simulations')
-    parser.add_argument('ltspice_dir', type=str, help='Required output directory for LTspice simulation files')
+    parser.add_argument('ltspice_dir', type=str, help='Required output directory for '
+                                                      'LTspice simulation files')
     parser.add_argument('retardation', type=int, help='Required retardation value')
-    parser.add_argument('--voltage_front', type=float, default=0, help='optional front voltage')
     parser.add_argument('--blade22', type=float, default=0.11248,
                         help='Optional blade 22 ratio value, default is 0.11248')
     parser.add_argument('--blade25', type=float, default=0.1354,
@@ -110,34 +133,30 @@ if __name__ == "__main__":
     if args.blade22 < -1 or args.blade25 < -1:
         raise ValueError("Voltage ratio must be greater than -1.")
 
-    if args.voltage_front < 0:
-        raise ValueError("Voltage front must be greater than or equal to 0.")
-
     ltspice_path = "C:\\Users\\proxi\\AppData\\Local\\Programs\\ADI\\LTspice\\LTspice.exe"
     base_dir = args.ltspice_dir
     base_filename = f"spice_{args.retardation}_{args.blade22}_{args.blade25}.raw"
 
-    new_cir_filepath = os.path.join(base_dir, base_filename.replace('.raw', '.cir'))
+    new_net_filepath = os.path.join(base_dir, base_filename.replace('.raw', '.net'))
     raw_file_path = os.path.join(base_dir, base_filename)
 
-    dir_path = os.path.dirname(os.path.realpath(__file__))
-    cir_filepath = dir_path + "\\voltage_divider.cir"
+    net_filepath = os.path.join(base_dir, "MRCO_NM_Base_LTspice2.net")
 
     # Modify the .cir file with new voltages
-    new_voltages, resistor_values = calculateVoltage_NelderMeade(args.retardation,
-                                                                 args.voltage_front,
-                                                                 args.blade22,
-                                                                 args.blade25)
-    modify_cir_file(cir_filepath, new_voltages, new_cir_filepath)
+    new_voltages, resistor_values = calculateVoltage_NelderMeade(-args.retardation,
+                                                                 mid1_ratio=args.blade22,
+                                                                 mid2_ratio=args.blade25)
+    modify_cir_file(net_filepath, new_voltages, new_net_filepath)
 
     # Run the LTspice simulation
-    run_simulation(ltspice_path, new_cir_filepath)
+    run_spice_simulation(ltspice_path, new_net_filepath)
+    print(new_voltages)
 
     # Read the .raw file and check current values
     ok, max_val = check_currents(raw_file_path)
+    print(ok, max_val)
 
-    h5_filename = os.path.join(base_dir, 'test_voltages.h5')
-    with h5py.File(h5_filename, 'a') as h5file:
+    """with h5py.File(h5_filename, 'a') as h5file:
         # Create a nested group path based on retardation, front_voltage, and back_voltage
         group_path = f"{args.retardation}/{args.front_voltage}/{args.back_voltage}"
         # Navigate through the hierarchy, creating missing groups along the path
@@ -157,4 +176,5 @@ if __name__ == "__main__":
             [args.retardation, int(args.front_voltage * 1e5), int(args.back_voltage * 1e5)])
         current_group.attrs['binary_encoding'] = encoding
 
-        print(f"Results saved to {h5_filename} under {group_path} with encoding {encoding}")
+        print(f"Results saved to {h5_filename} under {group_path} with encoding {encoding}")"""
+

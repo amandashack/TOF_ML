@@ -84,12 +84,12 @@ def create_veto_model(params):
 
     inputs = tf.keras.Input(shape=(18,), name="inputs")
     x = tf.keras.layers.Dense(layer_size, name="dense_1")(inputs)
-    x = tf.keras.layers.LeakyReLU(alpha=0.02, name="leakyrelu_1")(x)
+    x = tf.keras.layers.LeakyReLU(alpha=0.01, name="leakyrelu_1")(x)
     x = tf.keras.layers.Dropout(dropout_rate, name="dropout_1")(x)
 
-    x = tf.keras.layers.Dense(layer_size // 2, name="dense_2")(x)
-    x = tf.keras.layers.LeakyReLU(alpha=0.02, name="leakyrelu_2")(x)
-    x = tf.keras.layers.Dropout(dropout_rate, name="dropout_2")(x)
+    #x = tf.keras.layers.Dense(layer_size // 2, name="dense_2")(x)
+    #x = tf.keras.layers.LeakyReLU(alpha=0.02, name="leakyrelu_2")(x)
+    #x = tf.keras.layers.Dropout(dropout_rate, name="dropout_2")(x)
 
     hit_output = tf.keras.layers.Dense(1, activation='sigmoid', name='hit')(x)
 
@@ -117,12 +117,12 @@ def create_main_model(params, steps_per_execution):
 
     inputs = tf.keras.Input(shape=(18,), name="inputs")
     x = tf.keras.layers.Dense(layer_size, name="dense_1")(inputs)
-    x = tf.keras.layers.LeakyReLU(alpha=0.02, name="leakyrelu_1")(x)
+    x = tf.keras.layers.LeakyReLU(alpha=0.01, name="leakyrelu_1")(x)
     x = tf.keras.layers.BatchNormalization(name="batchnorm_1")(x)
     x = tf.keras.layers.Dropout(dropout_rate, name="dropout_1")(x)
 
     x = tf.keras.layers.Dense(layer_size * 2, name="dense_2")(x)
-    x = tf.keras.layers.LeakyReLU(alpha=0.02, name="leakyrelu_2")(x)
+    x = tf.keras.layers.LeakyReLU(alpha=0.01, name="leakyrelu_2")(x)
     x = tf.keras.layers.BatchNormalization(name="batchnorm_2")(x)
     x = tf.keras.layers.Dropout(dropout_rate, name="dropout_2")(x)
 
@@ -174,6 +174,12 @@ def train_veto_model(train_dataset, val_dataset, params, checkpoint_dir):
     checkpoint = tf.keras.callbacks.ModelCheckpoint(
         filepath=checkpoint_path, monitor='val_loss', save_best_only=True, save_weights_only=True, verbose=1
     )
+    reduce_lr = tf.keras.callbacks.ReduceLROnPlateau(
+        monitor='val_loss', factor=0.1, patience=3, min_lr=1e-4, verbose=1
+    )
+    early_stop = tf.keras.callbacks.EarlyStopping(
+        monitor='val_loss', patience=6, restore_best_weights=True
+    )
 
     history = model.fit(
         train_dataset,
@@ -181,7 +187,7 @@ def train_veto_model(train_dataset, val_dataset, params, checkpoint_dir):
         validation_data=val_dataset,
         steps_per_epoch=steps_per_epoch,
         validation_steps=validation_steps,
-        callbacks=[checkpoint]
+        callbacks=[reduce_lr, early_stop, checkpoint]
     )
 
     return model, history

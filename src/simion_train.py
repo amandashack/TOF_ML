@@ -57,14 +57,10 @@ def calculate_scalers(data, scalers_path):
         print(f"Scalers loaded from {scalers_path}")
     else:
         # Calculate interaction terms for the entire data
-        generator = DataGenerator(data, None, None, batch_size=len(data))
+        generator = DataGenerator(data, None, batch_size=len(data))
         data_with_interactions = generator.calculate_interactions(data[:, :5])
-
-        # Define and fit scalers
-        scalers = {
-            'minmax': MinMaxScaler()
-        }
-        scalers['minmax'].fit(data_with_interactions[:, 1:])  # Interaction terms and ratios
+        all_data = np.column_stack([data_with_interactions, data[:, 5:7]])
+        scalers = MinMaxScaler().fit(all_data)  # Interaction terms and ratios
 
         # Save scalers
         with open(scalers_path, 'wb') as f:
@@ -197,9 +193,9 @@ def run_train(out_path, params, h5_filename, checkpoint_dir, n_splits=2):
 
 if __name__ == '__main__':
     h5_filename = r"C:\Users\proxi\Documents\coding\TOF_ML_backup\src\simulations\combined_data_shuffled.h5"
-    run_train("/Users/proxi/Documents/coding/stored_models/test_001/20",
-              {"layer_size": 64, "batch_size": 256, 'dropout': 0.2,
+    run_train("/Users/proxi/Documents/coding/stored_models/test_001/21",
+              {"layer_size": 32, "batch_size": 256, 'dropout': 0.2,
                'learning_rate': 0.1, 'optimizer': 'RMSprop'},
-              h5_filename, r"C:\Users\proxi\Documents\coding\stored_models\test_001\20\checkpoints")
+              h5_filename, r"C:\Users\proxi\Documents\coding\stored_models\test_001\21\checkpoints")
 
 
