@@ -78,7 +78,7 @@ class DataGeneratorWithVeto(DataGenerator):
             full_batch = self.scale_input(np.column_stack([input_batch, output_batch]))
 
             # Replace NaNs with the log of a small value (1e-10)
-            input_batch = np.nan_to_num(full_batch[:, :-3], nan=np.log(1e-10))
+            input_batch = np.nan_to_num(full_batch[:, :-2], nan=np.log(1e-10))
             output_batch = np.nan_to_num(full_batch[:, -2:], nan=np.log(1e-10))
 
             # Generate the mask using the veto model

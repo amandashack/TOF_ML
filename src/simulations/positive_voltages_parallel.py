@@ -233,8 +233,9 @@ def record_execution_time(num_cores, simulation_args):
 
 
 def parallel_pool(num_cores, simulation_args):
+    results = []
     with Pool(processes=num_cores) as pool:
-        results = list(pool.imap_unordered(run_simulation, simulation_args))
+        results.append(list(pool.imap_unordered(run_simulation, simulation_args)))
     return results
 
 
