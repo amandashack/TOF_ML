@@ -56,7 +56,7 @@ class DataGenerator:
         return scale_batch
 
     def inverse_scale_output(self, predictions):
-        predictions = self.scalers.inverse_trainsform(predictions)
+        predictions = self.scalers.inverse_transform(predictions)
         return predictions
 
 

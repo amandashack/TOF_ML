@@ -202,17 +202,17 @@ def train_main_model(train_gen, val_gen, params, checkpoint_dir):
     model = create_main_model(params, steps_per_execution)
 
     reduce_lr = tf.keras.callbacks.ReduceLROnPlateau(
-        monitor='val_loss', factor=0.1, patience=3, min_lr=1e-8, verbose=1
+        monitor='val_loss', factor=0.1, patience=3, min_lr=1e-4, verbose=1
     )
     early_stop = tf.keras.callbacks.EarlyStopping(
-        monitor='val_loss', patience=6, restore_best_weights=True
+        monitor='val_loss', patience=5, restore_best_weights=True
     )
     checkpoint_path = os.path.join(checkpoint_dir, "main_cp-{epoch:04d}.ckpt")
     checkpoint = tf.keras.callbacks.ModelCheckpoint(
         filepath=checkpoint_path, monitor='val_loss', save_best_only=True,
         save_weights_only=True, verbose=1
     )
-    memory_callback = MemoryUsageCallback()
+    #memory_callback = MemoryUsageCallback()
 
     if not os.path.exists(checkpoint_dir):
         os.makedirs(checkpoint_dir)
@@ -223,7 +223,7 @@ def train_main_model(train_gen, val_gen, params, checkpoint_dir):
         validation_data=val_gen,
         steps_per_epoch=steps_per_epoch,
         validation_steps=validation_steps,
-        callbacks=[reduce_lr, early_stop, checkpoint, memory_callback]
+        callbacks=[reduce_lr, early_stop, checkpoint]
     )
 
     return model, history

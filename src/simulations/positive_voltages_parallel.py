@@ -95,7 +95,7 @@ def run_simulation(args):
     if retardation < 0:
         ke = ke - retardation
 
-    spice_filename = f"spice_{args.retardation}_{args.blade22}_{args.blade25}.raw"
+    spice_filename = f"spice_{-retardation}_{mid1_ratio}_{mid2_ratio}.raw"
 
     new_net_filepath = os.path.join(spice_sim_path, spice_filename.replace('.raw', '.net'))
     raw_file_path = os.path.join(spice_sim_path, spice_filename)
@@ -103,9 +103,9 @@ def run_simulation(args):
     net_filepath = os.path.join(spice_sim_path, "MRCO_NM_Base_LTspice2.net")
 
     # Modify the .cir file with new voltages
-    new_voltages, resistor_values = calculateVoltage_NelderMeade(-args.retardation,
-                                                                 mid1_ratio=args.blade22,
-                                                                 mid2_ratio=args.blade25)
+    new_voltages, resistor_values = calculateVoltage_NelderMeade(-retardation,
+                                                                 mid1_ratio=mid1_ratio,
+                                                                 mid2_ratio=mid2_ratio)
     modify_cir_file(net_filepath, new_voltages, new_net_filepath)
 
     # Run the LTspice simulation
@@ -117,6 +117,7 @@ def run_simulation(args):
     over_current = []
 
     if ok:
+        print("How are you doing? ", ok, )
         # Create a temporary directory for this simulation
         temp_dir = tempfile.mkdtemp()
         try:

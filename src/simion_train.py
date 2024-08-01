@@ -60,7 +60,7 @@ def calculate_scalers(data, scalers_path):
         generator = DataGenerator(data, None, batch_size=len(data))
         data_with_interactions = generator.calculate_interactions(data[:, :5])
         all_data = np.column_stack([data_with_interactions, data[:, 5:7]])
-        scalers = MinMaxScaler().fit(all_data)  # Interaction terms and ratios
+        scalers = MinMaxScaler().fit(all_data)
 
         # Save scalers
         with open(scalers_path, 'wb') as f:
