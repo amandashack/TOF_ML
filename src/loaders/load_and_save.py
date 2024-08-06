@@ -94,6 +94,50 @@ class DataGeneratorWithVeto(DataGenerator):
             i += self.batch_size
 
 
+class DataGeneratorTofToKE(DataGenerator):
+    def __init__(self, data, scalers, batch_size=100):
+        super().__init__(data, scalers, batch_size)
+
+    def __call__(self):
+        total_samples = self.data.shape[0]
+        i = 0
+        while i < total_samples:
+            batch = self.data[i:i + self.batch_size, :]
+            input_batch = self.calculate_interactions(batch[:, :4])
+
+            output_batch = batch[:, 4]  # time_of_flight
+
+            # Apply scaling
+            full_batch = self.scale_input(np.column_stack([input_batch, output_batch]))
+
+            # Replace NaNs with the log of a small value (1e-10)
+            input_batch = np.nan_to_num(full_batch[:, :-1], nan=np.log(1e-10))
+            output_batch = np.nan_to_num(full_batch[:, -1:], nan=np.log(1e-10))
+
+            if len(input_batch) > 0:  # Only yield if there are valid rows remaining
+                yield input_batch, output_batch  # Split into inputs and outputs
+
+            i += self.batch_size
+
+    @staticmethod
+    def calculate_interactions(input_batch):
+        # Interaction terms and higher-order polynomial terms
+        interaction_terms = np.column_stack([
+            input_batch,
+            input_batch[:, 0] * input_batch[:, 1],  # kinetic energy * retardation
+            input_batch[:, 0] * input_batch[:, 2],  # kinetic energy * mid1
+            input_batch[:, 0] * input_batch[:, 3],  # kinetic energy * mid2
+            input_batch[:, 1] * input_batch[:, 2],  # retardation * mid1
+            input_batch[:, 1] * input_batch[:, 3],  # retardation * mid2
+            input_batch[:, 2] * input_batch[:, 3],  # mid1 * mid2
+            input_batch[:, 0] ** 2,  # kinetic energy ^ 2
+            input_batch[:, 1] ** 2,  # retardation ^ 2
+            input_batch[:, 2] ** 2,  # mid1 ^ 2
+            input_batch[:, 3] ** 2  # mid2 ^ 2
+        ])
+        return interaction_terms
+
+
 def save_to_h5(array, filename):
     """
     Save a NumPy array to an HDF5 file.

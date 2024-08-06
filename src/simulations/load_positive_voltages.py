@@ -414,7 +414,7 @@ if __name__ == '__main__':
     #gradients_array = gradients_to_numpy(gradients)
 
     # Save the combined array to an HDF5 file
-    #save_to_h5(gradients_array, 'tof_to_energy_data')
+    #save_to_h5(gradients_array, 'tof_to_energy_data.h5')
     #ex = data_loader.create_efficiency_xarray()
     #plot_imagetool(ex.sel({'kinetic_energy': 0.1}))
     #save_xarray(ex, r"C:\Users\proxi\Documents\coding\TOF_ML\simulations\TOF_simulation\simion_output\collection_efficiency",
