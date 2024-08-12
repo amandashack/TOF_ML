@@ -6,7 +6,7 @@ with open('spectra_info.json', 'r') as json_file:
     spectra_info = json.load(json_file)
 
 # Define the base path
-base_path = r'C:\Users\proxi\Documents\coding\TOF_ML\simulations\TOF_simulation\simion_output\collection_efficiency'
+base_path = r'C:\Users\proxi\Documents\coding\simulations\TOF_simulation\simion_output\collection_efficiency'
 
 
 def load_h5(filepath):

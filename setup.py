@@ -6,7 +6,7 @@ setup(
     description='Package for generating simion data '
                 'and training a machine learning model',
     license='MIT',
-    packages=['hellostackoverflow'],
+    packages=['numpy'],
     author='Amanda Shackelford',
     author_email='ajshack4@gmail.com',
     keywords=['example'],

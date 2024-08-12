@@ -55,7 +55,7 @@ def calculate_nbins(tof_values, time_resolution):
     resolution = int(width/time_resolution)
     return np.linspace(tof_values[0], tof_values[-1], resolution)
 
-dir_path = "C:/Users/proxi/Documents/coding/TOF_ML/simulations/TOF_simulation"
+dir_path = "C:/Users/proxi/Documents/coding/simulations/TOF_simulation"
 amanda_filepath = dir_path + "/simion_output"
 data_loader = DataStructure(filepath=amanda_filepath)
 data_loader.load()

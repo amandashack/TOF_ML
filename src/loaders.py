@@ -677,7 +677,7 @@ if __name__ == '__main__':
     # Assuming the files are located in a directory named 'data_files' in the current working directory.
     #dir_path = os.path.dirname(os.path.realpath(__file__))
     #amanda_filepath = dir_path + "\\NM_simulations"
-    dir_path = "C:/Users/proxi/Documents/coding/TOF_ML/simulations/TOF_simulation"
+    dir_path = "C:/Users/proxi/Documents/coding/TOF_simulation"
     #dir_path = "C:/Users/proxi/Documents/coding/TOF_ML/src/NM_simulations"
     amanda_filepath = dir_path + "/simion_output/positive_voltage"
     data_loader = DataStructure(filepath=amanda_filepath)

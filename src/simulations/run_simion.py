@@ -290,7 +290,7 @@ if __name__ == '__main__':
             raise argparse.ArgumentTypeError(f"readable_dir:{string} is not a valid path")
 
     ltspice_path = "C:\\Users\\proxi\\AppData\\Local\\Programs\\ADI\\LTspice\\LTspice.exe"
-    baseDir = "C:/Users/proxi/Documents/coding/TOF_ML/simulations/TOF_simulation"
+    baseDir = "C:/Users/proxi/Documents/coding/simulations/TOF_simulation"
     iobFileLoc = baseDir + "/TOF_simulation.iob"
     recordingFile = baseDir + "/TOF_simulation.rec"
     potArrLoc = baseDir + "/copiedArray.PA0"

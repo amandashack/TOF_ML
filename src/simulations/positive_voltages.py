@@ -77,7 +77,7 @@ if __name__ == '__main__':
         else:
             raise argparse.ArgumentTypeError(f"readable_dir:{string} is not a valid path")
 
-    baseDir = "C:/Users/proxi/Documents/coding/TOF_ML/simulations/TOF_simulation"
+    baseDir = "C:/Users/proxi/Documents/coding/simulations/TOF_simulation"
     iobFileLoc = baseDir + "/TOF_simulation.iob"
     recordingFile = baseDir + "/TOF_simulation.rec"
     potArrLoc = baseDir + "/copiedArray.PA0"
@@ -151,11 +151,11 @@ if __name__ == '__main__':
                         r = retardation
                         rsign = "pos"
                     if ke == 0.1:
-                        simion_output_path = (f"C:\\Users\\proxi\\Documents\\coding\\TOF_ML\\simulations\\"
+                        simion_output_path = (f"C:\\Users\\proxi\\Documents\\coding\\"
                                               f"TOF_simulation\\simion_output\\collection_efficiency\\"
                                               f"sim_{rsign}_R{r}_{m1sign}_{mid1}_{m2sign}_{mid2}_0.txt")
                     else:
-                        simion_output_path = (f"C:\\Users\\proxi\\Documents\\coding\\TOF_ML\\simulations\\"
+                        simion_output_path = (f"C:\\Users\\proxi\\Documents\\coding\\simulations\\"
                                               f"TOF_simulation\\simion_output\\collection_efficiency\\"
                                               f"sim_{rsign}_R{r}_{m1sign}_{mid1}_{m2sign}_{mid2}_{int(ke)}.txt")
                     print(simion_output_path)

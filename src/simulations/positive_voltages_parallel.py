@@ -21,7 +21,7 @@ potArrLoc = SimionDir + "/copiedArray.PA0"
 lua_path = SimionDir + "/TOF_simulation.lua"
 Fly2File = SimionDir + "/TOF_simulation.fly2"
 ltspice_path = r"C:\Users\proxi\AppData\Local\Programs\ADI\LTspice\LTspice.exe"
-spice_sim_path = r"C:\Users\proxi\Documents\coding\TOF_ML\simulations\ltspice"
+spice_sim_path = r"C:\Users\proxi\Documents\coding\simulations\ltspice"
 
 
 

@@ -68,6 +68,9 @@ class DataGeneratorWithVeto(DataGenerator):
     def __call__(self):
         total_samples = self.data.shape[0]
         i = 0
+        accumulated_input = np.empty((0, 18))  # Assuming 18 features for input
+        accumulated_output = np.empty((0, 2))  # Assuming 2 features for output (time_of_flight and y_tof)
+
         while i < total_samples:
             batch = self.data[i:i + self.batch_size, :]
             input_batch = self.calculate_interactions(batch[:, :5])
@@ -85,13 +88,24 @@ class DataGeneratorWithVeto(DataGenerator):
             mask = self.veto_model.predict(input_batch, verbose=0) > 0.5
             mask = mask.flatten().astype(bool)
 
-            # Add mask to the output batch
-            output_batch = np.column_stack([output_batch, mask])
+            input_batch = input_batch[mask]
+            output_batch = output_batch[mask]
 
-            if len(input_batch) > 0:  # Only yield if there are valid rows remaining
-                yield input_batch, output_batch  # Split into inputs and outputs
+            # Accumulate the valid data points
+            accumulated_input = np.concatenate((accumulated_input, input_batch), axis=0)
+            accumulated_output = np.concatenate((accumulated_output, output_batch), axis=0)
+
+            # Yield the batch if accumulated data size reaches or exceeds batch size
+            while len(accumulated_input) >= self.batch_size:
+                yield accumulated_input[:self.batch_size], accumulated_output[:self.batch_size]
+                accumulated_input = accumulated_input[self.batch_size:]
+                accumulated_output = accumulated_output[self.batch_size:]
 
             i += self.batch_size
+
+        # Yield any remaining data points that didn't fill a batch
+        if len(accumulated_input) > 0:
+            yield accumulated_input, accumulated_output
 
 
 class DataGeneratorTofToKE(DataGenerator):
