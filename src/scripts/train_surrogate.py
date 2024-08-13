@@ -5,8 +5,9 @@ from training_functions import *
 import sys
 sys.path.insert(0, os.path.abspath('..'))
 from loaders.load_and_save import DataGenerator, DataGeneratorWithVeto
-from models.surrogate_model import train_main_model
+from models.surrogate_model import train_main_model, create_main_model
 from models.veto_model import train_veto_model
+from scipts.analysis_functions import preprocess_surrogate_test_data, evaluate
 
 DATA_FILENAME = r"C:\Users\proxi\Documents\coding\TOF_ML_backup\src\simulations\combined_data_shuffled.h5"
 
@@ -23,7 +24,8 @@ if gpus:
 
 
 def run_train(out_path, params, n_splits=3, subset_percentage=None):
-    checkpoint_dir = os.path.join(out_path, "\checkpoints")
+    checkpoint_dir = os.path.join(out_path, "checkpoints")
+    combined_model_path = os.path.join(out_path, "combined_model.h5")
     # Load data from the HDF5 file
     with h5py.File(DATA_FILENAME, 'r') as hf:
         # preprocess data
@@ -57,7 +59,9 @@ def run_train(out_path, params, n_splits=3, subset_percentage=None):
 
     # Prepare cross-validation
     kfold = KFold(n_splits=n_splits, shuffle=True, random_state=42)
+    fold_models = []
     fold = 1
+
     for train_index, val_index in kfold.split(train_data):
         train_fold_data = train_data[train_index]
         val_fold_data = train_data[val_index]
@@ -121,7 +125,25 @@ def run_train(out_path, params, n_splits=3, subset_percentage=None):
             pickle.dump(history.history, f)
 
         print(f"Models and history for fold {fold} saved.")
+        fold_models.append(model)
         fold += 1
+
+        # Combine models by averaging their weights
+    combined_model = create_main_model()  # Use your model creation function
+    combined_weights = [model.get_weights() for model in fold_models]
+    new_weights = []
+
+    for weights_tuple in zip(*combined_weights):
+        new_weights.append([np.mean(np.array(w), axis=0) for w in zip(*weights_tuple)])
+
+    combined_model.set_weights(new_weights)
+    combined_model.save(combined_model_path)
+
+    # Final evaluation on test data
+    x_test, y_test = preprocess_surrogate_test_data(test_data, scalers, veto_model, combined_model)
+    loss_test = evaluate(combined_model, x_test, y_test, plot=False)
+
+    print(f"Final test_loss: {loss_test:.4f}")
 
 
 if __name__ == '__main__':
@@ -129,4 +151,4 @@ if __name__ == '__main__':
     p = re.findall(r'(\w+)=(\d+)', p)
     params = dict((p[i][0], float(p[i][1])) for i in range(len(p)))
     output_file_path = sys.argv[1]
-    run_train(output_file_path, params)
+    run_train(output_file_path, params, n_splits=3)

@@ -59,7 +59,7 @@ fi
 
 # Optional: Generate params file if N_HYPERPARAM_SETS is provided and it doesn't exist
 if [ -n "$N_HYPERPARAM_SETS" ] && [ ! -f "$PARAMS_FILE" ]; then
-    ./hyperparam_search/generate_params.py "$DIR" "$N_HYPERPARAM_SETS"
+    python3 ./hyperparam_search/generate_params.py "$DIR" "$N_HYPERPARAM_SETS"
     PARAMS_FILE="${DIR}/params"
 fi
 
@@ -99,7 +99,7 @@ MODEL_FILE="${DIR}/${PARAMS_ID}"
 if [[ ! -d $MODEL_FILE ]] ; then
 	mkdir $MODEL_FILE
 fi
-python3 train_surrogate.py ${MODEL_FILE} ${PARAMS} | tr '\n\t' '| ' >> $TMPFILE
+python3 ./scripts/train_surrogate.py ${MODEL_FILE} ${PARAMS} | tr '\n\t' '| ' >> $TMPFILE
 echo >> $TMPFILE
 
 # exit if training failed
