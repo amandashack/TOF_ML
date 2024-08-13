@@ -1,10 +1,11 @@
 #!/bin/bash
 #SBATCH --account=lcls
-#SBATCH --partition=milano
+#SBATCH --partition=ampere
 #SBATCH --job-name=tofs
 #SBATCH --ntasks=3
-#SBATCH --cpus-per-task=1
-#SBATCH --mem-per-cpu=20g
+#SBATCH --cpus-per-task=8
+#SBATCH --mem-per-cpu=50g
+#SBATCH --gpus 2
 #SBATCH --time=0-24:00:00
 
 source /sdf/group/lcls/ds/ana/sw/conda2/manage/bin/psconda.sh
