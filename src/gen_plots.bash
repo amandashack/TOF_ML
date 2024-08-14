@@ -10,7 +10,7 @@ echo $TOP_MODEL_IDS
 # Loop over all model directories
 for MODEL_ID in $TOP_MODEL_IDS; do
     MODEL_PATH="$BASE_DIR/$MODEL_ID"
-    
+
     if [ ! -d "$MODEL_PATH" ]; then
         # Extract the model number from the directory name, assuming it follows "test_###"
         echo "There is something wrong with your model path"

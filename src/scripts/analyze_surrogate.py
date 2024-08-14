@@ -17,10 +17,12 @@ sys.path.insert(0, os.path.abspath('..'))
 from loaders.load_and_save import DataGenerator, DataGeneratorWithVeto
 
 
-def plot_surrogate_results(base_dir, model_num, fold, pdf_filename=None, sample_size=10000):
-    main_model_path = os.path.join(base_dir, str(model_num), f'main_model_fold_{fold}.h5')
-    veto_model_path = os.path.join(base_dir, str(model_num), f'veto_model_fold_{fold}.h5')
-    main_model = tf.keras.models.load_model(main_model_path, compile=False)
+def plot_surrogate_results(base_dir, model_num, pdf_filename=None, sample_size=10000):
+    combined_model_path = os.path.join(base_dir, str(model_num), 'combined_model.h5')
+    veto_model_path = os.path.join(base_dir, str(model_num),
+                                   f'veto_model_fold_1.h5')  # Use fold 1 or any valid veto model
+
+    combined_model = tf.keras.models.load_model(combined_model_path, compile=False)
     veto_model = tf.keras.models.load_model(veto_model_path)
 
     test_data_path = os.path.join(base_dir, str(model_num), 'test_data.h5')
@@ -34,7 +36,14 @@ def plot_surrogate_results(base_dir, model_num, fold, pdf_filename=None, sample_
     with open(scalers_path, 'rb') as f:
         scalers = pickle.load(f)
 
-    df_tof = preprocess_surrogate_test_data(test_data_ds, scalers, veto_model, main_model)
+    df_tof = preprocess_surrogate_test_data(test_data_ds, scalers, veto_model, combined_model)
+
+    # Load the params used for this model
+    with open(os.path.join(base_dir, str(model_num), 'combined_model_params.pkl'), 'rb') as f:
+        params = pickle.load(f)
+
+    # Convert params to string for display
+    params_str = ', '.join([f"{key}={value}" for key, value in params.items()])
 
     # Prepare to save plots to PDF if requested
     if pdf_filename:
@@ -59,11 +68,12 @@ def plot_surrogate_results(base_dir, model_num, fold, pdf_filename=None, sample_
         axs[i].set_ylabel('True Values', fontsize=16)
         axs[i].set_title(f'{title} Performance')
 
-        # Inset for metrics
-        axins = inset_axes(axs[i], width="40%", height="30%", loc='upper right')
-        axins.text(0.05, 0.7, f'MAE = {mae:.3f}', fontsize=14)
-        axins.text(0.05, 0.5, f'RMSE = {rmse:.3f}', fontsize=14)
-        axins.text(0.05, 0.3, f'$R^2 = {r_squared:.3f}$', fontsize=14)
+        # Inset for metrics and params
+        axins = inset_axes(axs[i], width="50%", height="40%", loc='upper right')
+        axins.text(0.05, 0.7, f'MAE = {mae:.3f}', fontsize=12)
+        axins.text(0.05, 0.5, f'RMSE = {rmse:.3f}', fontsize=12)
+        axins.text(0.05, 0.3, f'$R^2 = {r_squared:.3f}$', fontsize=12)
+        axins.text(0.05, 0.1, params_str, fontsize=10)
         axins.axis('off')
 
     plt.tight_layout()
@@ -113,12 +123,13 @@ def plot_surrogate_results(base_dir, model_num, fold, pdf_filename=None, sample_
         # Calculate FWHM
         fwhm = 2 * np.sqrt(2 * np.log(2)) * std
 
-        # Inset for kurtosis, skewness, center, and FWHM
-        axins_hist = inset_axes(axs[i], width="40%", height="40%", loc='upper right')
+        # Inset for kurtosis, skewness, center, FWHM, and params
+        axins_hist = inset_axes(axs[i], width="50%", height="40%", loc='upper right')
         axins_hist.text(0.3, 0.7, f'Kurtosis = {residual_kurtosis:.2f}', fontsize=12)
         axins_hist.text(0.3, 0.5, f'Skewness = {residual_skewness:.2f}', fontsize=12)
         axins_hist.text(0.3, 0.3, f'Center = {mu:.2f}', fontsize=12)
         axins_hist.text(0.3, 0.1, f'FWHM = {fwhm:.2f}', fontsize=12)
+        axins_hist.text(0.05, 0.1, params_str, fontsize=10)
         axins_hist.axis('off')
 
     plt.tight_layout()
@@ -140,8 +151,9 @@ def main():
     parser.add_argument('--sample_size', type=int, default=20000, help='Number of random samples to plot.')
 
     args = parser.parse_args()
-    plot_surrogate_results(args.base_dir, args.model_num, 1, pdf_filename=args.pdf_filename,
-                 sample_size=args.sample_size)
+    plot_surrogate_results(args.base_dir, args.model_num, pdf_filename=args.pdf_filename,
+                           sample_size=args.sample_size)
+
 
 if __name__ == '__main__':
     main()
