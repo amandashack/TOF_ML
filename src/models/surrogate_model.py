@@ -10,21 +10,16 @@ def create_main_model(params, steps_per_execution):
     learning_rate = float(params['learning_rate'])
     optimizer = params['optimizer']
 
-    inputs = tf.keras.Input(shape=(18,), name="inputs")
-    x = tf.keras.layers.Dense(layer_size, name="dense_1")(inputs)
-    x = tf.keras.layers.LeakyReLU(alpha=0.01, name="leakyrelu_1")(x)
-    x = tf.keras.layers.BatchNormalization(name="batchnorm_1")(x)
-    x = tf.keras.layers.Dropout(dropout_rate, name="dropout_1")(x)
-
-    x = tf.keras.layers.Dense(layer_size * 2, name="dense_2")(x)
-    x = tf.keras.layers.LeakyReLU(alpha=0.01, name="leakyrelu_2")(x)
-    x = tf.keras.layers.BatchNormalization(name="batchnorm_2")(x)
-    x = tf.keras.layers.Dropout(dropout_rate, name="dropout_2")(x)
-
-    x = tf.keras.layers.Dense(layer_size, name="dense_3")(x)
-    x = tf.keras.layers.Activation(swish, name="swish")(x)
-    x = tf.keras.layers.BatchNormalization(name="batchnorm_3")(x)
-    x = tf.keras.layers.Dropout(dropout_rate, name="dropout_3")(x)
+    inputs = tf.keras.Input(shape=(18,))
+    x = tf.keras.layers.Dense(layer_size)(inputs)
+    x = tf.keras.layers.LeakyReLU(alpha=0.01)(x)
+    x = tf.keras.layers.BatchNormalization()(x)
+    x = tf.keras.layers.Dropout(dropout_rate)(x)
+    
+    x = tf.keras.layers.Dense(layer_size / 2)(x)
+    x = tf.keras.layers.LeakyReLU(alpha=0.01)(x)
+    x = tf.keras.layers.BatchNormalization()(x)
+    x = tf.keras.layers.Dropout(dropout_rate)(x)
 
     time_of_flight_output = tf.keras.layers.Dense(1, activation='linear', name='time_of_flight')(x)
     y_tof_output = tf.keras.layers.Dense(1, activation='linear', name='y_tof')(x)
@@ -46,8 +41,8 @@ def create_main_model(params, steps_per_execution):
 class MemoryUsageCallback(tf.keras.callbacks.Callback):
     def on_train_batch_end(self, batch, logs=None):
         memory_info = tf.config.experimental.get_memory_info('GPU:0')
-        print(f" - Batch {batch + 1} - GPU Memory Usage: {memory_info['current'] / 1024**2:.2f} "
-              f"MB / {memory_info['peak'] / 1024**2:.2f} MB")
+        #print(f" - Batch {batch + 1} - GPU Memory Usage: {memory_info['current'] / 1024**2:.2f} "
+        #      f"MB / {memory_info['peak'] / 1024**2:.2f} MB")
 
 
 def train_main_model(train_gen, val_gen, params, checkpoint_dir):
@@ -59,17 +54,17 @@ def train_main_model(train_gen, val_gen, params, checkpoint_dir):
     model = create_main_model(params, steps_per_execution)
 
     reduce_lr = tf.keras.callbacks.ReduceLROnPlateau(
-        monitor='val_loss', factor=0.1, patience=5, min_lr=1e-8, verbose=1
+        monitor='val_loss', factor=0.1, patience=10, min_lr=1e-5, verbose=0
     )
     early_stop = tf.keras.callbacks.EarlyStopping(
-        monitor='val_loss', patience=10, restore_best_weights=True
+        monitor='val_loss', patience=15, restore_best_weights=True
     )
     checkpoint_path = os.path.join(checkpoint_dir, "main_cp-{epoch:04d}.ckpt")
     checkpoint = tf.keras.callbacks.ModelCheckpoint(
         filepath=checkpoint_path, monitor='val_loss', save_best_only=True,
-        save_weights_only=True, verbose=1
+        save_weights_only=True, verbose=0
     )
-    memory_callback = MemoryUsageCallback()
+    #memory_callback = MemoryUsageCallback()
 
     history = model.fit(
         train_gen,
@@ -77,7 +72,7 @@ def train_main_model(train_gen, val_gen, params, checkpoint_dir):
         validation_data=val_gen,
         steps_per_epoch=steps_per_epoch,
         validation_steps=validation_steps,
-        callbacks=[reduce_lr, early_stop, checkpoint, memory_callback]
+        callbacks=[reduce_lr, early_stop, checkpoint]
     )
 
     return model, history

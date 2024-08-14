@@ -51,7 +51,7 @@ else
     DIR="${BASE_DIR}/test_$(printf "%04d" "$USE_EXISTING_DIR")"
 
     # Check if the params file exists in an existing directory
-    PARAMS_FILE="${DIR}/params"
+    PARAMS_FILE="${BASE_DIR}/params"
     if [ ! -f "$PARAMS_FILE" ]; then
         echo "Error: Params file not found in the existing directory."
         exit 1
@@ -60,8 +60,8 @@ fi
 
 # Optional: Generate params file if N_HYPERPARAM_SETS is provided and it doesn't exist
 if [ -n "$N_HYPERPARAM_SETS" ] && [ ! -f "$PARAMS_FILE" ]; then
-    ./hyperparam_search/generate_params.py "$DIR" "$N_HYPERPARAM_SETS"
-    PARAMS_FILE="${DIR}/params"
+    python3 ./hyperparam_search/generate_params.py "$DIR" "$N_HYPERPARAM_SETS"
+    PARAMS_FILE="${BASE_DIR}/params"
 fi
 
 # Check if the params file exists before proceeding
@@ -100,7 +100,7 @@ MODEL_FILE="${DIR}/${PARAMS_ID}"
 if [[ ! -d $MODEL_FILE ]] ; then
 	mkdir $MODEL_FILE
 fi
-python3 train_surrogate.py ${MODEL_FILE} ${PARAMS} | tr '\n\t' '| ' >> $TMPFILE
+python3 ./scripts/train_surrogate.py ${MODEL_FILE} ${PARAMS} | tr '\n\t' '| ' >> $TMPFILE
 echo >> $TMPFILE
 
 # exit if training failed

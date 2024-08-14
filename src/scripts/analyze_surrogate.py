@@ -34,41 +34,7 @@ def plot_surrogate_results(base_dir, model_num, fold, pdf_filename=None, sample_
     with open(scalers_path, 'rb') as f:
         scalers = pickle.load(f)
 
-    # Prepare test data
-    generator = DataGeneratorWithVeto(test_data_ds, scalers, veto_model)
-    x_test = test_data_ds[:, :5]
-    y_test = test_data_ds[:, 5:7]  # time_of_flight and y_pos
-    mask_true = test_data_ds[:, 7:8].flatten()
-    data_with_interactions = generator.calculate_interactions(x_test)
-    all_data = np.column_stack([data_with_interactions, np.zeros_like(y_test)])
-    data_scaled = generator.scale_input(all_data)
-
-    input_batch = np.nan_to_num(data_scaled[:, :-2], nan=np.log(1e-10))
-
-    # Generate the mask using the veto model
-    mask_pred = veto_model.predict(input_batch, verbose=0) > 0.5
-    mask_pred = mask_pred.flatten().astype(bool)
-
-    matching_count = sum(1 for x, y in zip(mask_true, mask_pred) if x == y)
-    total_count = len(mask_true)
-    accuracy = matching_count / total_count
-
-    print(f"Accuracy: {accuracy:.2f}")
-
-    y_pred = np.squeeze(main_model.predict(input_batch[mask_pred])).T
-
-    y_pred_inv = generator.inverse_scale_output(np.column_stack([input_batch[mask_pred], y_pred]))
-
-    # Convert to DataFrame
-    df_tof = pd.DataFrame({
-        'y_tof_pred': y_pred_inv[:, -2].flatten(),
-        'y_tof_true': y_test[mask_pred, 0],
-        'y_pos_pred': y_pred_inv[:, -1].flatten(),
-        'y_pos_true': y_test[mask_pred, 1],
-        'tof_residuals': y_test[mask_pred, 0] - y_pred_inv[:, -2].flatten(),
-        'y_pos_residuals': y_test[mask_pred, 1] - y_pred_inv[:, -1].flatten(),
-        'retardation': test_data_ds[mask_pred, 2].flatten()
-    })
+    df_tof = preprocess_surrogate_test_data(test_data_ds, scalers, veto_model, main_model)
 
     # Prepare to save plots to PDF if requested
     if pdf_filename:

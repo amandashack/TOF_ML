@@ -5,8 +5,7 @@ import sys
 import os
 import h5py
 import glob
-sys.path.insert(0, os.path.abspath('..'))
-from loaders.load_and_save import DataGenerator, DataGeneratorWithVeto
+#from loaders.load_and_save import DataGenerator, DataGeneratorWithVeto
 
 
 def load_veto_model_if_exists(checkpoint_dir, fold):
@@ -34,9 +33,9 @@ def calculate_scalers(data, scalers_path):
         print(f"Scalers loaded from {scalers_path}")
     else:
         # Calculate interaction terms for the entire data
-        generator = DataGenerator(data, None)
-        data_with_interactions = generator.calculate_interactions(data[:, :5])
-        all_data = np.column_stack([data_with_interactions, data[:, 5:7]])
+        #generator = DataGenerator(data, None)
+        #data_with_interactions = generator.calculate_interactions(data[:, :5])
+        all_data = np.column_stack([data, data[:, 5:7]])
         scalers = MinMaxScaler()
         scalers.fit(all_data)
 
