@@ -1,8 +1,12 @@
 import os
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 import tensorflow as tf
 import numpy as np
 import pickle
 import argparse
+import sys
+import h5py
+from models import create_main_model
 
 
 def get_params_for_model(params_file, model_num):
@@ -47,8 +51,9 @@ def combine_folds(base_dir, model_num, n_folds=3):
 
     # Load test data
     test_data_path = os.path.join(base_dir, str(model_num), 'test_data.h5')
-    with open(test_data_path, 'rb') as f:
-        test_data = pickle.load(f)
+    with h5py.File(test_data_path, 'r') as hf:
+        test_data = hf['test_data'][:]
+    return test_data
 
     # Load scalers
     scalers_path = os.path.join(base_dir, str(model_num), 'scalers.pkl')
@@ -56,9 +61,9 @@ def combine_folds(base_dir, model_num, n_folds=3):
         scalers = pickle.load(f)
 
     # Evaluate the combined model
-    x_test, y_test = preprocess_surrogate_test_data(test_data, scalers, None, combined_model)
-    loss_test = combined_model.evaluate(x_test, y_test, verbose=0)
-    print(f"Final test loss: {loss_test[0]:.4f}, Test MAE: {loss_test[1]:.4f}")
+    #x_test, y_test = preprocess_surrogate_test_data(test_data, scalers, None, combined_model)
+    #loss_test = combined_model.evaluate(x_test, y_test, verbose=0)
+    #print(f"Final test loss: {loss_test[0]:.4f}, Test MAE: {loss_test[1]:.4f}")
 
 
 if __name__ == '__main__':

@@ -15,11 +15,11 @@ for MODEL_DIR in "$BASE_DIR"/*; do
             echo "There is something wrong with your model path: $MODEL_PATH"
         else
             # Combine the models from different folds
-            python3 ./scripts/combine_folds.py "$BASE_DIR" "$MODEL_ID"
+            python3 combine_folds.py "$BASE_DIR" "$MODEL_ID"
 
             # Generate the PDF plot for the combined model
             PDF_FILENAME="plots_model_${MODEL_ID}_combined.pdf"
-            python3 ./scripts/analyze_surrogate.py "$BASE_DIR" "$MODEL_ID" --pdf_filename "$PDF_FILENAME"
+            python3 analyze_surrogate.py "$BASE_DIR" "$MODEL_ID" --pdf_filename "$PDF_FILENAME"
         fi
     fi
 done

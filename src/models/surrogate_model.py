@@ -8,7 +8,7 @@ def create_main_model(params, steps_per_execution):
     layer_size = int(params['layer_size'])
     dropout_rate = float(params['dropout'])
     learning_rate = float(params['learning_rate'])
-    optimizer = params['optimizer']
+    #optimizer = params['optimizer']
 
     inputs = tf.keras.Input(shape=(18,))
     x = tf.keras.layers.Dense(layer_size)(inputs)
@@ -26,8 +26,7 @@ def create_main_model(params, steps_per_execution):
 
     model = tf.keras.Model(inputs=inputs, outputs=[time_of_flight_output, y_tof_output])
 
-    if optimizer == "Adam":
-        optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate)
+    optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate)
 
     model.compile(
         loss='mse',

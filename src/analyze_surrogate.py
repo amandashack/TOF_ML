@@ -3,6 +3,7 @@ import argparse
 import numpy as np
 import pandas as pd
 import pickle
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 import tensorflow as tf
 import seaborn as sns
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
@@ -12,18 +13,18 @@ import matplotlib.pyplot as plt
 import matplotlib
 matplotlib.rcParams['pdf.fonttype'] = 42
 from matplotlib.backends.backend_pdf import PdfPages
-from analysis_functions import *
-sys.path.insert(0, os.path.abspath('..'))
-from loaders.load_and_save import DataGenerator, DataGeneratorWithVeto
+from loaders import DataGenerator, DataGeneratorWithVeto
+from scripts import *
 
+VETO_MODEL = r"/sdf/home/a/ajshack/TOF_ML/stored_models/surrogate/veto_model.h5"
 
 def plot_surrogate_results(base_dir, model_num, pdf_filename=None, sample_size=10000):
     combined_model_path = os.path.join(base_dir, str(model_num), 'combined_model.h5')
-    veto_model_path = os.path.join(base_dir, str(model_num),
-                                   f'veto_model_fold_1.h5')  # Use fold 1 or any valid veto model
+    #veto_model_path = os.path.join(base_dir, str(model_num),
+    #                               f'veto_model_fold_1.h5')  # Use fold 1 or any valid veto model
 
     combined_model = tf.keras.models.load_model(combined_model_path, compile=False)
-    veto_model = tf.keras.models.load_model(veto_model_path)
+    veto_model = tf.keras.models.load_model(VETO_MODEL)
 
     test_data_path = os.path.join(base_dir, str(model_num), 'test_data.h5')
     test_data = load_test_data(test_data_path)

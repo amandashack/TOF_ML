@@ -10,7 +10,7 @@ import sys
 import os
 #fpath = os.path.join(os.pardir, 'loaders')
 #sys.path.append(fpath)
-#from load_and_save import DataGenerator, DataGeneratorWithVeto
+from loaders.load_and_save import DataGenerator, DataGeneratorWithVeto
 
 def fig_to_pdf_page(fig):
     buf = io.BytesIO()
