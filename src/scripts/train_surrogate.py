@@ -176,16 +176,3 @@ def run_train(out_path, params, n_splits=3, subset_percentage=None):
     loss_test = evaluate(combined_model, x_test, y_test, plot=False)
 
     print(f"Final test_loss: {loss_test:.4f}")
-
-
-if __name__ == '__main__':
-    p = ' '.join(sys.argv[2:])
-    p = re.findall(r'(\w+)=(\S+)', p)
-    params = {}
-    for key, value in p:
-        try:
-            params[key] = float(value)
-        except ValueError:
-            params[key] = value
-    output_file_path = sys.argv[1]
-    run_train(output_file_path, params, n_splits=3)

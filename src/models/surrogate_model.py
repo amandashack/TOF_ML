@@ -28,8 +28,10 @@ def create_main_model(params, steps_per_execution):
 
     optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate)
 
+    #
+
     model.compile(
-        loss='mse',
+        loss={'time_of_flight': 'mse', 'y_pos': 'mse'}, loss_weights={'time_of_flight': 1, 'y_pos': 0},
         optimizer=optimizer,
         steps_per_execution=steps_per_execution
     )

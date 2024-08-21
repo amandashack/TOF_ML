@@ -2,13 +2,76 @@ import xarray as xr
 import os
 import h5py
 import numpy as np
+import pickle
+from sklearn.preprocessing import MinMaxScaler
 
 
 class DataGenerator:
-    def __init__(self, data, scalers, batch_size=100):
-        self.data = data
-        self.scalers = scalers
+    def __init__(self, data_filename, batch_size=100):
         self.batch_size = batch_size
+        self.data_filename = data_filename
+        self.data = None
+        self.train_data = None
+        self.train_inputs = None
+        self.train_outputs = None
+        self.test_data = None
+
+    def initialize_data(self):
+        with h5py.File(self.data_filename, 'r') as hf:
+            # preprocess data
+            self.data = hf["data"][:]
+            # log of TOF and log of KE
+            self.data[:, 0] = np.log(self.data[:, 0] + self.data[:, 2])  # initial kinetic energy (was in pass energy)
+            self.data[:, 5] = np.log(self.data[:, 5])
+
+    def partition_data(self, train_size=0.8):
+        train_end = int(train_size * len(self.data))
+
+        np.random.shuffle(self.data)
+        self.train_data = self.data[:train_end]
+        self.train_inputs = self.train_data[:, :5]
+        self.train_outputs = self.train_data[:, 5:7]
+        self.test_data = self.data[train_end:]
+
+        return self.train_data, self.test_data
+
+    def subsample_data(self, subsample_size):
+
+            original_size = len(self.data)
+            subset_size = int(original_size * subsample_size)
+            self.data = self.data[np.random.choice(original_size, subset_size, replace=False)]
+
+    def save_test_data(self, out_path):
+        # Check if the base directory exists, create it if it does not
+        if not os.path.exists(out_path):
+            os.makedirs(out_path)
+            print(f"Created directory {out_path}")
+
+        # Save test data to the specified path
+        test_data_path = os.path.join(out_path, 'test_data.h5')
+        with h5py.File(test_data_path, 'w') as hf:
+            hf.create_dataset('test_data', data=self.test_data)
+        print(f"Test data saved to {test_data_path}")
+
+    def calculate_scalers(self, scalers_path):
+        if os.path.exists(scalers_path):
+            # Load scalers from file
+            with open(scalers_path, 'rb') as f:
+                scalers = pickle.load(f)
+            print(f"Scalers loaded from {scalers_path}")
+        else:
+            # Calculate interaction terms for the entire data
+            data_with_interactions = self.calculate_interactions(self.train_inputs)
+            all_data = np.column_stack([data_with_interactions, self.train_outputs])
+            scalers = MinMaxScaler()
+            scalers.fit(all_data)
+
+            # Save scalers
+            with open(scalers_path, 'wb') as f:
+                pickle.dump(scalers, f)
+            print(f"Scalers saved to {scalers_path}")
+
+        return scalers
 
     def __call__(self):
         total_samples = self.data.shape[0]
