@@ -1,11 +1,10 @@
 import os
+from loaders import DataGenerator
 
-from .loaders import DataGenerator
 
-def data_gen(data_filepath, out_path, params, subset_percentage=None):
+def build_data(data_filepath, out_path, params, subset_percentage=None):
     # TODO: make this more functional by using the right data loader based on the model chosen
-    # Define paths
-
+    # Define scalars path
     scalers_path = os.path.join(out_path, 'scalers.pkl')
     # Load data from the HDF5 file
     data_generator = DataGenerator(data_filepath, batch_size=params['batch_size'])

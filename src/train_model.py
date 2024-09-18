@@ -1,73 +1,78 @@
 from sklearn.model_selection import KFold
+import tensorflow as tf
+import numpy as np
+import sys
+import re
 from build_dataset import *
+
+# TODO: put these in a json or something
+DATA_FILENAME = r"/sdf/home/a/ajshack/combined_data_shuffled.h5"
+VETO_MODEL = r"/sdf/home/a/ajshack/TOF_ML/stored_models/surrogate/veto_model.h5"
 
 def train_model(data_filepath, model_outpath, params):
     checkpoint_dir = os.path.join(model_outpath, "checkpoints")
     combined_model_path = os.path.join(model_outpath, "combined_model.h5")
-    data = data_gen(data_filepath, model_outpath, params)
+    data = build_data(data_filepath, model_outpath, params)
+
+    # Use batch_size from params, default to 256 if not specified
+    batch_size = params.get('batch_size', 256)
 
     # Calculate steps per epoch
     params['steps_per_epoch'] = np.ceil(len(data.train_data) / batch_size).astype(int)
-    params['validation_steps'] = np.ceil(len(val_fold_data) / batch_size).astype(int)
+    params['validation_steps'] = np.ceil(len(data.val_data) / batch_size).astype(int)
 
-        # Check if veto model exists
-        # veto_model = load_veto_model_if_exists(checkpoint_dir, fold)
-        veto_model = tf.keras.models.load_model(VETO_MODEL)
+    # Check if veto model exists
+    # veto_model = load_veto_model_if_exists(checkpoint_dir, fold)
+    veto_model = tf.keras.models.load_model(VETO_MODEL)
 
-        if veto_model is None:
-            # If no veto model exists, create generator instances and train a new veto model
-            veto_train_gen = DataGenerator(train_fold_data, scalers, batch_size=batch_size)
-            veto_val_gen = DataGenerator(val_fold_data, scalers, batch_size=batch_size)
+    if veto_model is None:
+        # If no veto model exists, create generator instances and train a new veto model
+        veto_train_gen = DataGenerator(train_fold_data, data.scalers, batch_size=batch_size)
+        veto_val_gen = DataGenerator(val_fold_data, data.scalers, batch_size=batch_size)
 
-            veto_train_dataset = tf.data.Dataset.from_generator(
-                veto_train_gen, output_signature=(
-                    tf.TensorSpec(shape=(None, 18), dtype=tf.float32),
-                    tf.TensorSpec(shape=(None, 1), dtype=tf.float32)  # mask as the target
-                )
-            ).take(len(train_fold_data)).cache().repeat().prefetch(tf.data.experimental.AUTOTUNE)
-
-            veto_val_dataset = tf.data.Dataset.from_generator(
-                veto_val_gen, output_signature=(
-                    tf.TensorSpec(shape=(None, 18), dtype=tf.float32),
-                    tf.TensorSpec(shape=(None, 1), dtype=tf.float32)  # mask as the target
-                )
-            ).take(len(val_fold_data)).cache().repeat().prefetch(tf.data.experimental.AUTOTUNE)
-
-            #print(f"Training veto model on fold {fold}/{n_splits}...")
-            veto_model, history = train_veto_model(veto_train_dataset, veto_val_dataset, params, checkpoint_dir)
-            veto_model_path = os.path.join(checkpoint_dir, f"veto_model_fold_{fold}.h5")
-            veto_model.save(veto_model_path)
-
-        # Create generator instances for training and validation datasets using veto model
-        train_gen = DataGeneratorWithVeto(train_fold_data, scalers, veto_model, batch_size=batch_size)
-        val_gen = DataGeneratorWithVeto(val_fold_data, scalers, veto_model, batch_size=batch_size)
-
-        # Create tf.data.Dataset from the generator
-        train_dataset = tf.data.Dataset.from_generator(
-            train_gen, output_signature=(
+        veto_train_dataset = tf.data.Dataset.from_generator(
+            veto_train_gen, output_signature=(
                 tf.TensorSpec(shape=(None, 18), dtype=tf.float32),
-                tf.TensorSpec(shape=(None, 2), dtype=tf.float32)
+                tf.TensorSpec(shape=(None, 1), dtype=tf.float32)  # mask as the target
             )
         ).take(len(train_fold_data)).cache().repeat().prefetch(tf.data.experimental.AUTOTUNE)
 
-        val_dataset = tf.data.Dataset.from_generator(
-            val_gen, output_signature=(
+        veto_val_dataset = tf.data.Dataset.from_generator(
+            veto_val_gen, output_signature=(
                 tf.TensorSpec(shape=(None, 18), dtype=tf.float32),
-                tf.TensorSpec(shape=(None, 2), dtype=tf.float32)
+                tf.TensorSpec(shape=(None, 1), dtype=tf.float32)  # mask as the target
             )
         ).take(len(val_fold_data)).cache().repeat().prefetch(tf.data.experimental.AUTOTUNE)
 
-        # Train the main model
-        #print(f"Training main model on fold {fold}/{n_splits}...")
-        model, history = train_main_model(train_dataset, val_dataset, params, checkpoint_dir)
+        #print(f"Training veto model on fold {fold}/{n_splits}...")
+        veto_model, history = train_veto_model(veto_train_dataset, veto_val_dataset, params, checkpoint_dir)
+        veto_model_path = os.path.join(checkpoint_dir, f"veto_model}.h5")
+        veto_model.save(veto_model_path)
 
-        model.save(os.path.join(out_path, f"main_model_fold_{fold}.h5"))
-        with open(os.path.join(out_path, f"history_fold_{fold}.pkl"), 'wb') as f:
-            pickle.dump(history.history, f)
+    # Create generator instances for training and validation datasets using veto model
+    train_gen = DataGeneratorWithVeto(train_fold_data, scalers, veto_model, batch_size=batch_size)
+    val_gen = DataGeneratorWithVeto(val_fold_data, scalers, veto_model, batch_size=batch_size)
 
-        print(f"Models and history for fold {fold} saved.")
-        fold_models.append(model)
-        fold += 1
+    # Create tf.data.Dataset from the generator
+    train_dataset = tf.data.Dataset.from_generator(
+        train_gen, output_signature=(
+            tf.TensorSpec(shape=(None, 18), dtype=tf.float32),
+            tf.TensorSpec(shape=(None, 2), dtype=tf.float32)
+        )
+    ).take(len(train_fold_data)).cache().repeat().prefetch(tf.data.experimental.AUTOTUNE)
+
+    val_dataset = tf.data.Dataset.from_generator(
+        val_gen, output_signature=(
+            tf.TensorSpec(shape=(None, 18), dtype=tf.float32),
+            tf.TensorSpec(shape=(None, 2), dtype=tf.float32)
+        )
+    ).take(len(val_fold_data)).cache().repeat().prefetch(tf.data.experimental.AUTOTUNE)
+
+    # Train the main model
+    #print(f"Training main model on fold {fold}/{n_splits}...")
+    model, history = train_main_model(train_dataset, val_dataset, params, checkpoint_dir)
+
+    model.save(os.path.join(model_outpath, f"main_model.h5"))
 
         # Combine models by averaging their weights
     combined_model = create_main_model()  # Use your model creation function
@@ -88,13 +93,16 @@ def train_model(data_filepath, model_outpath, params):
 
 
 if __name__ == '__main__':
-    p = ' '.join(sys.argv[2:])
-    p = re.findall(r'(\w+)=(\S+)', p)
+    # Collect parameters passed through command line
+    output_file_path = sys.argv[1]
+    params_str = ' '.join(sys.argv[2:])
+    params_list = re.findall(r'(\w+)=(\S+)', params_str)
     params = {}
-    for key, value in p:
+    for key, value in params_list:
         try:
             params[key] = float(value)
         except ValueError:
             params[key] = value
-    output_file_path = sys.argv[1]
-    run_train(output_file_path, params, n_splits=3)
+
+    # Call the training function with parsed parameters
+    train_model(output_file_path, params)

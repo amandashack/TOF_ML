@@ -15,11 +15,12 @@ class DataGenerator:
         self.train_inputs = None
         self.train_outputs = None
         self.test_data = None
+        self.scalers = None
 
     def initialize_data(self):
         with h5py.File(self.data_filename, 'r') as hf:
             # preprocess data
-            self.data = hf["data"][:]
+            self.data = hf["combined_data"][:]
             # log of TOF and log of KE
             self.data[:, 0] = np.log(self.data[:, 0] + self.data[:, 2])  # initial kinetic energy (was in pass energy)
             self.data[:, 5] = np.log(self.data[:, 5])
@@ -36,7 +37,6 @@ class DataGenerator:
         return self.train_data, self.test_data
 
     def subsample_data(self, subsample_size):
-
             original_size = len(self.data)
             subset_size = int(original_size * subsample_size)
             self.data = self.data[np.random.choice(original_size, subset_size, replace=False)]
@@ -57,21 +57,19 @@ class DataGenerator:
         if os.path.exists(scalers_path):
             # Load scalers from file
             with open(scalers_path, 'rb') as f:
-                scalers = pickle.load(f)
+                self.scalers = pickle.load(f)
             print(f"Scalers loaded from {scalers_path}")
         else:
             # Calculate interaction terms for the entire data
             data_with_interactions = self.calculate_interactions(self.train_inputs)
             all_data = np.column_stack([data_with_interactions, self.train_outputs])
-            scalers = MinMaxScaler()
-            scalers.fit(all_data)
+            self.scalers = MinMaxScaler()
+            self.scalers.fit(all_data)
 
             # Save scalers
             with open(scalers_path, 'wb') as f:
-                pickle.dump(scalers, f)
+                pickle.dump(self.scalers, f)
             print(f"Scalers saved to {scalers_path}")
-
-        return scalers
 
     def __call__(self):
         total_samples = self.data.shape[0]
@@ -262,6 +260,7 @@ def shuffle_h5(filename, out_filename):
 
     with h5py.File(out_filename, 'w') as f:
         f.create_dataset('data', data=array)
+
 
 if __name__ == '__main__':
     h5_filename = r"C:\Users\proxi\Documents\coding\TOF_ML_backup\src\simulations\combined_data.h5"
