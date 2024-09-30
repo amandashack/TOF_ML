@@ -1,2 +1,2 @@
-from scripts.analysis_functions import *
-from scripts.training_functions import *
+from .analysis_functions import random_sample_data
+from .training_functions import *

@@ -8,9 +8,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import sys
 import os
-#fpath = os.path.join(os.pardir, 'loaders')
-#sys.path.append(fpath)
-from loaders.load_and_save import DataGenerator, DataGeneratorWithVeto
+#from loaders.model_data_generator import DataGenerator, DataGeneratorWithVeto
 
 def fig_to_pdf_page(fig):
     buf = io.BytesIO()
@@ -57,16 +55,49 @@ def plot_histograms(data, scalers, sample_size=1000):
         plt.tight_layout()
         plt.show()
 
-def load_test_data(test_data_path):
+def plot_tof_vs_energy(data, sample_size=1000, log=False):
+    if sample_size > len(data):
+        sample_size = len(data)
+        print(f"Sample size larger than data length; using full dataset of size {len(data)}.")
+
+    sampled_indices = np.random.choice(len(data), size=sample_size, replace=False)
+    sampled_data = data[sampled_indices]
+    if log:
+        energy = np.log2(sampled_data[:, 0])
+        tof = np.log2(sampled_data[:, 5])
+    else:
+        energy = sampled_data[:, 0]
+        tof = sampled_data[:, 5]
+    mask = sampled_data[:, 7].astype(bool)  # Ensure mask is boolean
+
+    # Handle any potential NaN or infinite values
+    valid_indices = np.isfinite(energy) & np.isfinite(tof)
+    energy = energy[valid_indices & mask]
+    tof = tof[valid_indices & mask]
+
+    # Plot TOF vs Energy
+    plt.figure(figsize=(10, 6))
+    plt.scatter(energy, tof, alpha=0.5, s=10)
+    plt.xlabel('Energy')
+    plt.ylabel('Time of Flight (TOF)')
+    plt.title('TOF vs Energy')
+    plt.grid(True)
+    plt.show()
+
+
+def load_test_data(test_data_path, grp_name='test_data'):
     with h5py.File(test_data_path, 'r') as hf:
-        test_data = hf['test_data'][:]
+        test_data = hf[grp_name][:]
     return test_data
 
 
 # Function to randomly sample data
 def random_sample_data(data, sample_size):
-    indices = np.random.choice(data.shape[0], min(sample_size, data.shape[0]), replace=False)
-    return data[indices]
+    if sample_size:
+        indices = np.random.choice(data.shape[0], min(sample_size, data.shape[0]), replace=False)
+        return data[indices]
+    else:
+        return data
 
 
 def check_and_clean_data(data):
@@ -135,3 +166,9 @@ def evaluate(model, x_test, y_test, plot=False):
             plt.show()
 
     return loss
+
+if __name__ == "__main__":
+    h5_filename = r"C:\Users\proxi\Documents\coding\TOF_data\TOF_data\combined_data.h5"
+    with h5py.File(h5_filename, 'r') as hf:
+        data = hf['combined_data'][:]
+    plot_tof_vs_energy(data, sample_size=1000)

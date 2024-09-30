@@ -16,6 +16,8 @@ def parse_filename(filename):
     # Example filename: sim_pos_R0_pos_0_pos_0_0.3.h5
     # Split filename and extract relevant parts
     parts = filename.split('_')
+    if len(parts) < 8:
+        return None, None, None
 
     # Extract retardation value
     retardation_sign = 1 if parts[1] == 'pos' else -1

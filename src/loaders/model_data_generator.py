@@ -2,213 +2,257 @@ import xarray as xr
 import os
 import h5py
 import numpy as np
+import keras
 import pickle
 from sklearn.preprocessing import MinMaxScaler
 
 
-class DataGenerator:
-    def __init__(self, data_filename, batch_size=100):
+class DataGenerator(keras.utils.Sequence):
+    'Generates data for Keras'
+    def __init__(self, list_IDs, labels, data_filename, scalers_path,
+                 batch_size=32, dim=(32, 5), shuffle=True):
+        'Initialization'
+        self.dim = dim
         self.batch_size = batch_size
+        self.labels = labels
+        self.list_IDs = list_IDs
         self.data_filename = data_filename
-        self.data = None
-        self.train_data = None
-        self.train_inputs = None
-        self.train_outputs = None
-        self.test_data = None
+        self.shuffle = shuffle
+        self.scalers_path = scalers_path
         self.scalers = None
+        self.on_epoch_end()
 
-    def initialize_data(self):
-        with h5py.File(self.data_filename, 'r') as hf:
-            # preprocess data
-            self.data = hf["combined_data"][:]
-            # log of TOF and log of KE
-            self.data[:, 0] = np.log(self.data[:, 0] + self.data[:, 2])  # initial kinetic energy (was in pass energy)
-            self.data[:, 5] = np.log(self.data[:, 5])
+        # Calculate or load scalers
 
-    def partition_data(self, train_size=0.8):
-        train_end = int(train_size * len(self.data))
-
-        np.random.shuffle(self.data)
-        self.train_data = self.data[:train_end]
-        self.train_inputs = self.train_data[:, :5]
-        self.train_outputs = self.train_data[:, 5:7]
-        self.test_data = self.data[train_end:]
-
-        return self.train_data, self.test_data
-
-    def subsample_data(self, subsample_size):
-            original_size = len(self.data)
-            subset_size = int(original_size * subsample_size)
-            self.data = self.data[np.random.choice(original_size, subset_size, replace=False)]
-
-    def save_test_data(self, out_path):
-        # Check if the base directory exists, create it if it does not
-        if not os.path.exists(out_path):
-            os.makedirs(out_path)
-            print(f"Created directory {out_path}")
-
-        # Save test data to the specified path
-        test_data_path = os.path.join(out_path, 'test_data.h5')
-        with h5py.File(test_data_path, 'w') as hf:
-            hf.create_dataset('test_data', data=self.test_data)
-        print(f"Test data saved to {test_data_path}")
-
-    def calculate_scalers(self, scalers_path):
-        if os.path.exists(scalers_path):
-            # Load scalers from file
-            with open(scalers_path, 'rb') as f:
+    def calculate_scalers(self):
+        if self.scalers_path and os.path.exists(self.scalers_path):
+            with open(self.scalers_path, 'rb') as f:
                 self.scalers = pickle.load(f)
-            print(f"Scalers loaded from {scalers_path}")
+            print(f"Scalers loaded from {self.scalers_path}")
         else:
-            # Calculate interaction terms for the entire data
-            data_with_interactions = self.calculate_interactions(self.train_inputs)
-            all_data = np.column_stack([data_with_interactions, self.train_outputs])
-            self.scalers = MinMaxScaler()
-            self.scalers.fit(all_data)
+            # Calculate scalers using training data
+            with h5py.File(self.data_filename, 'r') as hf:
+                data = hf['combined_data'][:]
+                data[:, 0] = np.log2(data[:, 0])
+                data[:, 5] = np.log2(data[:, 5])
+                interaction_data = self.process_input(data[:, :5])  # Assume using first 5 columns for interactions
+                all_data = np.column_stack([interaction_data, data[:, 5:7]])
+                self.scalers = MinMaxScaler().fit(all_data)
 
-            # Save scalers
-            with open(scalers_path, 'wb') as f:
-                pickle.dump(self.scalers, f)
-            print(f"Scalers saved to {scalers_path}")
+                if self.scalers_path:
+                    with open(self.scalers_path, 'wb') as f:
+                        pickle.dump(self.scalers, f)
+                    print(f"Scalers saved to {self.scalers_path}")
 
-    def __call__(self):
-        total_samples = self.data.shape[0]
-        i = 0
-        while i < total_samples:
-            batch = self.data[i:i + self.batch_size, :]
-            input_batch = self.calculate_interactions(batch[:, :5])
+    def __len__(self):
+        'Denotes the number of batches per epoch'
+        return int(np.floor(len(self.list_IDs) / self.batch_size))
 
-            output_batch = batch[:, 7:8]  # mask
+    def __getitem__(self, index):
+        'Generate one batch of data'
+        indexes = self.indexes[index * self.batch_size:(index + 1) * self.batch_size]
+        list_IDs_temp = [self.list_IDs[k] for k in indexes]
+        X, y = self._data_generation(list_IDs_temp)
+        return X, y
 
-            # Apply scaling -- this is done to add zeros for columns that don't exist and then remove them
-            input_batch = self.scale_input(np.column_stack([input_batch, np.zeros_like(input_batch[:, :2])]))[:, :-2]
+    def on_epoch_end(self):
+        'Updates indexes after each epoch'
+        self.indexes = np.arange(len(self.list_IDs))
+        if self.shuffle:
+            np.random.shuffle(self.indexes)
 
-            # Replace NaNs with the log of a small value (1e-10)
-            input_batch = np.nan_to_num(input_batch, nan=np.log(1e-10))
+    def _data_generation(self, list_IDs_temp):
+        X = np.empty((self.batch_size, *self.dim))
+        y = np.empty((self.batch_size, 2))  # Expecting 2 output columns: time_of_flight and y_tof
 
-            if len(input_batch) > 0:  # Only yield if there are valid rows remaining
-                yield input_batch, output_batch  # Split into inputs and outputs
+        with h5py.File(self.data_filename, 'r') as hf:
+            for i, ID in enumerate(list_IDs_temp):
+                data_row = hf['combined_data'][ID]
 
-            i += self.batch_size
+                # Ensure data_row is at least 2-dimensional
+                if data_row.ndim == 1:
+                    data_row = np.expand_dims(data_row, axis=0)
 
-    @staticmethod
-    def calculate_interactions(input_batch):
-        # Interaction terms and higher-order polynomial terms
+                data_row[:, 0] = np.log2(data_row[:, 0])
+                data_row[:, 5] = np.log2(data_row[:, 5])
+                input_data = self.process_input(data_row[:, :5])
+
+                # Apply scaling
+                input_data = self.scalers.transform(
+                    np.column_stack([input_data, np.zeros_like(input_data[:, :2])])
+                )[:, :-2]
+                input_data = np.nan_to_num(input_data, nan=np.log(1e-10))  # Replace NaNs
+
+                X[i,] = input_data
+                y[i,] = data_row[:, 5:7]  # Extract columns 6 and 7 (time_of_flight and y_tof)
+
+        return X, y
+
+    def process_input(self, input_data):
+        'Applies interaction terms and preprocessing to input data'
         interaction_terms = np.column_stack([
-            input_batch,
-            input_batch[:, 0] * input_batch[:, 1],  # pass energy * elevation
-            input_batch[:, 0] * input_batch[:, 3],  # pass energy * mid1
-            input_batch[:, 0] * input_batch[:, 4],  # pass energy * mid2
-            input_batch[:, 1] * input_batch[:, 2],  # elevation * retardation
-            input_batch[:, 1] * input_batch[:, 3],  # elevation * mid1
-            input_batch[:, 1] * input_batch[:, 4],  # elevation * mid2
-            input_batch[:, 2] * input_batch[:, 3],  # retardation * mid1
-            input_batch[:, 2] * input_batch[:, 4],  # retardation * mid2
-            input_batch[:, 0] ** 2,                 # pass energy ^ 2
-            input_batch[:, 1] ** 2,                 # elevation ^ 2
-            input_batch[:, 2] ** 2,                 # retardation ^ 2
-            input_batch[:, 3] ** 2,                 # mid1 ^ 2
-            input_batch[:, 4] ** 2                  # mid2 ^ 2
+            input_data,
+            input_data[:, 0] * input_data[:, 1],  # pass energy * elevation
+            input_data[:, 0] * input_data[:, 3],  # pass energy * mid1
+            input_data[:, 0] * input_data[:, 4],  # pass energy * mid2
+            input_data[:, 1] * input_data[:, 2],  # elevation * retardation
+            input_data[:, 1] * input_data[:, 3],  # elevation * mid1
+            input_data[:, 1] * input_data[:, 4],  # elevation * mid2
+            input_data[:, 2] * input_data[:, 3],  # retardation * mid1
+            input_data[:, 2] * input_data[:, 4],  # retardation * mid2
+            input_data[:, 0] ** 2,  # pass energy ^ 2
+            input_data[:, 1] ** 2,  # elevation ^ 2
+            input_data[:, 2] ** 2,  # retardation ^ 2
+            input_data[:, 3] ** 2,  # mid1 ^ 2
+            input_data[:, 4] ** 2  # mid2 ^ 2
         ])
         return interaction_terms
 
-    def scale_input(self, scale_batch):
-        scale_batch = self.scalers.transform(scale_batch)
-        return scale_batch
-
-    def inverse_scale_output(self, predictions):
-        predictions = self.scalers.inverse_transform(predictions)
-        return predictions
-
 
 class DataGeneratorWithVeto(DataGenerator):
-    def __init__(self, data, scalers, veto_model, batch_size=100):
-        super().__init__(data, scalers, batch_size)
+    def __init__(self, list_IDs, labels, data_filename, veto_model,
+                 batch_size=32, dim=(18,), shuffle=True, scalers_path=None):
+        super().__init__(list_IDs, labels, data_filename, scalers_path,
+                         batch_size=batch_size, dim=dim, shuffle=shuffle)
         self.veto_model = veto_model
 
-    def __call__(self):
-        total_samples = self.data.shape[0]
-        i = 0
-        accumulated_input = np.empty((0, 18))  # Assuming 18 features for input
-        accumulated_output = np.empty((0, 2))  # Assuming 2 features for output (time_of_flight and y_tof)
+    def _data_generation(self, list_IDs_temp):
+        X = np.empty((self.batch_size, *self.dim))
+        y = np.empty((self.batch_size, 2))  # Assuming 2 features for output (time_of_flight and y_tof)
 
-        while i < total_samples:
-            batch = self.data[i:i + self.batch_size, :]
-            input_batch = self.calculate_interactions(batch[:, :5])
+        with h5py.File(self.data_filename, 'r') as hf:
+            for i, ID in enumerate(list_IDs_temp):
+                data_row = hf['combined_data'][ID]
 
-            output_batch = batch[:, 5:7]  # time_of_flight and y_tof
+                # Ensure data_row is at least 2-dimensional
+                if data_row.ndim == 1:
+                    data_row = np.expand_dims(data_row, axis=0)
 
-            # Apply scaling
-            full_batch = self.scale_input(np.column_stack([input_batch, output_batch]))
+                data_row[:, 0] = np.log2(data_row[:, 0])
+                data_row[:, 5] = np.log2(data_row[:, 5])
+                input_data = self.process_input(data_row[:, :5])
+                output_data = data_row[:, 5:7]  # time_of_flight and y_tof
 
-            # Replace NaNs with the log of a small value (1e-10)
-            input_batch = np.nan_to_num(full_batch[:, :-2], nan=np.log(1e-10))
-            output_batch = np.nan_to_num(full_batch[:, -2:], nan=np.log(1e-10))
+                # Apply scaling
+                full_batch = self.scalers.transform(np.column_stack([input_data, np.zeros_like(input_data[:, :2])]))[:, :-2]
+                input_data = np.nan_to_num(full_batch, nan=np.log(1e-10))
 
-            # Generate the mask using the veto model
-            mask = self.veto_model.predict(input_batch, verbose=0) > 0.5
-            mask = mask.flatten().astype(bool)
+                # Generate mask using the veto model
+                mask = self.veto_model.predict(input_data[np.newaxis, ...], verbose=0) > 0.5
+                if mask:
+                    X[i,] = input_data
+                    y[i,] = output_data
 
-            input_batch = input_batch[mask]
-            output_batch = output_batch[mask]
-
-            # Accumulate the valid data points
-            accumulated_input = np.concatenate((accumulated_input, input_batch), axis=0)
-            accumulated_output = np.concatenate((accumulated_output, output_batch), axis=0)
-
-            # Yield the batch if accumulated data size reaches or exceeds batch size
-            while len(accumulated_input) >= self.batch_size:
-                yield accumulated_input[:self.batch_size], accumulated_output[:self.batch_size]
-                accumulated_input = accumulated_input[self.batch_size:]
-                accumulated_output = accumulated_output[self.batch_size:]
-
-            i += self.batch_size
-
-        # Yield any remaining data points that didn't fill a batch
-        if len(accumulated_input) > 0:
-            yield accumulated_input, accumulated_output
+        return X, y
 
 
 class DataGeneratorTofToKE(DataGenerator):
-    def __init__(self, data, scalers, batch_size=100):
-        super().__init__(data, scalers, batch_size)
+    def __init__(self, list_IDs, labels, data_filename, batch_size=32,
+                 dim=(18,), shuffle=True, scalers_path=None):
+        super().__init__(list_IDs, labels, data_filename, scalers_path,
+                         batch_size=batch_size, dim=dim, shuffle=shuffle)
 
-    def __call__(self):
-        total_samples = self.data.shape[0]
-        i = 0
-        while i < total_samples:
-            batch = self.data[i:i + self.batch_size, :]
-            input_batch = self.calculate_interactions(batch[:, :4])
+    def _data_generation(self, list_IDs_temp):
+        input_list = []
+        output_list = []
+        samples_collected = 0
+        max_samples = self.batch_size
 
-            output_batch = batch[:, 4]  # time_of_flight
+        with h5py.File(self.data_filename, 'r') as hf:
+            idx = 0  # Index within list_IDs_temp
+            while samples_collected < max_samples and idx < len(list_IDs_temp):
+                ID = list_IDs_temp[idx]
+                data_row = hf['combined_data'][ID]
 
-            # Apply scaling
-            full_batch = self.scale_input(np.column_stack([input_batch, output_batch]))
+                # Ensure data_row is at least 2-dimensional
+                if data_row.ndim == 1:
+                    data_row = np.expand_dims(data_row, axis=0)
+                epsilon = 1e-10  # To avoid log(0)
+                data_row[:, 0] = np.log2(data_row[:, 0] + epsilon)
+                data_row[:, 5] = np.log2(data_row[:, 5] + epsilon)
+                mask = data_row[:, -1].astype(bool)
+                masked_data_row = data_row[mask]
 
-            # Replace NaNs with the log of a small value (1e-10)
-            input_batch = np.nan_to_num(full_batch[:, :-1], nan=np.log(1e-10))
-            output_batch = np.nan_to_num(full_batch[:, -1:], nan=np.log(1e-10))
+                if masked_data_row.shape[0] == 0:
+                    idx += 1
+                    continue  # Skip data points with no valid samples
 
-            if len(input_batch) > 0:  # Only yield if there are valid rows remaining
-                yield input_batch, output_batch  # Split into inputs and outputs
+                # Extract input and output data
+                input_data = masked_data_row[:, [2, 3, 4, 5]]
+                output_data = masked_data_row[:, 0].reshape(-1, 1)
 
-            i += self.batch_size
+                # **Add this line to process input_data**
+                input_data = self.process_input(input_data)
 
-    @staticmethod
-    def calculate_interactions(input_batch):
-        # Interaction terms and higher-order polynomial terms
+                # Stack output and input data
+                full_batch = np.hstack([output_data, input_data])
+
+                # Apply scaling
+                scaled_full_batch = self.scalers.transform(full_batch)
+                scaled_output_data = scaled_full_batch[:, 0]
+                scaled_input_data = scaled_full_batch[:, 1:]
+
+                # Collect the scaled data
+                for inp, outp in zip(scaled_input_data, scaled_output_data):
+                    input_list.append(inp)
+                    output_list.append(outp)
+                    samples_collected += 1
+                    if samples_collected >= max_samples:
+                        break
+
+                idx += 1  # Move to the next ID
+
+        # Convert lists to arrays
+        X = np.array(input_list)
+        y = np.array(output_list).reshape(-1, 1)
+
+        return X, y
+
+    def calculate_scalers(self):
+        if self.scalers_path and os.path.exists(self.scalers_path):
+            with open(self.scalers_path, 'rb') as f:
+                self.scalers = pickle.load(f)
+            print(f"Scalers loaded from {self.scalers_path}")
+        else:
+            # Calculate scalers using training data
+            with h5py.File(self.data_filename, 'r') as hf:
+                data = hf['combined_data'][:]
+                epsilon = 1e-10
+                data[:, 0] = np.log2(data[:, 0] + epsilon)
+                data[:, 5] = np.log2(data[:, 5] + epsilon)
+                mask = data[:, -1].astype(bool)
+                data = data[mask]
+
+                # Extract the specific columns you need
+                output_data = data[:, 0].reshape(-1, 1)  # Energy
+                input_data = data[:, [2, 3, 4, 5]]
+                input_data = self.process_input(input_data)  # Process input data
+
+                # Stack output and input data
+                full_data = np.hstack([output_data, input_data])
+
+                # Fit the scaler on the relevant columns
+                self.scalers = MinMaxScaler().fit(full_data)
+
+                if self.scalers_path:
+                    with open(self.scalers_path, 'wb') as f:
+                        pickle.dump(self.scalers, f)
+                    print(f"Scalers saved to {self.scalers_path}")
+
+    def process_input(self, input_data):
+        'Applies interaction terms and preprocessing to input data'
         interaction_terms = np.column_stack([
-            input_batch,
-            input_batch[:, 0] * input_batch[:, 1],  # kinetic energy * retardation
-            input_batch[:, 0] * input_batch[:, 2],  # kinetic energy * mid1
-            input_batch[:, 0] * input_batch[:, 3],  # kinetic energy * mid2
-            input_batch[:, 1] * input_batch[:, 2],  # retardation * mid1
-            input_batch[:, 1] * input_batch[:, 3],  # retardation * mid2
-            input_batch[:, 2] * input_batch[:, 3],  # mid1 * mid2
-            input_batch[:, 0] ** 2,  # kinetic energy ^ 2
-            input_batch[:, 1] ** 2,  # retardation ^ 2
-            input_batch[:, 2] ** 2,  # mid1 ^ 2
-            input_batch[:, 3] ** 2  # mid2 ^ 2
+            input_data,
+            input_data[:, 0] * input_data[:, 1],
+            input_data[:, 0] * input_data[:, 2],
+            input_data[:, 0] * input_data[:, 3],
+            input_data[:, 1] * input_data[:, 2],
+            input_data[:, 1] * input_data[:, 3],
+            input_data[:, 2] * input_data[:, 3],
+            input_data[:, 0] ** 2,
+            input_data[:, 1] ** 2,
+            input_data[:, 2] ** 2,
+            input_data[:, 3] ** 2,
         ])
         return interaction_terms
 

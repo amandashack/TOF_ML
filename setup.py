@@ -1,4 +1,4 @@
-from setuptools import setup
+from setuptools import setup, find_packages
 
 setup(
     name='TOF_ML',
@@ -6,7 +6,8 @@ setup(
     description='Package for generating simion data '
                 'and training a machine learning model',
     license='MIT',
-    packages=['numpy'],
+    packages=find_packages(where='src'),  # 'src' is your main package directory
+    package_dir={'': 'src'},  # Source code is inside the src directory
     author='Amanda Shackelford',
     author_email='ajshack4@gmail.com',
     keywords=['example'],

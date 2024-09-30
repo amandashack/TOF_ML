@@ -16,7 +16,7 @@ def create_main_model(params, steps_per_execution):
     x = tf.keras.layers.BatchNormalization()(x)
     x = tf.keras.layers.Dropout(dropout_rate)(x)
     
-    x = tf.keras.layers.Dense(layer_size / 2)(x)
+    x = tf.keras.layers.Dense(int(layer_size / 2))(x)
     x = tf.keras.layers.LeakyReLU(alpha=0.01)(x)
     x = tf.keras.layers.BatchNormalization()(x)
     x = tf.keras.layers.Dropout(dropout_rate)(x)
@@ -31,7 +31,8 @@ def create_main_model(params, steps_per_execution):
     #
 
     model.compile(
-        loss={'time_of_flight': 'mse', 'y_pos': 'mse'}, loss_weights={'time_of_flight': 1, 'y_pos': 0},
+        loss={'time_of_flight': 'mse', 'y_tof': 'mse'},
+        loss_weights={'time_of_flight': 1, 'y_tof': 0},
         optimizer=optimizer,
         steps_per_execution=steps_per_execution
     )

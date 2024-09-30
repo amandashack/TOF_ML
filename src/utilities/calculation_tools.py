@@ -48,7 +48,7 @@ class LRFinder(tf.keras.callbacks.Callback):
 def calculate_ks_score(y_pos, num_bootstrap=10, R=13.74, plot=False, print_ks=False):
     ks_scores = []
     num_points = len(y_pos)
-    if num_points == 0:
+    if num_points < 2:
         return np.nan
 
     uniform_points = []

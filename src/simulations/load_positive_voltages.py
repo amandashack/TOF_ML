@@ -8,9 +8,8 @@ import xarray as xr
 from matplotlib.colors import Normalize
 from scipy.stats import ks_2samp
 from matplotlib.cm import ScalarMappable
-sys.path.insert(0, os.path.abspath('..'))
-from loaders.load_and_save import save_to_h5, load_from_h5
-from loaders.load_xarrays import save_xarray, load_xarray
+from ..loaders.load_h5_files_to_array import load_from_h5
+from ..loaders.load_xarrays import save_xarray, load_xarray
 #from utilities.plotting_tools import plot_imagetool, plot_relation, plot_heatmap, plot_histogram, plot_energy_resolution
 from utilities.mask_data import create_mask
 from utilities.calculation_tools import calculate_ks_score, normalize_3D

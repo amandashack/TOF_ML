@@ -16,4 +16,4 @@ shift  # Remove the first argument to only leave the parameters
 PARAMS="$@"
 
 # Call the Python script with model output path and parameters
-python3 train_surrogate.py "${MODEL_OUTPUT_PATH}" ${PARAMS}
+python3 ../src/train_surrogate.py "${MODEL_OUTPUT_PATH}" ${PARAMS}
