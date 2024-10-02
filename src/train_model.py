@@ -37,35 +37,60 @@ def train_model(data_filepath, model_outpath, params, sample_size=100000):
     batch_size = params.get('batch_size', 256)
     scalers_path = os.path.join(model_outpath, 'scalers.pkl')
 
-    # Load the dataset length from the file
-    with h5py.File(data_filepath, 'r') as hf:
-        data_len = len(hf['combined_data'])
-
-    # Create partition dictionary for train and validation sets (80/20 split)
-    indices = np.arange(data_len)
-    if sample_size:
-        indices = random_sample_data(indices, sample_size=sample_size)
-    data_len = len(indices)
-    split_index1 = int(0.8 * data_len)
-    split_index2 = int(0.8 * split_index1)
-    print(split_index2, split_index1, data_len)
-
-    partition = {
-        'train': indices[:split_index2],
-        'validation': indices[split_index2:split_index1],
-        'test': indices[split_index1:]
-    }
-
-    # Save test data
+    indices_path = os.path.join(model_outpath, 'data_indices.npz')
     test_data_filename = os.path.join(model_outpath, 'test_data.h5')
-    test_data_indices = partition['test']
-    # Sort the indices
-    test_data_indices_sorted = np.sort(test_data_indices)
 
-    with h5py.File(data_filepath, 'r') as hf_in:
-        test_data = hf_in['combined_data'][test_data_indices_sorted]
-        with h5py.File(test_data_filename, 'w') as hf_out:
-            hf_out.create_dataset('test_data', data=test_data)
+    # Load or create data indices
+    if os.path.exists(indices_path):
+        # Load existing indices
+        print("Loading existing data indices...")
+        indices_data = np.load(indices_path)
+        partition = {
+            'train': indices_data['train_indices'],
+            'validation': indices_data['validation_indices'],
+            'test': indices_data['test_indices']
+        }
+    else:
+        # Load the dataset length from the file
+        with h5py.File(data_filepath, 'r') as hf:
+            data_len = len(hf['combined_data'])
+
+        # Create partition dictionary for train, validation, and test sets (80/20 split)
+        indices = np.arange(data_len)
+        if sample_size:
+            indices = random_sample_data(indices, sample_size=sample_size)
+        data_len = len(indices)
+        split_index1 = int(0.8 * data_len)
+        split_index2 = int(0.8 * split_index1)
+        print(split_index2, split_index1, data_len)
+
+        partition = {
+            'train': indices[:split_index2],
+            'validation': indices[split_index2:split_index1],
+            'test': indices[split_index1:]
+        }
+
+        # Save indices
+        np.savez(indices_path,
+                 train_indices=partition['train'],
+                 validation_indices=partition['validation'],
+                 test_indices=partition['test'])
+        print(f"Data indices saved to {indices_path}")
+
+    # Save test data if it doesn't exist
+    if not os.path.exists(test_data_filename):
+        print("Saving test data...")
+        test_data_indices = partition['test']
+        # Sort the indices
+        test_data_indices_sorted = np.sort(test_data_indices)
+
+        with h5py.File(data_filepath, 'r') as hf_in:
+            test_data = hf_in['combined_data'][test_data_indices_sorted]
+            with h5py.File(test_data_filename, 'w') as hf_out:
+                hf_out.create_dataset('test_data', data=test_data)
+        print(f"Test data saved to {test_data_filename}")
+    else:
+        print("Test data already exists. Skipping saving test data.")
 
     # Initialize the training and validation generators
     train_gen = DataGeneratorTofToKE(
@@ -158,8 +183,16 @@ def train_model(data_filepath, model_outpath, params, sample_size=100000):
 
     # Call the training function with parsed parameters
     train_model(DATA_FILENAME, output_file_path, params)"""
+
 if __name__ == '__main__':
-    h5_filename = r"C:\Users\proxi\Documents\coding\TOF_data\TOF_data\combined_data.h5"
-    train_model(DATA_FILENAME, "/Users/proxi/Documents/coding/stored_models/test_001/28",
-              {"layer_size": 64, "batch_size": 256, 'dropout': 0.2,
-               'learning_rate': 0.1, 'optimizer': 'RMSprop'}, sample_size=None)
+    data_filepath = r"C:\Users\proxi\Documents\coding\TOF_data\TOF_data\combined_data.h5"
+    model_outpath = r"C:\Users\proxi\Documents\coding\stored_models\test_001\28"
+    params = {
+        "layer_size": 64,
+        "batch_size": 256,
+        "dropout": 0.2,
+        "learning_rate": 0.1,
+        "optimizer": 'RMSprop',
+        "epochs": 200  # Add epochs parameter if needed
+    }
+    train_model(data_filepath, model_outpath, params, sample_size=None)

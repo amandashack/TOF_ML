@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-
+""" This code is adapted from https://github.com/CSCfi/slurm-hyper-search """
 import argparse
 import os
 import numpy as np

@@ -49,7 +49,7 @@ MODEL_FILE="${DIR}/${PARAMS_ID}"
 if [[ ! -d $MODEL_FILE ]] ; then
 	mkdir $MODEL_FILE
 fi
-python3 train_surrogate.py ${MODEL_FILE} ${PARAMS} | tr '\n\t' '| ' >> $TMPFILE
+python3 -m src.train_model ${MODEL_FILE} ${PARAMS} | tr '\n\t' '| ' >> $TMPFILE
 echo >> $TMPFILE
 
 # exit if training failed

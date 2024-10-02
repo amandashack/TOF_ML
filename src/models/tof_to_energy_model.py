@@ -64,7 +64,15 @@ def train_tof_to_energy_model(train_gen, val_gen, params, checkpoint_dir):
     validation_steps = params['validation_steps']
     steps_per_execution = steps_per_epoch // 10
 
-    model = create_tof_to_energy_model(params, steps_per_execution)
+    # Check for existing checkpoints
+    latest_checkpoint = tf.train.latest_checkpoint(checkpoint_dir)
+    if latest_checkpoint:
+        print(f"Loading model from checkpoint: {latest_checkpoint}")
+        model = create_tof_to_energy_model(params, steps_per_execution)
+        model.load_weights(latest_checkpoint)
+    else:
+        print("No checkpoint found. Initializing a new model.")
+        model = create_tof_to_energy_model(params, steps_per_execution)
 
     reduce_lr = tf.keras.callbacks.ReduceLROnPlateau(
         monitor='val_loss', factor=0.1, patience=5, min_lr=1e-6, verbose=1
@@ -77,10 +85,15 @@ def train_tof_to_energy_model(train_gen, val_gen, params, checkpoint_dir):
         filepath=checkpoint_path, monitor='val_loss', save_best_only=True,
         save_weights_only=True, verbose=1
     )
-    # memory_callback = MemoryUsageCallback()
 
     if not os.path.exists(checkpoint_dir):
         os.makedirs(checkpoint_dir)
+
+    initial_epoch = 0
+    if latest_checkpoint:
+        # Extract the epoch number from the checkpoint filename
+        initial_epoch = int(latest_checkpoint.split('-')[-1].split('.')[0])
+        print(f"Resuming training from epoch {initial_epoch}")
 
     history = model.fit(
         train_gen,
@@ -88,7 +101,8 @@ def train_tof_to_energy_model(train_gen, val_gen, params, checkpoint_dir):
         validation_data=val_gen,
         steps_per_epoch=steps_per_epoch,
         validation_steps=validation_steps,
-        callbacks=[reduce_lr, early_stop, checkpoint]
+        callbacks=[reduce_lr, early_stop, checkpoint],
+        initial_epoch=initial_epoch
     )
 
     print(f"early_stop {early_stop.stopped_epoch}")
