@@ -12,13 +12,10 @@ from scripts import random_sample_data
 
 
 # TODO: put these in a json or something
-DATA_FILENAME = r"C:\Users\proxi\Documents\coding\TOF_data\TOF_data\combined_data.h5"
-VETO_MODEL = r"C:\Users\proxi\Documents\coding\TOF_ML\stored_models\surrogate\veto_model.h5"
-
+DATA_FILENAME = r"/sdf/home/a/ajshack/combined_data.h5"
 
 # Check GPU availability and set memory growth
 gpus = tf.config.experimental.list_physical_devices('GPU')
-gpus = None
 if gpus:
     try:
         for gpu in gpus:
@@ -29,7 +26,7 @@ if gpus:
         pass
 
 
-def train_model(data_filepath, model_outpath, params, sample_size=100000):
+def train_model(data_filepath, model_outpath, params, sample_size=None):
     checkpoint_dir = os.path.join(model_outpath, "checkpoints")
     combined_model_path = os.path.join(model_outpath, "combined_model.h5")
 
@@ -91,6 +88,8 @@ def train_model(data_filepath, model_outpath, params, sample_size=100000):
         print(f"Test data saved to {test_data_filename}")
     else:
         print("Test data already exists. Skipping saving test data.")
+        with h5py.File(test_data_filename, 'r') as hf:
+            test_data = hf['test_data'][:]
 
     # Initialize the training and validation generators
     train_gen = DataGeneratorTofToKE(
@@ -151,11 +150,7 @@ def train_model(data_filepath, model_outpath, params, sample_size=100000):
     #combined_model.set_weights(new_weights)
     #combined_model.save(combined_model_path)
 
-    # Final evaluation on test data
-    with h5py.File(test_data_filename, 'r') as hf:
-        test_data = hf['test_data'][:]
-
-    test_gen = DataGenerator(
+    test_gen = DataGeneratorTofToKE(
         list_IDs=range(len(test_data)),
         labels=np.ones(len(test_data)),  # Dummy labels
         data_filename=data_filepath,
@@ -165,11 +160,11 @@ def train_model(data_filepath, model_outpath, params, sample_size=100000):
         scalers_path=scalers_path
     )
 
-    loss_test = model.evaluate(test_gen, steps=len(test_gen))
-    print(f"Final test loss: {loss_test}")
+    loss_test = model.evaluate(test_gen, steps=len(test_gen), verbose=0)
+    print(f"test_loss {loss_test}")
 
 
-"""if __name__ == '__main__':
+if __name__ == '__main__':
     # Collect parameters passed through command line
     output_file_path = sys.argv[1]
     params_str = ' '.join(sys.argv[2:])
@@ -177,16 +172,20 @@ def train_model(data_filepath, model_outpath, params, sample_size=100000):
     params = {}
     for key, value in params_list:
         try:
-            params[key] = float(value)
+            # Convert to float or int if possible
+            if '.' in value or 'e' in value.lower():
+                params[key] = float(value)
+            else:
+                params[key] = int(value)
         except ValueError:
             params[key] = value
 
     # Call the training function with parsed parameters
-    train_model(DATA_FILENAME, output_file_path, params)"""
+    train_model(DATA_FILENAME, output_file_path, params)
 
-if __name__ == '__main__':
-    data_filepath = r"C:\Users\proxi\Documents\coding\TOF_data\TOF_data\combined_data.h5"
-    model_outpath = r"C:\Users\proxi\Documents\coding\stored_models\test_001\28"
+"""if __name__ == '__main__':
+    #data_filepath = 
+    #model_outpath = 
     params = {
         "layer_size": 64,
         "batch_size": 256,
@@ -195,4 +194,4 @@ if __name__ == '__main__':
         "optimizer": 'RMSprop',
         "epochs": 200  # Add epochs parameter if needed
     }
-    train_model(data_filepath, model_outpath, params, sample_size=None)
+    train_model(data_filepath, model_outpath, params, sample_size=None)"""
