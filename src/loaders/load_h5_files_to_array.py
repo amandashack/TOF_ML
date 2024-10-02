@@ -1,5 +1,6 @@
 import h5py
 import os
+import re
 import numpy as np
 
 
@@ -81,14 +82,14 @@ def load_and_shuffle_all_h5_data(base_dir, random_seed=42):
     np.ndarray: A concatenated NumPy array containing data from all HDF5 files.
     """
     all_data = []
-    for root, _, files in os.walk(base_dir):
-        print(f"Searching in directory: {root}")
-        for file in files:
-            if file.endswith('.h5'):
-                file_path = os.path.join(root, file)
-                data = load_from_h5(file_path)
-                all_data.append(data)
-
+    for dir_name in os.listdir(base_dir):
+        dir_path = os.path.join(base_dir, dir_name)
+        if os.path.isdir(dir_path) and re.match(r'R\d+$', dir_name):
+            for file in os.listdir(dir_path):
+                if file.endswith('.h5'):
+                    file_path = os.path.join(dir_path, file)
+                    data = load_from_h5(file_path)
+                    all_data.append(data)
     if all_data:
         combined_data = np.concatenate(all_data)
         # Shuffle the combined data
@@ -120,4 +121,4 @@ if __name__ == '__main__':
     aggregated_data = load_and_shuffle_all_h5_data(h5_file_locations)
     if aggregated_data is not None:
         print(f"Aggregated data shape: {aggregated_data.shape}")
-        save_combined_data(h5_file_locations, aggregated_data)
+        save_combined_data(save_location, aggregated_data)
