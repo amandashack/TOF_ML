@@ -50,7 +50,8 @@ MODEL_FILE="${DIR}/${PARAMS_ID}"
 if [[ ! -d $MODEL_FILE ]] ; then
 	mkdir $MODEL_FILE
 fi
-python3 -m src.train_model ${MODEL_FILE} ${PARAMS} | tr '\n\t' '| ' >> $TMPFILE
+python3 -u -m src.train_model ${MODEL_FILE} ${PARAMS} \
+    | tee >(grep '^test_loss' | tr '\n\t' '| ' >> $TMPFILE)
 echo >> $TMPFILE
 
 # exit if training failed
