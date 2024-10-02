@@ -70,7 +70,7 @@ def load_from_h5(filename):
     return array
 
 
-def load_all_h5_data(base_dir):
+def load_and_shuffle_all_h5_data(base_dir, random_seed=42):
     """
     Load data from all HDF5 files in the subdirectories of the base directory.
 
@@ -92,6 +92,7 @@ def load_all_h5_data(base_dir):
     if all_data:
         combined_data = np.concatenate(all_data)
         # Shuffle the combined data
+        np.random.seed(random_seed)
         np.random.shuffle(combined_data)
         return combined_data
     else:
@@ -114,8 +115,9 @@ def save_combined_data(base_dir, combined_data):
 
 
 if __name__ == '__main__':
-    h5_file_locations = r"C:\Users\proxi\Documents\coding\TOF_data\TOF_data"
-    aggregated_data = load_all_h5_data(h5_file_locations)
+    h5_file_locations = "/sdf/home/v/vkaushik/MRCO_ML_model/data/TOF_Data"
+    save_location = "/sdf/home/a/ajshack"
+    aggregated_data = load_and_shuffle_all_h5_data(h5_file_locations)
     if aggregated_data is not None:
         print(f"Aggregated data shape: {aggregated_data.shape}")
         save_combined_data(h5_file_locations, aggregated_data)
