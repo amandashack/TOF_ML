@@ -12,6 +12,7 @@
 source /sdf/group/lcls/ds/ana/sw/conda2/manage/bin/psconda.sh
 conda deactivate
 conda activate shack 
+
 DIR=$1
 PARAMS_OFFSET=$2
 
