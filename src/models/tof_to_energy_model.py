@@ -1,9 +1,10 @@
 import numpy as np
 import tensorflow as tf
 from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Dense, Dropout, LeakyReLU, BatchNormalization, Activation
+from tensorflow.keras.layers import Dense, Dropout, LeakyReLU, BatchNormalization, Activation, Input
 from tensorflow.keras.callbacks import ReduceLROnPlateau, EarlyStopping, ProgbarLogger
 from tensorflow.keras.optimizers import Adam, SGD, RMSprop
+import re
 import os
 
 
@@ -22,25 +23,23 @@ def create_tof_to_energy_model(params, steps_per_execution):
     dropout_rate = float(params['dropout'])
     learning_rate = float(params['learning_rate'])
     optimizer = params['optimizer']
+    layer_configs = params['layer_configs']
 
     model = Sequential()
-
     # Input layer
-    model.add(Dense(layer_size, input_shape=(14,)))
-    model.add(LeakyReLU(alpha=0.02))
-    model.add(BatchNormalization())
-    model.add(Dropout(dropout_rate))
+    model.add(Input(shape=(14,)))
 
-    # Hidden layers
-    model.add(Dense(layer_size * 2))
-    model.add(LeakyReLU(alpha=0.02))
-    model.add(BatchNormalization())
-    model.add(Dropout(dropout_rate))
-
-    model.add(Dense(layer_size))
-    model.add(Activation('swish'))
-    model.add(BatchNormalization())
-    model.add(Dropout(dropout_rate))
+    for config in layer_configs:
+        units = config.get('units')
+        activation = config.get('activation', 'relu')
+        model.add(Dense(units))
+        model.add(Activation(activation))
+        if config.get('batch_norm', False):
+            model.add(BatchNormalization())
+        if 'dropout' in config:
+            model.add(Dropout(config['dropout']))
+        elif dropout_rate > 0:
+            model.add(Dropout(dropout_rate))
 
     # Output layer
     model.add(Dense(1, activation='linear'))
@@ -68,8 +67,7 @@ def train_tof_to_energy_model(train_gen, val_gen, params, checkpoint_dir):
     latest_checkpoint = tf.train.latest_checkpoint(checkpoint_dir)
     if latest_checkpoint:
         print(f"Loading model from checkpoint: {latest_checkpoint}")
-        model = create_tof_to_energy_model(params, steps_per_execution)
-        model.load_weights(latest_checkpoint)
+        model = tf.keras.models.load_model(latest_checkpoint)
     else:
         print("No checkpoint found. Initializing a new model.")
         model = create_tof_to_energy_model(params, steps_per_execution)
@@ -82,18 +80,24 @@ def train_tof_to_energy_model(train_gen, val_gen, params, checkpoint_dir):
     )
     checkpoint_path = os.path.join(checkpoint_dir, "main_cp-{epoch:04d}.ckpt")
     checkpoint = tf.keras.callbacks.ModelCheckpoint(
-        filepath=checkpoint_path, monitor='val_loss', save_best_only=True,
-        save_weights_only=True, verbose=1
+        filepath=checkpoint_path, monitor='val_loss', save_best_only=False,
+        save_weights_only=False, verbose=1
     )
 
     if not os.path.exists(checkpoint_dir):
         os.makedirs(checkpoint_dir)
 
-    initial_epoch = 0
     if latest_checkpoint:
         # Extract the epoch number from the checkpoint filename
-        initial_epoch = int(latest_checkpoint.split('-')[-1].split('.')[0])
-        print(f"Resuming training from epoch {initial_epoch}")
+        checkpoint_pattern = r"main_cp-(\d{4})\.ckpt"
+        match = re.match(checkpoint_pattern, os.path.basename(latest_checkpoint))
+        if match:
+            initial_epoch = int(match.group(1))
+            print(f"Resuming training from epoch {initial_epoch}")
+        else:
+            initial_epoch = 0
+    else:
+        initial_epoch = 0
 
     history = model.fit(
         train_gen,
@@ -105,6 +109,7 @@ def train_tof_to_energy_model(train_gen, val_gen, params, checkpoint_dir):
         initial_epoch=initial_epoch
     )
 
-    print(f"early_stop {early_stop.stopped_epoch}")
-    print(f"best_epoch {np.argmin(history.history['val_loss']) + 1}")
+    print(f"Early stopping at epoch {early_stop.stopped_epoch}")
+    best_epoch = np.argmin(history.history['val_loss']) + 1
+    print(f"Best epoch based on validation loss: {best_epoch}")
     return model, history

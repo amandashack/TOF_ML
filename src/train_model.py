@@ -5,6 +5,7 @@ import sys
 import re
 import h5py
 import os
+import random
 from loaders import DataGenerator, DataGeneratorWithVeto, DataGeneratorTofToKE
 from models import (train_veto_model, train_main_model, create_main_model,
                     train_tof_to_energy_model, create_tof_to_energy_model)
@@ -13,6 +14,11 @@ from scripts import random_sample_data
 
 # TODO: put these in a json or something
 DATA_FILENAME = r"/sdf/home/a/ajshack/combined_data.h5"
+
+seed_value = 42  # Or any other integer
+random.seed(seed_value)
+np.random.seed(seed_value)
+tf.random.set_seed(seed_value)
 
 # Check GPU availability and set memory growth
 gpus = tf.config.experimental.list_physical_devices('GPU')
@@ -28,7 +34,6 @@ if gpus:
 
 def train_model(data_filepath, model_outpath, params, sample_size=None):
     checkpoint_dir = os.path.join(model_outpath, "checkpoints")
-    combined_model_path = os.path.join(model_outpath, "combined_model.h5")
 
     # Use batch_size from params, default to 256 if not specified
     batch_size = params.get('batch_size', 256)
@@ -137,19 +142,6 @@ def train_model(data_filepath, model_outpath, params, sample_size=None):
 
     model.save(os.path.join(model_outpath, "main_model.h5"))
 
-    # Combine models by averaging their weights (cross-validation logic)
-    steps_per_execution = params['steps_per_epoch']//10
-    #combined_model = train_tof_to_energy_model(params, steps_per_execution=steps_per_execution)  # Create a new model instance
-    #fold_models = [model]  # Assuming cross-validation, add models to this list
-    #combined_weights = [m.get_weights() for m in fold_models]
-    #new_weights = []
-
-    #for weights_tuple in zip(*combined_weights):
-    #    new_weights.append([np.mean(np.array(w), axis=0) for w in zip(*weights_tuple)])
-
-    #combined_model.set_weights(new_weights)
-    #combined_model.save(combined_model_path)
-
     test_gen = DataGeneratorTofToKE(
         list_IDs=range(len(test_data)),
         labels=np.ones(len(test_data)),  # Dummy labels
@@ -183,9 +175,9 @@ if __name__ == '__main__':
     # Call the training function with parsed parameters
     train_model(DATA_FILENAME, output_file_path, params)
 
-"""if __name__ == '__main__':
-    #data_filepath = 
-    #model_outpath = 
+if __name__ == '__main__':
+    data_filepath = r"C:\Users\proxi\Documents\coding\TOF_data\TOF_data\combined_data.h5"
+    model_outpath = r"C:\Users\proxi\Documents\coding\stored_models\test_001\28"
     params = {
         "layer_size": 64,
         "batch_size": 256,
@@ -194,4 +186,4 @@ if __name__ == '__main__':
         "optimizer": 'RMSprop',
         "epochs": 200  # Add epochs parameter if needed
     }
-    train_model(data_filepath, model_outpath, params, sample_size=None)"""
+    train_model(data_filepath, model_outpath, params, sample_size=None)
