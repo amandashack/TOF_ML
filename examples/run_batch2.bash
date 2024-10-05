@@ -20,6 +20,7 @@ PARAMS_OFFSET=$2
 PARAMS_FILE="${DIR}/params"
 RESULTS_FILE="${DIR}/results"
 RUNLOG_FILE="${DIR}/runlog"
+META_FILE="${DIR}/meta.txt"
 
 if [ -z "$PARAMS_OFFSET" ]
 then
@@ -43,7 +44,7 @@ PARAMS=$(tail -n +${PARAMS_ID} ${PARAMS_FILE} | head -n 1)
 echo "Setup tempfile"
 # we assembled the needed data to a single line in $TMPFILE
 TMPFILE=$(mktemp)
-echo -n "$PARAMS_ID|$PARAMS|$JOB_NAME|$BN|" > $TMPFILE
+echo -n "$PARAMS_ID|$PARAMS|$JOB_NAME|" > $TMPFILE
 
 echo "*** TRAIN ***"
 MODEL_FILE="${DIR}/${PARAMS_ID}"
