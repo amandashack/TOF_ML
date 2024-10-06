@@ -32,24 +32,31 @@ then
     exit 1
 fi
 
-PARAMS_ID=$(( $SLURM_ARRAY_TASK_ID + $PARAMS_OFFSET ))
+PARAMS_ID=$(( SLURM_ARRAY_TASK_ID + PARAMS_OFFSET ))
+TOTAL_PARAMS=$(wc -l < "$PARAMS_FILE")
+
+if [ "$PARAMS_ID" -gt "$TOTAL_PARAMS" ]; then
+    echo "Error: PARAMS_ID ($PARAMS_ID) exceeds total number of parameters ($TOTAL_PARAMS)."
+    exit 1
+fi
+
 JOB_ID="${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}"
 
-echo "$PARAMS_ID|$JOB_ID|$SLURM_SUBMIT_DIR" >> $RUNLOG_FILE
+echo "$PARAMS_ID|$JOB_ID|$SLURM_SUBMIT_DIR|$JOB_NAME" >> $RUNLOG_FILE
 
 PARAMS=$(tail -n +${PARAMS_ID} ${PARAMS_FILE} | head -n 1)
 
 echo "Setup tempfile"
 # we assembled the needed data to a single line in $TMPFILE
 TMPFILE=$(mktemp)
-echo -n "$PARAMS_ID|$PARAMS|$JOB_ID|" > $TMPFILE
+echo -n "$PARAMS_ID|$PARAMS|$JOB_NAME|" > $TMPFILE
 
 echo "*** TRAIN ***"
-MODEL_FILE="${DIR}/${PARAMS_ID}"
+MODEL_FILE="${DIR}/${PARAMS_ID}_${JOB_NAME}"
 if [[ ! -d $MODEL_FILE ]] ; then
 	mkdir $MODEL_FILE
 fi
-python3 -u -m src.train_model ${MODEL_FILE} ${PARAMS} \
+python3 -u -m src.train_model ${MODEL_FILE} ${PARAMS} ${JOB_NAME} \
     | tee >(grep '^test_loss' | tr '\n\t' '| ' >> $TMPFILE)
 echo >> $TMPFILE
 

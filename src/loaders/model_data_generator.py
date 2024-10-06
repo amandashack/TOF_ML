@@ -251,9 +251,6 @@ class DataGeneratorTofToKE(DataGenerator):
             input_data[:, 1] * input_data[:, 2],
             input_data[:, 1] * input_data[:, 3],
             input_data[:, 2] * input_data[:, 3],
-            input_data[:, 0] ** 2,
-            input_data[:, 1] ** 2,
-            input_data[:, 2] ** 2,
             input_data[:, 3] ** 2,
         ])
         return interaction_terms

@@ -108,7 +108,17 @@ echo "-------------------"
 
 sbatch_output=$(sbatch -a "$PARAMS_OFFSET" "$JOB_SCRIPT" "$DIR" "$JOB_NAME")
 job_id=$(echo "$sbatch_output" | awk '{print $4}')
+
+# Check if sbatch command was successful
+if [ -z "$job_id" ]; then
+    echo "Error: Failed to submit job."
+    exit 1
+fi
+
 sleep $sleep_duration  # Wait before checking the job status
+
+counter=1
+max_retries=100  # Set this to the maximum number of retries you want
 
 # Loop to monitor and handle preemption
 while [ $counter -le $max_retries ]; do
@@ -117,7 +127,7 @@ while [ $counter -le $max_retries ]; do
 
     if [[ "$job_status" == "PREEMPTED" ]]; then
         echo "Job was preempted. Resubmitting..."
-        sbatch_output=$(sbatch -a $PARAMS_OFFSET "$job_script" $DIR)
+        sbatch_output=$(sbatch -a "$PARAMS_OFFSET" "$JOB_SCRIPT" "$DIR" "$JOB_NAME")
         job_id=$(echo "$sbatch_output" | awk '{print $4}')
         sleep $sleep_duration
     elif [[ "$job_status" == "COMPLETED" ]]; then
@@ -127,9 +137,14 @@ while [ $counter -le $max_retries ]; do
         echo "Job failed. Exiting."
         exit 1
     else
-        echo "Job is still running."
-        sleep $sleep_duration
+        echo "Job is still running or in an unexpected state."
+        sleep $SLEEP_DURATION
     fi
 
     ((counter++))
 done
+
+if [ $counter -gt $max_retries ]; then
+    echo "Maximum number of retries ($max_retries) exceeded."
+    exit 1
+fi

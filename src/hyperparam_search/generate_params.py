@@ -21,7 +21,7 @@ def main(args):
         rng = np.random.RandomState(args.seed)
         ps = ParameterSampler(space, n_iter=n, random_state=rng)
 
-    with open(fn, 'a') as fp:
+    with open(fn, 'w') as fp:  # Use 'w' to overwrite existing file
         for p in ps:
             p_str = ' '.join([args.format.format(name=k, value=v) for k, v in p.items()])
             if args.extra:

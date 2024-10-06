@@ -24,19 +24,23 @@ tf.random.set_seed(seed_value)
 gpus = tf.config.experimental.list_physical_devices('GPU')
 if gpus:
     try:
+        # Enable memory growth for each GPU
         for gpu in gpus:
             tf.config.experimental.set_memory_growth(gpu, True)
-        logical_gpus = tf.config.experimental.list_logical_devices('GPU')
-        #print(len(gpus), "Physical GPUs,", len(logical_gpus), "Logical GPUs")
+        # Optionally, set visible devices if you want to limit GPU usage
+        # tf.config.experimental.set_visible_devices(gpus[:2], 'GPU')  # Use first two GPUs
     except RuntimeError as e:
-        pass
+        print(e)
 
 
-def train_model(data_filepath, model_outpath, params, sample_size=None):
+def train_model(data_filepath, model_outpath, params, param_ID, job_name, sample_size=None):
     checkpoint_dir = os.path.join(model_outpath, "checkpoints")
 
+    # Define the meta file path
+    meta_file = os.path.join(os.path.dirname(model_outpath), 'meta.txt')
+
     # Use batch_size from params, default to 256 if not specified
-    batch_size = params.get('batch_size', 256)
+    batch_size = params.get('batch_size', 1024)
     scalers_path = os.path.join(model_outpath, 'scalers.pkl')
 
     indices_path = os.path.join(model_outpath, 'data_indices.npz')
@@ -102,7 +106,7 @@ def train_model(data_filepath, model_outpath, params, sample_size=None):
         labels=np.ones(len(partition['train'])),  # Dummy labels, adjust as needed
         data_filename=data_filepath,
         batch_size=batch_size,
-        dim=(14,),  # Adjust dimension as needed
+        dim=(11,),  # Adjust dimension as needed
         shuffle=True,
         scalers_path=scalers_path  # Pass scalers_path to use or calculate scalers
     )
@@ -114,7 +118,7 @@ def train_model(data_filepath, model_outpath, params, sample_size=None):
         labels=np.ones(len(partition['validation'])),  # Dummy labels, adjust as needed
         data_filename=data_filepath,
         batch_size=batch_size,
-        dim=(14,),  # Adjust dimension as needed
+        dim=(11,),  # Adjust dimension as needed
         shuffle=True,
         scalers_path=scalers_path  # Pass scalers_path to use or calculate scalers
     )
@@ -123,7 +127,6 @@ def train_model(data_filepath, model_outpath, params, sample_size=None):
     params['steps_per_epoch'] = len(train_gen)
     params['validation_steps'] = len(val_gen)
 
-    val_gen.calculate_scalers()
 
     """# Check if veto model exists
     try:
@@ -138,7 +141,9 @@ def train_model(data_filepath, model_outpath, params, sample_size=None):
         veto_model.save(veto_model_path)"""
 
     # Train the main model
-    model, history = train_tof_to_energy_model(train_gen, val_gen, params, checkpoint_dir)
+    model, history = train_tof_to_energy_model(
+        train_gen, val_gen, params, checkpoint_dir, param_ID, job_name, meta_file
+    )
 
     model.save(os.path.join(model_outpath, "main_model.h5"))
 
@@ -147,7 +152,7 @@ def train_model(data_filepath, model_outpath, params, sample_size=None):
         labels=np.ones(len(test_data)),  # Dummy labels
         data_filename=data_filepath,
         batch_size=batch_size,
-        dim=(14,),
+        dim=(11,),
         shuffle=False,
         scalers_path=scalers_path
     )
@@ -159,8 +164,9 @@ def train_model(data_filepath, model_outpath, params, sample_size=None):
 if __name__ == '__main__':
     # Collect parameters passed through command line
     output_file_path = sys.argv[1]
-    params_str = ' '.join(sys.argv[2:])
-    params_list = re.findall(r'(\w+)=(\S+)', params_str)
+    job_name = sys.argv[2]
+    params_str = ' '.join(sys.argv[3:])
+    params_list = re.findall(r'--?(\w+)=(\S+)', params_str)
     params = {}
     for key, value in params_list:
         try:
@@ -172,18 +178,21 @@ if __name__ == '__main__':
         except ValueError:
             params[key] = value
 
-    # Call the training function with parsed parameters
-    train_model(DATA_FILENAME, output_file_path, params)
+    # Extract param_ID from output_file_path
+    param_ID = os.path.basename(output_file_path)
 
-if __name__ == '__main__':
+    # Call the training function with parsed parameters
+    train_model(DATA_FILENAME, output_file_path, params, param_ID, job_name)
+
+"""if __name__ == '__main__':
     data_filepath = r"C:\Users\proxi\Documents\coding\TOF_data\TOF_data\combined_data.h5"
-    model_outpath = r"C:\Users\proxi\Documents\coding\stored_models\test_001\28"
+    model_outpath = r"C:\Users\proxi\Documents\coding\stored_models\test_001\29"
     params = {
         "layer_size": 64,
-        "batch_size": 256,
+        "batch_size": 1024,
         "dropout": 0.2,
-        "learning_rate": 0.1,
+        "learning_rate": 0.2,
         "optimizer": 'RMSprop',
-        "epochs": 200  # Add epochs parameter if needed
+        "job_name": "default"
     }
-    train_model(data_filepath, model_outpath, params, sample_size=None)
+    train_model(data_filepath, model_outpath, params, 12, 'default')"""
