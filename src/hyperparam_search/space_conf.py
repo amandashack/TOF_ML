@@ -36,9 +36,15 @@ import numpy as np
 
 
 space = {
+<<<<<<< HEAD
     'layer_size': [32, 64, 128],
     'batch_size': [256, 512, 1024, 2*1024],
     'dropout': [0.2, 0.4],
+=======
+    'batch_size': [1024, 2048],
+    'dropout': [0.2],
+>>>>>>> 28b84ef8e4adde2d22928a2baf2611894852901d
     'optimizer': ['Adam'],
-    'learning_rate': [0.4, 0.1, 0.01]
-    }
+    'learning_rate': [0.4, 0.1, 0.01],
+    'layer_size': [32, 64],  # Add layer_size to the parameter space
+}

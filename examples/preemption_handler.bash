@@ -8,34 +8,117 @@
 #SBATCH --mem-per-cpu=10g
 #SBATCH --time=0-24:00:00
 
+# ---------------------------
 # Initialization
-counter=1
-max_retries=100
+# ---------------------------
+# Assign command-line arguments to variables
 DIR=$1
 PARAMS_OFFSET=$2
-META_FILE="${DIR}/meta.txt"
-job_script="run_bash2.bash"
-PARAMS_FILE="${DIR}/params"
-sleep_duration=1800  # Sleep duration in seconds
+JOB_NAME=$3
 
-# Ensure the directory exists
-if [ ! -d "$DIR" ]; then
-    echo "Directory $DIR does not exist."
+META_FILE="${DIR}/meta.txt"
+JOB_SCRIPT="$(dirname "$0")/run_bash2.bash"
+PARAMS_FILE="${DIR}/params"
+SLEEP_DURATION=1800  # Sleep duration in seconds
+
+# ---------------------------
+# Usage Function
+# ---------------------------
+usage() {
+    echo "Usage: $0 <DIR> <PARAMS_OFFSET> <JOB_NAME>"
+    echo "Example: $0 test-1 3-7 tofs_job"
+    exit 1
+}
+
+# ---------------------------
+# Argument Validation
+# ---------------------------
+# Check if exactly three arguments are provided
+if [ "$#" -ne 3 ]; then
+    echo "Error: Incorrect number of arguments."
+    usage
+fi
+
+# ---------------------------
+# Validate PARAMS_OFFSET Format
+# ---------------------------
+# PARAMS_OFFSET should match the pattern start-end where start and end are positive integers
+if ! [[ "$PARAMS_OFFSET" =~ ^[0-9]+-[0-9]+$ ]]; then
+    echo "Error: PARAMS_OFFSET must be in the format start-end (e.g., 3-7)."
     exit 1
 fi
 
-# Initialize the meta file if it doesn't exist
-if [[ ! -f $META_FILE ]]; then
-    echo "Creating meta file at $META_FILE"
-    touch $META_FILE
+# Extract start and end values
+START_OFFSET=$(echo "$PARAMS_OFFSET" | cut -d'-' -f1)
+END_OFFSET=$(echo "$PARAMS_OFFSET" | cut -d'-' -f2)
+
+# Ensure start is less than or equal to end
+if [ "$START_OFFSET" -gt "$END_OFFSET" ]; then
+    echo "Error: Start of PARAMS_OFFSET ($START_OFFSET) is greater than end ($END_OFFSET)."
+    exit 1
 fi
 
+# ---------------------------
+# Ensure Directory Exists
+# ---------------------------
+if [ ! -d "$DIR" ]; then
+    echo "Error: Directory '$DIR' does not exist."
+    exit 1
+fi
 
+# ---------------------------
+# Initialize the Meta File if it Doesn't Exist
+# ---------------------------
+if [[ ! -f "$META_FILE" ]]; then
+    echo "Creating meta file at '$META_FILE'."
+    touch "$META_FILE"
+fi
 
-# Submit the initial training jobs
-sbatch_output=$(sbatch -a $PARAMS_OFFSET "$job_script" $DIR)
+# ---------------------------
+# Update meta.txt with New param_IDs
+# ---------------------------
+# Counter to keep track of new entries added
+new_entries=0
+
+echo "Processing PARAMS_OFFSET range: $PARAMS_OFFSET"
+
+for (( param_ID=START_OFFSET; param_ID<=END_OFFSET; param_ID++ ))
+do
+    # Check if the line "param_ID|JOB_NAME|" already exists
+    if ! grep -q "^${param_ID}|${JOB_NAME}|" "$META_FILE"; then
+        # If not, append "param_ID|JOB_NAME|0" to meta.txt
+        echo "${param_ID}|${JOB_NAME}|0" >> "$META_FILE"
+        echo "Added to meta file: ${param_ID}|${JOB_NAME}|0"
+        ((new_entries++))
+    else
+        echo "Entry already exists in meta file: ${param_ID}|${JOB_NAME}|0"
+    fi
+done
+
+# ---------------------------
+# Print Parameters for Verification
+# ---------------------------
+echo "Submission Details:"
+echo "-------------------"
+echo "Directory: $DIR"
+echo "PARAMS_OFFSET: $PARAMS_OFFSET"
+echo "JOB_NAME: $JOB_NAME"
+echo "New Entries Added: $new_entries"
+echo "-------------------"
+
+sbatch_output=$(sbatch -a "$PARAMS_OFFSET" "$JOB_SCRIPT" "$DIR" "$JOB_NAME")
 job_id=$(echo "$sbatch_output" | awk '{print $4}')
+
+# Check if sbatch command was successful
+if [ -z "$job_id" ]; then
+    echo "Error: Failed to submit job."
+    exit 1
+fi
+
 sleep $sleep_duration  # Wait before checking the job status
+
+counter=1
+max_retries=100  # Set this to the maximum number of retries you want
 
 # Loop to monitor and handle preemption
 while [ $counter -le $max_retries ]; do
@@ -44,7 +127,7 @@ while [ $counter -le $max_retries ]; do
 
     if [[ "$job_status" == "PREEMPTED" ]]; then
         echo "Job was preempted. Resubmitting..."
-        sbatch_output=$(sbatch -a $PARAMS_OFFSET "$job_script" $DIR)
+        sbatch_output=$(sbatch -a "$PARAMS_OFFSET" "$JOB_SCRIPT" "$DIR" "$JOB_NAME")
         job_id=$(echo "$sbatch_output" | awk '{print $4}')
         sleep $sleep_duration
     elif [[ "$job_status" == "COMPLETED" ]]; then
@@ -54,9 +137,14 @@ while [ $counter -le $max_retries ]; do
         echo "Job failed. Exiting."
         exit 1
     else
-        echo "Job is still running."
-        sleep $sleep_duration
+        echo "Job is still running or in an unexpected state."
+        sleep $SLEEP_DURATION
     fi
 
     ((counter++))
 done
+
+if [ $counter -gt $max_retries ]; then
+    echo "Maximum number of retries ($max_retries) exceeded."
+    exit 1
+fi

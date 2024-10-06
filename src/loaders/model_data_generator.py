@@ -88,7 +88,8 @@ class DataGenerator(keras.utils.Sequence):
 
         return X, y
 
-    def process_input(self, input_data):
+    @staticmethod
+    def process_input(input_data):
         'Applies interaction terms and preprocessing to input data'
         interaction_terms = np.column_stack([
             input_data,
@@ -239,7 +240,8 @@ class DataGeneratorTofToKE(DataGenerator):
                         pickle.dump(self.scalers, f)
                     print(f"Scalers saved to {self.scalers_path}")
 
-    def process_input(self, input_data):
+    @staticmethod
+    def process_input(input_data):
         'Applies interaction terms and preprocessing to input data'
         interaction_terms = np.column_stack([
             input_data,
@@ -249,9 +251,6 @@ class DataGeneratorTofToKE(DataGenerator):
             input_data[:, 1] * input_data[:, 2],
             input_data[:, 1] * input_data[:, 3],
             input_data[:, 2] * input_data[:, 3],
-            input_data[:, 0] ** 2,
-            input_data[:, 1] ** 2,
-            input_data[:, 2] ** 2,
             input_data[:, 3] ** 2,
         ])
         return interaction_terms
@@ -270,7 +269,7 @@ def save_to_h5(array, filename):
     print(f"Data saved to {filename}")
 
 
-def load_from_h5(filename):
+def load_from_h5(filename, grp='data1'):
     """
     Load a NumPy array from an HDF5 file.
 
@@ -281,7 +280,7 @@ def load_from_h5(filename):
     np.ndarray: The loaded NumPy array.
     """
     with h5py.File(filename, 'r') as h5f:
-        array = h5f['data1'][:]
+        array = h5f[grp][:]
     print(f"Data loaded from {filename}")
     return array
 

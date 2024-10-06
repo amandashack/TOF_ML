@@ -5,61 +5,62 @@
 #SBATCH --ntasks=8
 #SBATCH --cpus-per-task=1
 #SBATCH --gpus=3
-#SBATCH --mem-per-cpu=10g
+#SBATCH --mem-per-cpu=20g
 #SBATCH --time=0-24:00:00
 
-# export TMPDIR=/scratch/<project>/tmp
+# Activate the environment
 source /sdf/group/lcls/ds/ana/sw/conda2/manage/bin/psconda.sh
 conda deactivate
-conda activate shack 
+conda activate shack
 
 DIR=$1
-PARAMS_OFFSET=$2
-
+JOB_NAME=$2
 
 PARAMS_FILE="${DIR}/params"
 RESULTS_FILE="${DIR}/results"
 RUNLOG_FILE="${DIR}/runlog"
-META_FILE="${DIR}/meta.txt"
 
-if [ -z "$PARAMS_OFFSET" ]
-then
-    PARAMS_OFFSET=0
-fi
-
-if [ ! -d "$DIR" -o ! -f "$PARAMS_FILE" ]
-then
-    echo "Usage: $0 DIR [PARAMS_OFFSET]"
+if [ ! -d "$DIR" -o ! -f "$PARAMS_FILE" ]; then
+    echo "Usage: $0 DIR JOB_NAME"
     echo "where DIR is a directory containing a file 'params' with the parameters."
     exit 1
 fi
 
-PARAMS_ID=$(( $SLURM_ARRAY_TASK_ID + $PARAMS_OFFSET ))
-JOB_NAME="${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}"
+PARAMS_ID=$SLURM_ARRAY_TASK_ID
+TOTAL_PARAMS=$(wc -l < "$PARAMS_FILE")
 
-echo "$PARAMS_ID|$JOB_NAME|$SLURM_SUBMIT_DIR" >> $RUNLOG_FILE
+if [ "$PARAMS_ID" -gt "$TOTAL_PARAMS" ]; then
+    echo "Error: PARAMS_ID ($PARAMS_ID) exceeds total number of parameters ($TOTAL_PARAMS)."
+    exit 1
+fi
 
-PARAMS=$(tail -n +${PARAMS_ID} ${PARAMS_FILE} | head -n 1)
+JOB_ID="${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}"
+
+echo "$PARAMS_ID|$JOB_ID|$SLURM_SUBMIT_DIR|$JOB_NAME" >> $RUNLOG_FILE
+
+PARAMS=$(sed -n "${PARAMS_ID}p" "${PARAMS_FILE}")
 
 echo "Setup tempfile"
-# we assembled the needed data to a single line in $TMPFILE
 TMPFILE=$(mktemp)
 echo -n "$PARAMS_ID|$PARAMS|$JOB_NAME|" > $TMPFILE
 
 echo "*** TRAIN ***"
-MODEL_FILE="${DIR}/${PARAMS_ID}"
-if [[ ! -d $MODEL_FILE ]] ; then
-	mkdir $MODEL_FILE
+MODEL_FILE="${DIR}/${PARAMS_ID}_${JOB_NAME}"
+if [[ ! -d $MODEL_FILE ]]; then
+    mkdir $MODEL_FILE
 fi
-python3 -u -m src.train_model ${MODEL_FILE} ${PARAMS} \
+
+
+python3 -u -m train_model "${MODEL_FILE}" "${JOB_NAME}" ${PARAMS} \
     | tee >(grep '^test_loss' | tr '\n\t' '| ' >> $TMPFILE)
 echo >> $TMPFILE
 
-# exit if training failed
+# Exit if training failed
 test $? -ne 0 && exit 1
 
-# only at the end we append it to the results file
+# Append to the results file
 cat $TMPFILE >> $RESULTS_FILE
 
-# cleanup
+# Cleanup
 rm $TMPFILE
+
