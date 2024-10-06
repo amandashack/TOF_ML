@@ -14,12 +14,11 @@ conda deactivate
 conda activate shack 
 DIR=$1
 PARAMS_OFFSET=$2
-
+JOB_NAME=$3
 
 PARAMS_FILE="${DIR}/params"
 RESULTS_FILE="${DIR}/results"
 RUNLOG_FILE="${DIR}/runlog"
-META_FILE="${DIR}/meta.txt"
 
 if [ -z "$PARAMS_OFFSET" ]
 then
@@ -34,16 +33,16 @@ then
 fi
 
 PARAMS_ID=$(( $SLURM_ARRAY_TASK_ID + $PARAMS_OFFSET ))
-JOB_NAME="${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}"
+JOB_ID="${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}"
 
-echo "$PARAMS_ID|$JOB_NAME|$SLURM_SUBMIT_DIR" >> $RUNLOG_FILE
+echo "$PARAMS_ID|$JOB_ID|$SLURM_SUBMIT_DIR" >> $RUNLOG_FILE
 
 PARAMS=$(tail -n +${PARAMS_ID} ${PARAMS_FILE} | head -n 1)
 
 echo "Setup tempfile"
 # we assembled the needed data to a single line in $TMPFILE
 TMPFILE=$(mktemp)
-echo -n "$PARAMS_ID|$PARAMS|$JOB_NAME|" > $TMPFILE
+echo -n "$PARAMS_ID|$PARAMS|$JOB_ID|" > $TMPFILE
 
 echo "*** TRAIN ***"
 MODEL_FILE="${DIR}/${PARAMS_ID}"
