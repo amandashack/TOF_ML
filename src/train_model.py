@@ -123,6 +123,8 @@ def train_model(data_filepath, model_outpath, params, param_ID, job_name, sample
         scalers_path=scalers_path  # Pass scalers_path to use or calculate scalers
     )
 
+    val_gen.scalers = train_gen.scalers
+
     # Calculate steps per epoch
     params['steps_per_epoch'] = len(train_gen)
     params['validation_steps'] = len(val_gen)
@@ -180,13 +182,12 @@ if __name__ == '__main__':
 
     # Extract param_ID from output_file_path
     param_ID = os.path.basename(output_file_path)
+    params['job_name'] = job_name
 
     # Call the training function with parsed parameters
     train_model(DATA_FILENAME, output_file_path, params, param_ID, job_name)
 
 """if __name__ == '__main__':
-    data_filepath = r"C:\Users\proxi\Documents\coding\TOF_data\TOF_data\combined_data.h5"
-    model_outpath = r"C:\Users\proxi\Documents\coding\stored_models\test_001\29"
     params = {
         "layer_size": 64,
         "batch_size": 1024,
@@ -195,4 +196,4 @@ if __name__ == '__main__':
         "optimizer": 'RMSprop',
         "job_name": "default"
     }
-    train_model(data_filepath, model_outpath, params, 12, 'default')"""
+    train_model(data_filepath, model_outpath, params, 12, default)"""
