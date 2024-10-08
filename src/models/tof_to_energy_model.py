@@ -1,12 +1,13 @@
 import numpy as np
-import tensorflow as tf
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Dense, Dropout, LeakyReLU, BatchNormalization, Activation, Input
-from tensorflow.keras.callbacks import ReduceLROnPlateau, EarlyStopping, ProgbarLogger
-from tensorflow.keras.optimizers import Adam, SGD, RMSprop
 import re
 import os
 import fcntl
+import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras.optimizers import Adam, SGD, RMSprop
+from sklearn.preprocessing import MinMaxScaler
+from tensorflow.keras.callbacks import Callback
 
 
 class MetaFileCallback(tf.keras.callbacks.Callback):
@@ -45,74 +46,161 @@ class MetaFileCallback(tf.keras.callbacks.Callback):
             print(f"Error updating meta file: {e}")
 
 
-def create_tof_to_energy_model(params, steps_per_execution):
-    """
-    Model providing function:
+# BaseModel class using OOP principles
+class BaseModel(tf.keras.Model):
+    def __init__(self, params):
+        super(BaseModel, self).__init__()
+        self.params = params
+        self.build_model()
 
-    Create Keras model with double curly brackets dropped-in as needed.
-    Return value has to be a valid python dictionary with two customary keys:
-        - loss: Specify a numeric evaluation metric to be minimized
-        - status: Just use STATUS_OK and see hyperopt documentation if not feasible
-    The last one is optional, though recommended, namely:
-        - model: specify the model just created so that we can later use it again.
-    """
-    layer_size = int(params['layer_size'])
-    dropout_rate = float(params['dropout'])
-    learning_rate = float(params['learning_rate'])
-    optimizer = params['optimizer']
-    job_name = params['job_name']
+    def build_model(self):
+        raise NotImplementedError("Subclasses should implement this method")
 
-    model = Sequential()
-    if job_name == 'tofs_simple_relu':
-        # Architecture with two dense layers, activations relu and relu
-        model.add(Dense(layer_size, activation='relu', input_shape=(11,)))
-        model.add(BatchNormalization())
-        model.add(Dropout(dropout_rate))
-        model.add(Dense(layer_size // 2, activation='relu'))
-        model.add(BatchNormalization())
-        model.add(Dropout(dropout_rate))
-    elif job_name == 'tofs_simple_swish':
-        # Architecture with two dense layers, activations relu and swish
-        model.add(Dense(layer_size, activation='relu', input_shape=(11,)))
-        model.add(BatchNormalization())
-        model.add(Dropout(dropout_rate))
-        model.add(Dense(layer_size // 2, activation='swish'))
-        model.add(BatchNormalization())
-        model.add(Dropout(dropout_rate))
-    else:
-        # Default architecture with three dense layers, activations relu, relu, swish
-        model.add(Dense(layer_size, activation='relu', input_shape=(11,)))
-        model.add(BatchNormalization())
-        model.add(Dropout(dropout_rate))
-        model.add(Dense(layer_size * 2, activation='relu'))
-        model.add(BatchNormalization())
-        model.add(Dropout(dropout_rate))
-        model.add(Dense(layer_size, activation='swish'))
-        model.add(BatchNormalization())
-        model.add(Dropout(dropout_rate))
-    # Output layer
-    model.add(Dense(1, activation='linear'))
-
-    # Learning rate scheduling
-    if optimizer == "Adam":
-        optimizer = Adam(learning_rate=learning_rate)
-    if optimizer == "SGD":
-        optimizer = SGD(learning_rate=learning_rate)
-    if optimizer == "RMSprop":
-        optimizer = RMSprop(learning_rate=learning_rate)
-    model.compile(loss='mse', optimizer=optimizer,
-                  steps_per_execution=steps_per_execution)
-
-    return model
+    def call(self, inputs):
+        raise NotImplementedError("Subclasses should implement this method")
 
 
-def train_tof_to_energy_model(train_gen, val_gen, params, checkpoint_dir, param_ID, job_name, meta_file):
+# Custom preprocessing layers
+class LogTransformLayer(layers.Layer):
+    def __init__(self, **kwargs):
+        super(LogTransformLayer, self).__init__(**kwargs)
+
+    def call(self, inputs):
+        # Apply log2 transformation to specific features (e.g., columns 0 and 3)
+        log_transformed = tf.concat([
+            inputs[:, 0:3],  # Keep features 1 and 2 as is
+            tf.math.log(inputs[:, 3:4]) / tf.math.log(2.0)  # Log2 of fourth feature
+        ], axis=1)
+        return log_transformed
+
+
+class InteractionLayer(layers.Layer):
+    def __init__(self, **kwargs):
+        super(InteractionLayer, self).__init__(**kwargs)
+
+    def call(self, inputs):
+        # Inputs shape: (batch_size, num_features)
+        x1 = inputs[:, 0:1]
+        x2 = inputs[:, 1:2]
+        x3 = inputs[:, 2:3]
+        x4 = inputs[:, 3:4]
+        interaction_terms = tf.concat([
+            x1 * x2,
+            x1 * x3,
+            x1 * x4,
+            x2 * x3,
+            x2 * x4,
+            x3 * x4,
+            tf.square(x4)
+        ], axis=1)
+        # Concatenate original inputs with interaction terms
+        return tf.concat([inputs, interaction_terms], axis=1)
+
+
+class ScalingLayer(layers.Layer):
+    def __init__(self, min_values, max_values, **kwargs):
+        super(ScalingLayer, self).__init__(**kwargs)
+        self.min_values = tf.constant(min_values, dtype=tf.float32)
+        self.max_values = tf.constant(max_values, dtype=tf.float32)
+
+    def call(self, inputs):
+        # Apply Min-Max scaling
+        return (inputs - self.min_values) / (self.max_values - self.min_values)
+
+
+# TofToEnergyModel class with preprocessing included in the model graph
+class TofToEnergyModel(BaseModel):
+    def __init__(self, params, min_values, max_values):
+        self.min_values = min_values
+        self.max_values = max_values
+        super(TofToEnergyModel, self).__init__(params)
+
+    def build_model(self):
+        layer_size = int(self.params['layer_size'])
+        dropout_rate = float(self.params['dropout'])
+        optimizer_name = self.params['optimizer']
+        learning_rate = float(self.params['learning_rate'])
+        job_name = self.params['job_name']
+
+        # Preprocessing layers
+        self.preprocessing_layers = self.get_preprocessing_layers()
+
+        # Hidden layers
+        self.hidden_layers = []
+        if job_name == 'tofs_simple_relu':
+            self.hidden_layers.append(layers.Dense(layer_size, activation='relu'))
+            self.hidden_layers.append(layers.BatchNormalization())
+            self.hidden_layers.append(layers.Dropout(dropout_rate))
+            self.hidden_layers.append(layers.Dense(layer_size // 2, activation='relu'))
+            self.hidden_layers.append(layers.BatchNormalization())
+            self.hidden_layers.append(layers.Dropout(dropout_rate))
+        elif job_name == 'tofs_simple_swish':
+            self.hidden_layers.append(layers.Dense(layer_size, activation='relu'))
+            self.hidden_layers.append(layers.BatchNormalization())
+            self.hidden_layers.append(layers.Dropout(dropout_rate))
+            self.hidden_layers.append(layers.Dense(layer_size // 2, activation='swish'))
+            self.hidden_layers.append(layers.BatchNormalization())
+            self.hidden_layers.append(layers.Dropout(dropout_rate))
+        else:
+            self.hidden_layers.append(layers.Dense(layer_size, activation='relu'))
+            self.hidden_layers.append(layers.BatchNormalization())
+            self.hidden_layers.append(layers.Dropout(dropout_rate))
+            self.hidden_layers.append(layers.Dense(layer_size * 2, activation='relu'))
+            self.hidden_layers.append(layers.BatchNormalization())
+            self.hidden_layers.append(layers.Dropout(dropout_rate))
+            self.hidden_layers.append(layers.Dense(layer_size, activation='swish'))
+            self.hidden_layers.append(layers.BatchNormalization())
+            self.hidden_layers.append(layers.Dropout(dropout_rate))
+
+        # Output layer
+        self.output_layer = layers.Dense(1, activation='linear')
+
+        # Compile the model
+        if optimizer_name == "Adam":
+            optimizer = Adam(learning_rate=learning_rate)
+        elif optimizer_name == "SGD":
+            optimizer = SGD(learning_rate=learning_rate)
+        elif optimizer_name == "RMSprop":
+            optimizer = RMSprop(learning_rate=learning_rate)
+        else:
+            raise ValueError(f"Unsupported optimizer: {optimizer_name}")
+
+        self.compile(loss='mse', optimizer=optimizer)
+
+    def get_preprocessing_layers(self):
+        # Define preprocessing layers
+        preprocessing_layers = []
+
+        # Log transform layer for specific features
+        preprocessing_layers.append(LogTransformLayer())
+
+        # Interaction terms
+        preprocessing_layers.append(InteractionLayer())
+
+        # Scaling layer (exclude the output feature from min_values and max_values)
+        preprocessing_layers.append(ScalingLayer(self.min_values[1:], self.max_values[1:]))
+
+        return preprocessing_layers
+
+    def call(self, inputs):
+        x = inputs
+        for layer in self.preprocessing_layers:
+            x = layer(x)
+        for layer in self.hidden_layers:
+            x = layer(x)
+        output = self.output_layer(x)
+        return output
+
+
+# Training function for TofToEnergyModel
+def train_tof_to_energy_model(dataset_train, dataset_val, params, checkpoint_dir,
+                              param_ID, job_name, meta_file, min_values, max_values):
     epochs = params.get('epochs', 200)
     steps_per_epoch = params['steps_per_epoch']
     validation_steps = params['validation_steps']
-    steps_per_execution = steps_per_epoch // 10
+    steps_per_execution = params.get('steps_per_execution', None)
 
-    # Initialize the MirroredStrategy (we'll discuss this in the next section)
+    # Initialize the MirroredStrategy
     strategy = tf.distribute.MirroredStrategy()
 
     with strategy.scope():
@@ -120,10 +208,19 @@ def train_tof_to_energy_model(train_gen, val_gen, params, checkpoint_dir, param_
         latest_checkpoint = tf.train.latest_checkpoint(checkpoint_dir)
         if latest_checkpoint:
             print(f"Loading model from checkpoint: {latest_checkpoint}")
-            model = tf.keras.models.load_model(latest_checkpoint)
+            model = tf.keras.models.load_model(latest_checkpoint, custom_objects={
+                'LogTransformLayer': LogTransformLayer,
+                'InteractionLayer': InteractionLayer,
+                'ScalingLayer': ScalingLayer,
+                'TofToEnergyModel': TofToEnergyModel
+            })
         else:
             print("No checkpoint found. Initializing a new model.")
-            model = create_tof_to_energy_model(params, steps_per_execution)
+            model = TofToEnergyModel(params, min_values, max_values)
+
+        # Optionally, recompile the model to set steps_per_execution
+        if steps_per_execution is not None:
+            model.compile(loss='mse', optimizer=model.optimizer, steps_per_execution=steps_per_execution)
 
     # Learning rate scheduler and early stopping
     reduce_lr = tf.keras.callbacks.ReduceLROnPlateau(
@@ -144,7 +241,7 @@ def train_tof_to_energy_model(train_gen, val_gen, params, checkpoint_dir, param_
     meta_callback = MetaFileCallback(param_ID, job_name, meta_file)
 
     # Callbacks list
-    callbacks = [reduce_lr, early_stop, checkpoint]#, meta_callback]
+    callbacks = [reduce_lr, early_stop, checkpoint, meta_callback]
 
     if not os.path.exists(checkpoint_dir):
         os.makedirs(checkpoint_dir)
@@ -162,9 +259,9 @@ def train_tof_to_energy_model(train_gen, val_gen, params, checkpoint_dir, param_
         initial_epoch = 0
 
     history = model.fit(
-        train_gen,
+        dataset_train,
         epochs=epochs,
-        validation_data=val_gen,
+        validation_data=dataset_val,
         steps_per_epoch=steps_per_epoch,
         validation_steps=validation_steps,
         callbacks=callbacks,

@@ -5,6 +5,124 @@ import numpy as np
 import keras
 import pickle
 from sklearn.preprocessing import MinMaxScaler
+import tensorflow as tf
+
+
+# Function to create datasets using tf.data.Dataset
+def create_dataset(indices, data_filepath, batch_size, shuffle=True):
+    input_dim = 4  # Adjust based on your data
+    output_dim = 1
+
+    def data_generator():
+        with h5py.File(data_filepath, 'r') as hf:
+            for idx in indices:
+                data_row = hf['combined_data'][idx]
+                if data_row.ndim == 1:
+                    data_row = np.expand_dims(data_row, axis=0)
+                mask = data_row[:, -1].astype(bool)
+                masked_data_row = data_row[mask]
+                if masked_data_row.shape[0] == 0:
+                    continue
+                input_data = masked_data_row[:, [2, 3, 4, 5]]
+                output_data = masked_data_row[:, 0].reshape(-1, 1)
+                output_data = np.log2(output_data)
+                for inp, outp in zip(input_data, output_data):
+                    yield inp.astype(np.float32), outp.astype(np.float32)
+
+    dataset = tf.data.Dataset.from_generator(
+        data_generator,
+        output_types=(tf.float32, tf.float32),
+        output_shapes=(tf.TensorShape([input_dim]), tf.TensorShape([output_dim]))
+    )
+
+    if shuffle:
+        dataset = dataset.shuffle(buffer_size=10000)
+    dataset = dataset.batch(batch_size)
+    dataset = dataset.prefetch(buffer_size=tf.data.AUTOTUNE)
+
+    # Set the auto-shard policy
+    options = tf.data.Options()
+    options.experimental_distribute.auto_shard_policy = tf.data.experimental.AutoShardPolicy.DATA
+    dataset = dataset.with_options(options)
+
+    return dataset
+
+
+def load_scalers(scalers_path):
+    if os.path.exists(scalers_path):
+        with open(scalers_path, 'rb') as f:
+            scalers = pickle.load(f)
+            min_values = scalers['min_values']
+            max_values = scalers['max_values']
+            print(f"Scalers loaded from {scalers_path}")
+            return min_values, max_values
+    else:
+        raise FileNotFoundError(f"Scalers file not found at {scalers_path}")
+
+
+def process_input(input_data):
+    x1 = input_data[:, 0:1]
+    x2 = input_data[:, 1:2]
+    x3 = input_data[:, 2:3]
+    x4 = input_data[:, 3:4]
+    interaction_terms = np.hstack([
+        x1 * x2,
+        x1 * x3,
+        x1 * x4,
+        x2 * x3,
+        x2 * x4,
+        x3 * x4,
+        x4 ** 2
+    ])
+    return np.hstack([input_data, interaction_terms])
+
+
+def calculate_and_save_scalers(indices, data_filepath, scalers_path):
+    if os.path.exists(scalers_path):
+        with open(scalers_path, 'rb') as f:
+            scalers = pickle.load(f)
+            min_values = scalers['min_values']
+            max_values = scalers['max_values']
+            print(f"Scalers loaded from {scalers_path}")
+            return min_values, max_values
+    else:
+        # Read the entire dataset into memory
+        with h5py.File(data_filepath, 'r') as hf:
+            data = hf['combined_data'][:]
+
+        # Filter data using indices
+        data = data[indices]
+
+        # Apply mask to filter valid data
+        mask = data[:, -1].astype(bool)
+        data = data[mask]
+
+        # Apply log transforms
+        data[:, 0] = np.log2(data[:, 0])  # Log transform of output
+        data[:, 5] = np.log2(data[:, 5])  # Log transform of sixth feature
+
+        # Process input data
+        input_data = data[:, [2, 3, 4, 5]]  # Adjust indices based on your data
+
+        # Apply interaction terms
+        interaction_data = process_input(input_data)
+
+        # Combine output and input data
+        output_data = data[:, 0].reshape(-1, 1)  # Output variable
+        full_data = np.hstack([output_data, interaction_data])
+
+        # Fit the scaler
+        scaler = MinMaxScaler()
+        scaler.fit(full_data)
+        min_values = scaler.data_min_
+        max_values = scaler.data_max_
+
+        # Save the scalers to disk
+        with open(scalers_path, 'wb') as f:
+            pickle.dump({'min_values': min_values, 'max_values': max_values}, f)
+            print(f"Scalers saved to {scalers_path}")
+
+        return min_values, max_values
 
 
 class DataGenerator(keras.utils.Sequence):
