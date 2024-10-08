@@ -107,7 +107,7 @@ def train_model(data_filepath, model_outpath, params, param_ID, job_name, sample
     print(f"test_loss {loss_test}")
 
 
-"""if __name__ == '__main__':
+if __name__ == '__main__':
     # Collect parameters passed through command line
     output_file_path = sys.argv[1]
     job_name = sys.argv[2]
@@ -129,17 +129,17 @@ def train_model(data_filepath, model_outpath, params, param_ID, job_name, sample
     params['job_name'] = job_name
 
     # Call the training function with parsed parameters
-    train_model(DATA_FILENAME, output_file_path, params, param_ID, job_name)"""
+    train_model(DATA_FILENAME, output_file_path, params, param_ID, job_name)
 
-if __name__ == '__main__':
-    model_outpath = r"C:\Users\proxi\Documents\coding\stored_models\test_001\29"
-    data_filepath = r"C:\Users\proxi\Documents\coding\TOF_data\TOF_data\combined_data.h5"
-    params = {
-        "layer_size": 64,
-        "batch_size": 1024,
-        "dropout": 0.2,
-        "learning_rate": 0.2,
-        "optimizer": 'RMSprop',
-        "job_name": "default"
-    }
-    train_model(data_filepath, model_outpath, params, 12, 'default')
+#if __name__ == '__main__':
+#    model_outpath = r"C:\Users\proxi\Documents\coding\stored_models\test_001\29"
+#    data_filepath = r"C:\Users\proxi\Documents\coding\TOF_data\TOF_data\combined_data.h5"
+#    params = {
+#        "layer_size": 64,
+#        "batch_size": 1024,
+#        "dropout": 0.2,
+#        "learning_rate": 0.2,
+#        "optimizer": 'RMSprop',
+#        "job_name": "default"
+#    }
+#    train_model(data_filepath, model_outpath, params, 12, 'default')

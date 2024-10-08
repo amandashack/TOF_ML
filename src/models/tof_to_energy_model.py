@@ -165,7 +165,7 @@ class TofToEnergyModel(BaseModel):
         else:
             raise ValueError(f"Unsupported optimizer: {optimizer_name}")
 
-        self.compile(loss='mse', optimizer=optimizer)
+        self.compile(loss='mse', optimizer=optimizer, steps_per_execution=self.params['steps_per_execution'])
 
     def get_preprocessing_layers(self):
         # Define preprocessing layers
@@ -219,8 +219,8 @@ def train_tof_to_energy_model(dataset_train, dataset_val, params, checkpoint_dir
             model = TofToEnergyModel(params, min_values, max_values)
 
         # Optionally, recompile the model to set steps_per_execution
-        if steps_per_execution is not None:
-            model.compile(loss='mse', optimizer=model.optimizer, steps_per_execution=steps_per_execution)
+        #if steps_per_execution is not None:
+        #    model.compile(loss='mse', optimizer=model.optimizer, steps_per_execution=steps_per_execution)
 
     # Learning rate scheduler and early stopping
     reduce_lr = tf.keras.callbacks.ReduceLROnPlateau(

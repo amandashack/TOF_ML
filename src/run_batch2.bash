@@ -2,16 +2,16 @@
 #SBATCH --account=lcls
 #SBATCH --partition=ampere
 #SBATCH --job-name=tofs
-#SBATCH --ntasks=8
-#SBATCH --cpus-per-task=1
-#SBATCH --gpus=3
-#SBATCH --mem-per-cpu=20g
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=32
+#SBATCH --gpus=2
+#SBATCH --mem-per-cpu=10g
 #SBATCH --time=0-24:00:00
 
 # Activate the environment
-source /sdf/group/lcls/ds/ana/sw/conda2/manage/bin/psconda.sh
-conda deactivate
-conda activate shack
+# source /sdf/group/lcls/ds/ana/sw/conda2/manage/bin/psconda.sh
+# conda deactivate
+# conda activate shack
 
 DIR=$1
 JOB_NAME=$2
