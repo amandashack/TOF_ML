@@ -37,8 +37,8 @@ def create_dataset(indices, data_filepath, batch_size, shuffle=True):
 
     if shuffle:
         dataset = dataset.shuffle(buffer_size=10000)
-    dataset = dataset.batch(batch_size)
-    dataset = dataset.prefetch(buffer_size=tf.data.AUTOTUNE)
+    dataset = dataset.batch(batch_size).cache()
+    dataset = dataset.prefetch(buffer_size=tf.data.AUTOTUNE).repeat()
 
     # Set the auto-shard policy
     options = tf.data.Options()

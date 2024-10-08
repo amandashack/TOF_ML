@@ -5,6 +5,7 @@ import fcntl
 import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import layers
+import glob
 from tensorflow.keras.optimizers import Adam, SGD, RMSprop
 from sklearn.preprocessing import MinMaxScaler
 from tensorflow.keras.callbacks import Callback
@@ -110,10 +111,10 @@ class ScalingLayer(layers.Layer):
 
 # TofToEnergyModel class with preprocessing included in the model graph
 class TofToEnergyModel(BaseModel):
-    def __init__(self, params, min_values, max_values):
+    def __init__(self, params, min_values, max_values, **kwargs):
         self.min_values = min_values
         self.max_values = max_values
-        super(TofToEnergyModel, self).__init__(params)
+        super(TofToEnergyModel, self).__init__(params, **kwargs)
 
     def build_model(self):
         layer_size = int(self.params['layer_size'])
@@ -191,10 +192,47 @@ class TofToEnergyModel(BaseModel):
         output = self.output_layer(x)
         return output
 
+    def get_config(self):
+        config = super(TofToEnergyModel, self).get_config()
+        config.update({
+            'params': self.params,
+            'min_values': self.min_values.tolist(),
+            'max_values': self.max_values.tolist(),
+        })
+        return config
+
+    @classmethod
+    def from_config(cls, config):
+        params = config.pop('params')
+        min_values = np.array(config.pop('min_values'))
+        max_values = np.array(config.pop('max_values'))
+        return cls(params, min_values, max_values, **config)
+
 
 # Training function for TofToEnergyModel
 def train_tof_to_energy_model(dataset_train, dataset_val, params, checkpoint_dir,
                               param_ID, job_name, meta_file, min_values, max_values):
+    def get_latest_checkpoint(checkpoint_dir):
+        """
+        Finds the latest checkpoint directory in the checkpoint directory.
+        Assumes checkpoint directories are named as 'main_cp-XXXX' where XXXX is the epoch number.
+        """
+        list_of_dirs = glob.glob(os.path.join(checkpoint_dir, "main_cp-*"))
+        if not list_of_dirs:
+            return None
+        # Extract epoch numbers and find the highest
+        latest_dir = None
+        latest_epoch = -1
+        for dir_path in list_of_dirs:
+            basename = os.path.basename(dir_path)
+            match = re.match(r"main_cp-(\d+)", basename)
+            if match:
+                epoch_num = int(match.group(1))
+                if epoch_num > latest_epoch:
+                    latest_epoch = epoch_num
+                    latest_dir = dir_path
+        return latest_dir
+
     epochs = params.get('epochs', 200)
     steps_per_epoch = params['steps_per_epoch']
     validation_steps = params['validation_steps']
@@ -205,7 +243,7 @@ def train_tof_to_energy_model(dataset_train, dataset_val, params, checkpoint_dir
 
     with strategy.scope():
         # Check for existing checkpoints
-        latest_checkpoint = tf.train.latest_checkpoint(checkpoint_dir)
+        latest_checkpoint = get_latest_checkpoint(checkpoint_dir)
         if latest_checkpoint:
             print(f"Loading model from checkpoint: {latest_checkpoint}")
             model = tf.keras.models.load_model(latest_checkpoint, custom_objects={
@@ -231,10 +269,15 @@ def train_tof_to_energy_model(dataset_train, dataset_val, params, checkpoint_dir
     )
 
     # Checkpoint callback
-    checkpoint_path = os.path.join(checkpoint_dir, "main_cp-{epoch:04d}.ckpt")
+    checkpoint_path = os.path.join(checkpoint_dir, "main_cp-{epoch:04d}")
     checkpoint = tf.keras.callbacks.ModelCheckpoint(
-        filepath=checkpoint_path, monitor='val_loss', save_best_only=False,
-        save_weights_only=False, verbose=1
+        filepath=checkpoint_path,
+        monitor='val_loss',
+        save_best_only=False,
+        save_weights_only=False,  # Save the entire model including optimizer state
+        save_freq='epoch',  # Ensure checkpoints are saved at the end of each epoch
+        save_format='tf',  # Use the TensorFlow SavedModel format
+        verbose=1
     )
 
     # Custom MetaFileCallback
@@ -247,16 +290,18 @@ def train_tof_to_energy_model(dataset_train, dataset_val, params, checkpoint_dir
         os.makedirs(checkpoint_dir)
 
     if latest_checkpoint:
-        # Extract the epoch number from the checkpoint filename
-        checkpoint_pattern = r"main_cp-(\d{4})\.ckpt"
-        match = re.match(checkpoint_pattern, os.path.basename(latest_checkpoint))
+        # Extract the epoch number from the checkpoint directory name
+        checkpoint_pattern = r"main_cp-(\d+)"
+        match = re.search(checkpoint_pattern, os.path.basename(latest_checkpoint))
         if match:
             initial_epoch = int(match.group(1))
             print(f"Resuming training from epoch {initial_epoch}")
         else:
             initial_epoch = 0
+            print("Could not extract epoch number from checkpoint. Starting from epoch 0.")
     else:
         initial_epoch = 0
+        print("No checkpoint found. Starting from epoch 0.")
 
     history = model.fit(
         dataset_train,

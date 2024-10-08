@@ -1,10 +1,10 @@
-from sklearn.model_selection import KFold
 import tensorflow as tf
 import numpy as np
-import sys
-import re
+import math
 import h5py
 import os
+import sys
+import re
 import random
 import pickle
 from loaders import DataGenerator, DataGeneratorWithVeto, DataGeneratorTofToKE, calculate_and_save_scalers, create_dataset
@@ -60,17 +60,10 @@ def train_model(data_filepath, model_outpath, params, param_ID, job_name, sample
 
         # Create partition dictionary for train, validation, and test sets (80/20 split)
         indices = np.arange(data_len)
-        if sample_size:
-            indices = random.sample(list(indices), sample_size)
-        data_len = len(indices)
-        split_index1 = int(0.8 * data_len)
-        split_index2 = int(0.8 * split_index1)
-        print(split_index2, split_index1, data_len)
-
         partition = {
-            'train': indices[:split_index2],
-            'validation': indices[split_index2:split_index1],
-            'test': indices[split_index1:]
+            'train': indices[:int(0.8 * data_len)],
+            'validation': indices[int(0.8 * data_len):int(0.9 * data_len)],
+            'test': indices[int(0.9 * data_len):]
         }
 
         # Save indices
@@ -79,12 +72,25 @@ def train_model(data_filepath, model_outpath, params, param_ID, job_name, sample
                  validation_indices=partition['validation'],
                  test_indices=partition['test'])
         print(f"Data indices saved to {indices_path}")
+
+    # Apply sampling if a sample size is provided
+    if sample_size:
+        def sample_indices(indices, size):
+            if len(indices) > size:
+                return random.sample(list(indices), size)
+            return indices  # Return all if the requested sample size exceeds available data
+
+        partition['train'] = sample_indices(partition['train'], sample_size)
+        partition['validation'] = sample_indices(partition['validation'], int(0.2 * sample_size))
+        partition['test'] = sample_indices(partition['test'], int(0.1 * sample_size))
+
     batch_size = params.get('batch_size', 1024)
 
     # Calculate steps per epoch
-    params['steps_per_epoch'] = len(partition['train']) // batch_size
-    params['validation_steps'] = len(partition['validation']) // batch_size
+    params['steps_per_epoch'] = math.ceil(len(partition['train']) / batch_size)
+    params['validation_steps'] = math.ceil(len(partition['validation']) / batch_size)
     params['steps_per_execution'] = params['steps_per_epoch'] // 10
+    print(params['steps_per_epoch'], params['steps_per_execution'])
 
     # Calculate min and max values for scaling
     min_values, max_values = calculate_and_save_scalers(partition['train'], data_filepath, scalers_path)
@@ -142,4 +148,4 @@ if __name__ == '__main__':
 #        "optimizer": 'RMSprop',
 #        "job_name": "default"
 #    }
-#    train_model(data_filepath, model_outpath, params, 12, 'default')
+#    train_model(data_filepath, model_outpath, params, 12, 'default', sample_size=200000)
