@@ -36,12 +36,14 @@ if gpus:
 
 # Training function
 def train_model(data_filepath, model_outpath, params, param_ID, job_name, sample_size=None):
-    checkpoint_dir = os.path.join(model_outpath, "checkpoints")
+    # Initialize the strategy
+    strategy = tf.distribute.MultiWorkerMirroredStrategy()
 
     # Define the meta file path
     meta_file = os.path.join(os.path.dirname(model_outpath), 'meta.txt')
     scalers_path = os.path.join(model_outpath, 'scalers.pkl')
     indices_path = os.path.join(model_outpath, 'data_indices.npz')
+    checkpoint_dir = os.path.join(model_outpath, "checkpoints")
 
     # Load or create data indices
     if os.path.exists(indices_path):
@@ -58,7 +60,7 @@ def train_model(data_filepath, model_outpath, params, param_ID, job_name, sample
         with h5py.File(data_filepath, 'r') as hf:
             data_len = len(hf['combined_data'])
 
-        # Create partition dictionary for train, validation, and test sets (80/20 split)
+        # Create partition dictionary for train, validation, and test sets (80/10/10 split)
         indices = np.arange(data_len)
         partition = {
             'train': indices[:int(0.8 * data_len)],
@@ -81,39 +83,64 @@ def train_model(data_filepath, model_outpath, params, param_ID, job_name, sample
             return indices  # Return all if the requested sample size exceeds available data
 
         partition['train'] = sample_indices(partition['train'], sample_size)
-        partition['validation'] = sample_indices(partition['validation'], int(0.2 * sample_size))
+        partition['validation'] = sample_indices(partition['validation'], int(0.1 * sample_size))
         partition['test'] = sample_indices(partition['test'], int(0.1 * sample_size))
 
-    batch_size = params.get('batch_size', 1024)
+    GLOBAL_BATCH_SIZE = params.get('batch_size', 1024)
+    BATCH_SIZE_PER_REPLICA = GLOBAL_BATCH_SIZE // strategy.num_replicas_in_sync
 
     # Calculate steps per epoch
-    params['steps_per_epoch'] = math.ceil(len(partition['train']) / batch_size)
-    params['validation_steps'] = math.ceil(len(partition['validation']) / batch_size)
-    params['steps_per_execution'] = params['steps_per_epoch'] // 10
+    params['steps_per_epoch'] = math.ceil(len(partition['train']) / GLOBAL_BATCH_SIZE)
+    params['validation_steps'] = math.ceil(len(partition['validation']) / GLOBAL_BATCH_SIZE)
+    params['steps_per_execution'] = params['steps_per_epoch'] // 10 or 1  # Avoid division by zero
+
     print(params['steps_per_epoch'], params['steps_per_execution'])
 
     # Calculate min and max values for scaling
     min_values, max_values = calculate_and_save_scalers(partition['train'], data_filepath, scalers_path)
 
-    # Create datasets
-    dataset_train = create_dataset(partition['train'], data_filepath, batch_size, shuffle=True)
-    dataset_val = create_dataset(partition['validation'], data_filepath, batch_size, shuffle=False)
+    with strategy.scope():
+        # Create datasets inside the strategy scope
+        dataset_train = create_dataset(partition['train'], data_filepath, BATCH_SIZE_PER_REPLICA, shuffle=True)
+        dataset_val = create_dataset(partition['validation'], data_filepath, BATCH_SIZE_PER_REPLICA, shuffle=False)
 
-    # Train the main model
-    model, history = train_tof_to_energy_model(
-        dataset_train, dataset_val, params, checkpoint_dir, param_ID, job_name, meta_file, min_values, max_values
-    )
+        # Train the main model
+        model, history = train_tof_to_energy_model(
+            dataset_train, dataset_val, params, checkpoint_dir, param_ID, job_name, meta_file, min_values, max_values, strategy
+        )
 
-    model.save(os.path.join(model_outpath, "main_model.h5"))
+    # Determine if the current worker is the chief
+    def is_chief():
+        task_type, task_id = (strategy.cluster_resolver.task_type, strategy.cluster_resolver.task_id)
+        return task_type is None or task_type == 'chief'
+
+    # Save the model (ensure only the chief worker saves the model)
+    if is_chief():
+        model.save(os.path.join(model_outpath, "main_model"), save_format="tf")
 
     # Create test dataset
-    dataset_test = create_dataset(partition['test'], data_filepath, batch_size, shuffle=False)
+    dataset_test = create_dataset(partition['test'], data_filepath, BATCH_SIZE_PER_REPLICA, shuffle=False)
 
     loss_test = model.evaluate(dataset_test, verbose=0)
     print(f"test_loss {loss_test}")
 
-
+# Entry point
 if __name__ == '__main__':
+    model_outpath = r"C:\Users\proxi\Documents\coding\stored_models\test_001\29"
+    data_filepath = r"C:\Users\proxi\Documents\coding\TOF_data\TOF_data\combined_data.h5"
+    params = {
+        "layer_size": 32,
+        "batch_size": 1024 * 4,
+        "dropout": 0.2,
+        "learning_rate": 0.1,
+        "optimizer": 'RMSprop',
+        "job_name": "default",
+        "epochs": 200  # Add epochs parameter if needed
+    }
+    train_model(data_filepath, model_outpath, params, 12, 'default')
+
+
+"""if __name__ == '__main__':
     # Collect parameters passed through command line
     output_file_path = sys.argv[1]
     job_name = sys.argv[2]
@@ -135,17 +162,4 @@ if __name__ == '__main__':
     params['job_name'] = job_name
 
     # Call the training function with parsed parameters
-    train_model(DATA_FILENAME, output_file_path, params, param_ID, job_name)
-
-#if __name__ == '__main__':
-#    model_outpath = r"C:\Users\proxi\Documents\coding\stored_models\test_001\29"
-#    data_filepath = r"C:\Users\proxi\Documents\coding\TOF_data\TOF_data\combined_data.h5"
-#    params = {
-#        "layer_size": 64,
-#        "batch_size": 1024,
-#        "dropout": 0.2,
-#        "learning_rate": 0.2,
-#        "optimizer": 'RMSprop',
-#        "job_name": "default"
-#    }
-#    train_model(data_filepath, model_outpath, params, 12, 'default', sample_size=200000)
+    train_model(DATA_FILENAME, output_file_path, params, param_ID, job_name)"""

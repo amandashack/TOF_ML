@@ -8,9 +8,138 @@ from sklearn.preprocessing import MinMaxScaler
 import tensorflow as tf
 
 
-# Function to create datasets using tf.data.Dataset
 def create_dataset(indices, data_filepath, batch_size, shuffle=True):
     input_dim = 4  # Adjust based on your data
+    output_dim = 1
+
+    # Create a dataset of indices
+    indices_dataset = tf.data.Dataset.from_tensor_slices(indices)
+    if shuffle:
+        indices_dataset = indices_dataset.shuffle(buffer_size=10000)
+
+    # Batch the indices to read data in batches
+    indices_dataset = indices_dataset.batch(batch_size)
+
+    def _parse_function(batch_indices):
+        def py_function(batch_indices):
+            # Open the HDF5 file once per batch
+            with h5py.File(data_filepath, 'r') as hf:
+                batch_indices_np = np.sort(batch_indices.numpy())
+                data_rows = hf['combined_data'][batch_indices_np]
+
+                input_list = []
+                output_list = []
+                for data_row in data_rows:
+                    if data_row.ndim == 1:
+                        data_row = np.expand_dims(data_row, axis=0)
+                    mask = data_row[:, -1].astype(bool)
+                    masked_data_row = data_row[mask]
+                    if masked_data_row.shape[0] == 0:
+                        continue
+                    input_data = masked_data_row[:, [2, 3, 4, 5]]
+                    output_data = masked_data_row[:, 0].reshape(-1, 1)
+                    output_data = np.log2(output_data)
+                    input_list.append(input_data.astype(np.float32))
+                    output_list.append(output_data.astype(np.float32))
+                # Concatenate the lists
+                if input_list and output_list:
+                    inputs = np.concatenate(input_list, axis=0)
+                    outputs = np.concatenate(output_list, axis=0)
+                    return inputs, outputs
+                else:
+                    # Return empty arrays if no data
+                    return np.empty((0, input_dim), dtype=np.float32), np.empty((0, output_dim), dtype=np.float32)
+        inp, outp = tf.py_function(py_function, [batch_indices], [tf.float32, tf.float32])
+        inp.set_shape([None, input_dim])
+        outp.set_shape([None, output_dim])
+        return inp, outp
+
+    # Map the parsing function over the batches
+    dataset = indices_dataset.map(_parse_function, num_parallel_calls=tf.data.AUTOTUNE)
+
+    # Unbatch to flatten the dataset
+    dataset = dataset.unbatch().repeat()
+
+    # Batch the dataset
+    dataset = dataset.batch(batch_size)
+
+    # Prefetch
+    dataset = dataset.prefetch(tf.data.AUTOTUNE)
+
+    # Set the auto-shard policy
+    options = tf.data.Options()
+    options.experimental_distribute.auto_shard_policy = tf.data.experimental.AutoShardPolicy.DATA
+    dataset = dataset.with_options(options)
+
+    return dataset
+
+
+def calculate_and_save_scalers(indices, data_filepath, scalers_path):
+    if os.path.exists(scalers_path):
+        with open(scalers_path, 'rb') as f:
+            scalers = pickle.load(f)
+            min_values = scalers['min_values']
+            max_values = scalers['max_values']
+            print(f"Scalers loaded from {scalers_path}")
+            return min_values, max_values
+    else:
+        # Read the entire dataset into memory
+        with h5py.File(data_filepath, 'r') as hf:
+            data = hf['combined_data'][:]
+
+        # Filter data using indices
+        data = data[indices]
+
+        # Apply mask to filter valid data
+        mask = data[:, -1].astype(bool)
+        data = data[mask]
+
+        # Apply log transforms
+        data[:, 0] = np.log2(data[:, 0])  # Log transform of output
+        data[:, 5] = np.log2(data[:, 5])  # Log transform of sixth feature
+
+        # Process input data
+        input_data = data[:, [2, 3, 4, 5]]  # Adjust indices based on your data
+
+        # Apply interaction terms
+        x1 = input_data[:, 0:1]
+        x2 = input_data[:, 1:2]
+        x3 = input_data[:, 2:3]
+        x4 = input_data[:, 3:4]
+        interaction_terms = np.hstack([
+            x1 * x2,
+            x1 * x3,
+            x1 * x4,
+            x2 * x3,
+            x2 * x4,
+            x3 * x4,
+            x4 ** 2
+        ])
+        processed_input = np.hstack([input_data, interaction_terms])
+
+        # Combine output and input data
+        output_data = data[:, 0].reshape(-1, 1)  # Output variable
+        full_data = np.hstack([output_data, processed_input])
+
+        # Fit the scaler
+        from sklearn.preprocessing import MinMaxScaler
+        scaler = MinMaxScaler()
+        scaler.fit(full_data)
+        min_values = scaler.data_min_
+        max_values = scaler.data_max_
+
+        # Save the scalers to disk
+        with open(scalers_path, 'wb') as f:
+            pickle.dump({'min_values': min_values, 'max_values': max_values}, f)
+            print(f"Scalers saved to {scalers_path}")
+
+        return min_values, max_values
+
+
+# Function to create datasets using tf.data.Dataset
+def create_dataset2(indices, data_filepath, batch_size, shuffle=True):
+    # Adjust input_dim based on the new number of features after preprocessing
+    input_dim = 4  # Original features + interaction terms
     output_dim = 1
 
     def data_generator():
@@ -25,7 +154,12 @@ def create_dataset(indices, data_filepath, batch_size, shuffle=True):
                     continue
                 input_data = masked_data_row[:, [2, 3, 4, 5]]
                 output_data = masked_data_row[:, 0].reshape(-1, 1)
+
+                # Apply log2 transformation to specific features
+                input_data[:, 3] = np.log2(input_data[:, 3])
                 output_data = np.log2(output_data)
+
+                # Note: Scaling is generally not necessary for Random Forests
                 for inp, outp in zip(input_data, output_data):
                     yield inp.astype(np.float32), outp.astype(np.float32)
 
@@ -36,11 +170,12 @@ def create_dataset(indices, data_filepath, batch_size, shuffle=True):
     )
 
     if shuffle:
-        dataset = dataset.shuffle(buffer_size=10000)
+        dataset = dataset.shuffle(buffer_size=100000)
     dataset = dataset.batch(batch_size).cache()
-    dataset = dataset.prefetch(buffer_size=tf.data.AUTOTUNE).repeat()
+    dataset = dataset.prefetch(buffer_size=tf.data.AUTOTUNE)
 
-    # Set the auto-shard policy
+    # Remove the .repeat() method to avoid infinite loops during training
+    # Adjust sharding options if necessary
     options = tf.data.Options()
     options.experimental_distribute.auto_shard_policy = tf.data.experimental.AutoShardPolicy.DATA
     dataset = dataset.with_options(options)

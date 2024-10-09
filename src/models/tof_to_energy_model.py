@@ -1,7 +1,7 @@
 import numpy as np
 import re
 import os
-import fcntl
+#import fcntl
 import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import layers
@@ -11,7 +11,7 @@ from sklearn.preprocessing import MinMaxScaler
 from tensorflow.keras.callbacks import Callback
 
 
-class MetaFileCallback(tf.keras.callbacks.Callback):
+"""class MetaFileCallback(tf.keras.callbacks.Callback):
     def __init__(self, param_ID, job_name, meta_file):
         super(MetaFileCallback, self).__init__()
         self.param_ID = param_ID
@@ -44,7 +44,7 @@ class MetaFileCallback(tf.keras.callbacks.Callback):
                 # Release the lock
                 fcntl.flock(f, fcntl.LOCK_UN)
         except Exception as e:
-            print(f"Error updating meta file: {e}")
+            print(f"Error updating meta file: {e}")"""
 
 
 # BaseModel class using OOP principles
@@ -60,7 +60,6 @@ class BaseModel(tf.keras.Model):
     def call(self, inputs):
         raise NotImplementedError("Subclasses should implement this method")
 
-
 # Custom preprocessing layers
 class LogTransformLayer(layers.Layer):
     def __init__(self, **kwargs):
@@ -69,11 +68,10 @@ class LogTransformLayer(layers.Layer):
     def call(self, inputs):
         # Apply log2 transformation to specific features (e.g., columns 0 and 3)
         log_transformed = tf.concat([
-            inputs[:, 0:3],  # Keep features 1 and 2 as is
+            inputs[:, 0:3],  # Keep features 0,1,2 as is
             tf.math.log(inputs[:, 3:4]) / tf.math.log(2.0)  # Log2 of fourth feature
         ], axis=1)
         return log_transformed
-
 
 class InteractionLayer(layers.Layer):
     def __init__(self, **kwargs):
@@ -97,7 +95,6 @@ class InteractionLayer(layers.Layer):
         # Concatenate original inputs with interaction terms
         return tf.concat([inputs, interaction_terms], axis=1)
 
-
 class ScalingLayer(layers.Layer):
     def __init__(self, min_values, max_values, **kwargs):
         super(ScalingLayer, self).__init__(**kwargs)
@@ -108,8 +105,7 @@ class ScalingLayer(layers.Layer):
         # Apply Min-Max scaling
         return (inputs - self.min_values) / (self.max_values - self.min_values)
 
-
-# TofToEnergyModel class with preprocessing included in the model graph
+# TofToEnergyModel class
 class TofToEnergyModel(BaseModel):
     def __init__(self, params, min_values, max_values, **kwargs):
         self.min_values = min_values
@@ -208,10 +204,9 @@ class TofToEnergyModel(BaseModel):
         max_values = np.array(config.pop('max_values'))
         return cls(params, min_values, max_values, **config)
 
-
 # Training function for TofToEnergyModel
 def train_tof_to_energy_model(dataset_train, dataset_val, params, checkpoint_dir,
-                              param_ID, job_name, meta_file, min_values, max_values):
+                              param_ID, job_name, meta_file, min_values, max_values, strategy):
     def get_latest_checkpoint(checkpoint_dir):
         """
         Finds the latest checkpoint directory in the checkpoint directory.
@@ -238,9 +233,6 @@ def train_tof_to_energy_model(dataset_train, dataset_val, params, checkpoint_dir
     validation_steps = params['validation_steps']
     steps_per_execution = params.get('steps_per_execution', None)
 
-    # Initialize the MirroredStrategy
-    strategy = tf.distribute.MirroredStrategy()
-
     with strategy.scope():
         # Check for existing checkpoints
         latest_checkpoint = get_latest_checkpoint(checkpoint_dir)
@@ -256,10 +248,6 @@ def train_tof_to_energy_model(dataset_train, dataset_val, params, checkpoint_dir
             print("No checkpoint found. Initializing a new model.")
             model = TofToEnergyModel(params, min_values, max_values)
 
-        # Optionally, recompile the model to set steps_per_execution
-        #if steps_per_execution is not None:
-        #    model.compile(loss='mse', optimizer=model.optimizer, steps_per_execution=steps_per_execution)
-
     # Learning rate scheduler and early stopping
     reduce_lr = tf.keras.callbacks.ReduceLROnPlateau(
         monitor='val_loss', factor=0.1, patience=5, min_lr=1e-6, verbose=1
@@ -268,25 +256,32 @@ def train_tof_to_energy_model(dataset_train, dataset_val, params, checkpoint_dir
         monitor='val_loss', patience=10, restore_best_weights=True
     )
 
+    # Determine if the current worker is the chief
+    def is_chief():
+        task_type, task_id = (strategy.cluster_resolver.task_type, strategy.cluster_resolver.task_id)
+        return task_type is None or task_type == 'chief'
+
     # Checkpoint callback
     checkpoint_path = os.path.join(checkpoint_dir, "main_cp-{epoch:04d}")
-    checkpoint = tf.keras.callbacks.ModelCheckpoint(
-        filepath=checkpoint_path,
-        monitor='val_loss',
-        save_best_only=False,
-        save_weights_only=False,  # Save the entire model including optimizer state
-        save_freq='epoch',  # Ensure checkpoints are saved at the end of each epoch
-        save_format='tf',  # Use the TensorFlow SavedModel format
-        verbose=1
-    )
-
-    # Custom MetaFileCallback
-    meta_callback = MetaFileCallback(param_ID, job_name, meta_file)
+    if is_chief():
+        checkpoint = tf.keras.callbacks.ModelCheckpoint(
+            filepath=checkpoint_path,
+            monitor='val_loss',
+            save_best_only=False,
+            save_weights_only=False,  # Save the entire model including optimizer state
+            save_freq='epoch',  # Ensure checkpoints are saved at the end of each epoch
+            save_format='tf',  # Use the TensorFlow SavedModel format
+            verbose=1
+        )
+    else:
+        checkpoint = None  # Non-chief workers don't need to save checkpoints
 
     # Callbacks list
-    callbacks = [reduce_lr, early_stop, checkpoint, meta_callback]
+    callbacks = [reduce_lr, early_stop]
+    if checkpoint:
+        callbacks.append(checkpoint)
 
-    if not os.path.exists(checkpoint_dir):
+    if not os.path.exists(checkpoint_dir) and is_chief():
         os.makedirs(checkpoint_dir)
 
     if latest_checkpoint:
