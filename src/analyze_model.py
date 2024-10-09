@@ -108,7 +108,7 @@ def plot_model_results(base_dir, model_dir_name, model_type, data_filepath, pdf_
     model_type_display = model_type.replace('_', ' ')
 
     # Load the model
-    model_path = os.path.join(base_dir, model_dir_name, 'main_model')
+    model_path = os.path.join(base_dir, 'main_model')
     main_model = tf.keras.models.load_model(model_path, custom_objects={
         'LogTransformLayer': LogTransformLayer,
         'InteractionLayer': InteractionLayer,
@@ -155,7 +155,7 @@ def plot_model_results(base_dir, model_dir_name, model_type, data_filepath, pdf_
 
     # Prepare to save plots to PDF if requested
     if pdf_filename:
-        pdf_path = os.path.join(base_dir, model_dir_name, pdf_filename)
+        pdf_path = os.path.join('/sdf/home/a/ajshack/TOF_ML/figures', pdf_filename)
         pdf_writer = PdfPages(pdf_path)
         print(f"Plots will be saved to {pdf_path}")
 
