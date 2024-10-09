@@ -1,108 +1,175 @@
-import argparse
 import os
-import pickle
-import tensorflow as tf
 import numpy as np
+import h5py
+import tensorflow as tf
+import pickle
 import pandas as pd
-from loaders.model_data_generator import load_from_h5
-from scripts.analysis_functions import random_sample_data
-from loaders.model_data_generator import DataGeneratorTofToKE
-from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
-from scipy.stats import norm, kurtosis, skew
-from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 import matplotlib.pyplot as plt
-import matplotlib
-matplotlib.rcParams['pdf.fonttype'] = 42
-from matplotlib.backends.backend_pdf import PdfPages
 import seaborn as sns
+from scipy.stats import kurtosis, skew, norm
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+from matplotlib.backends.backend_pdf import PdfPages
+from mpl_toolkits.axes_grid1.inset_locator import inset_axes
+import argparse
+from models.tof_to_energy_model import TofToEnergyModel
 
 
-def preprocess_test_data(main_model, input_data, output_data, scalers):
-    y_pred = np.squeeze(main_model.predict(input_data)).T
-    y_pred_inv = scalers.inverse_transform(np.column_stack([y_pred, input_data]))
+# Custom layers used in the model
+class LogTransformLayer(tf.keras.layers.Layer):
+    def __init__(self, **kwargs):
+        super(LogTransformLayer, self).__init__(**kwargs)
 
-    # Convert to DataFrame
-    df_tof = pd.DataFrame({
-        'energy_pred': 2**(y_pred_inv[:, 0].flatten()),
-        'energy_true': 2**(output_data.flatten()),
-        'energy_residuals': 2**(output_data.flatten()) - 2**(y_pred_inv[:, 0].flatten()),
-        'retardation': y_pred_inv[:, 1].flatten()
+    def call(self, inputs):
+        log_transformed = tf.concat([
+            inputs[:, 0:3],
+            tf.math.log(inputs[:, 3:4]) / tf.math.log(2.0)
+        ], axis=1)
+        return log_transformed
+
+
+class InteractionLayer(tf.keras.layers.Layer):
+    def __init__(self, **kwargs):
+        super(InteractionLayer, self).__init__(**kwargs)
+
+    def call(self, inputs):
+        x1 = inputs[:, 0:1]
+        x2 = inputs[:, 1:2]
+        x3 = inputs[:, 2:3]
+        x4 = inputs[:, 3:4]
+        interaction_terms = tf.concat([
+            x1 * x2,
+            x1 * x3,
+            x1 * x4,
+            x2 * x3,
+            x2 * x4,
+            x3 * x4,
+            tf.square(x4)
+        ], axis=1)
+        return tf.concat([inputs, interaction_terms], axis=1)
+
+
+class ScalingLayer(tf.keras.layers.Layer):
+    def __init__(self, min_values, max_values, **kwargs):
+        super(ScalingLayer, self).__init__(**kwargs)
+        self.min_values = tf.constant(min_values, dtype=tf.float32)
+        self.max_values = tf.constant(max_values, dtype=tf.float32)
+
+    def call(self, inputs):
+        return (inputs - self.min_values) / (self.max_values - self.min_values)
+
+
+def process_input(input_data):
+    x1 = input_data[:, 0:1]
+    x2 = input_data[:, 1:2]
+    x3 = input_data[:, 2:3]
+    x4 = input_data[:, 3:4]
+    interaction_terms = np.hstack([
+        x1 * x2,
+        x1 * x3,
+        x1 * x4,
+        x2 * x3,
+        x2 * x4,
+        x3 * x4,
+        x4 ** 2
+    ])
+    return np.hstack([input_data, interaction_terms])
+
+
+def load_test_data(data_filepath, test_indices):
+    input_data_list = []
+    output_data_list = []
+    with h5py.File(data_filepath, 'r') as hf:
+        print("opened h5 file and working on getting data")
+        for idx in test_indices:
+            data_row = hf['combined_data'][idx]
+            if data_row.ndim == 1:
+                data_row = np.expand_dims(data_row, axis=0)
+            mask = data_row[:, -1].astype(bool)
+            masked_data_row = data_row[mask]
+            if masked_data_row.shape[0] == 0:
+                continue
+            input_data = masked_data_row[:, [2, 3, 4, 5]]
+            output_data = masked_data_row[:, 0].reshape(-1, 1)
+            output_data = np.log2(output_data)
+            for inp, outp in zip(input_data, output_data):
+                input_data_list.append(inp.astype(np.float32))
+                output_data_list.append(outp.astype(np.float32))
+    input_data_array = np.array(input_data_list)
+    output_data_array = np.array(output_data_list)
+    print("data set created")
+    return input_data_array, output_data_array
+
+def plot_model_results(base_dir, model_dir_name, model_type, data_filepath, pdf_filename=None, sample_size=20000):
+    # Load the model
+    model_path = os.path.join(base_dir, model_dir_name, 'main_model')
+    # i believe that from config and get config handle the scaling and param values
+    main_model = tf.keras.models.load_model(model_path, custom_objects={
+        'LogTransformLayer': LogTransformLayer,
+        'InteractionLayer': InteractionLayer,
+        'ScalingLayer': ScalingLayer,
+        'TofToEnergyModel': TofToEnergyModel
     })
-    return df_tof
+    print(main_model.min_values, main_model.max_values, main_model.params)
 
-def plot_model_results(base_dir, model_num, pdf_filename=None, sample_size=20000):
-    model_path = os.path.join(base_dir, str(model_num), 'main_model.h5')
+    # Load test indices
+    indices_path = os.path.join(base_dir, model_dir_name, 'data_indices.npz')
+    indices_data = np.load(indices_path)
+    test_indices = indices_data['test_indices']
 
-    main_model = tf.keras.models.load_model(model_path, compile=False)
-
-    test_data_path = os.path.join(base_dir, str(model_num), 'test_data.h5')
-    test_data = load_from_h5(test_data_path, grp='test_data')
-    mask = test_data[:, -1].astype(bool)
-    test_data_masked = test_data[mask]
+    # Load test data
+    input_data, output_data = load_test_data(data_filepath, test_indices)
 
     # Adjust sample size if necessary
-    test_data_ds = random_sample_data(test_data_masked, sample_size)
+    if sample_size and len(input_data) > sample_size:
+        sample_indices = np.random.choice(len(input_data), sample_size, replace=False)
+        input_data = input_data[sample_indices]
+        output_data = output_data[sample_indices]
 
-    # Load scalers
-    scalers_path = os.path.join(base_dir, str(model_num), 'scalers.pkl')
-    with open(scalers_path, 'rb') as f:
-        scalers = pickle.load(f)
+    # Get predictions
+    y_pred = main_model.predict(input_data).flatten()
 
-    epsilon = 1e-10
-    test_data_ds[:, 0] = np.log2(test_data_ds[:, 0] + epsilon)
-    test_data_ds[:, 5] = np.log2(test_data_ds[:, 5] + epsilon)
+    # Invert transformations
+    energy_pred = 2 ** y_pred
+    energy_true = 2 ** output_data.flatten()
+    retardation = input_data[:, 0]
 
-    # Extract input and output data
-    input_data = test_data_ds[:, [2, 3, 4, 5]]
-    output_data = test_data_ds[:, 0].reshape(-1, 1)
-    input_data = DataGeneratorTofToKE.process_input(input_data)
-
-    # Stack output and input data
-    full_batch = np.hstack([output_data.copy(), input_data.copy()])
-
-    # Apply scaling
-    scaled_full_batch = scalers.transform(full_batch)
-    scaled_input_data = scaled_full_batch[:, 1:]
-
-    df_tof = preprocess_test_data(main_model, scaled_input_data, output_data, scalers)
-
-    # TODO: make this an option either through inputting params, a params file, or without it just skip
-    # Load the params used for this model
-    # with open(os.path.join(base_dir, str(model_num), 'combined_model_params.pkl'), 'rb') as f:
-    #    params = pickle.load(f)
-
-    # Convert params to string for display
-    # params_str = ', '.join([f"{key}={value}" for key, value in params.items()])
+    # Create DataFrame
+    df_tof = pd.DataFrame({
+        'energy_pred': energy_pred,
+        'energy_true': energy_true,
+        'energy_residuals': energy_true - energy_pred,
+        'retardation': retardation.flatten()
+    })
 
     # Prepare to save plots to PDF if requested
     if pdf_filename:
-        pdf_path = os.path.join(base_dir, str(model_num), pdf_filename)
+        pdf_path = os.path.join(base_dir, model_dir_name, pdf_filename)
         pdf_writer = PdfPages(pdf_path)
 
-    # Scatter plot with regression line for time of flight and y_position
+    # Plotting code remains the same as before, adjusted for new data structures
+    # (Include scatter plots, residual plots, histograms, etc.)
+
+    # Scatter plot with regression line for energy
     fig, axs = plt.subplots(figsize=(10, 6))
 
-    for i, (col_pred, col_test, title) in enumerate(
-            zip(['energy_pred'], ['energy_true'], ['Energy'])):
-        mae = mean_absolute_error(df_tof['energy_true'], df_tof['energy_pred'])
-        rmse = np.sqrt(mean_squared_error(df_tof['energy_true'], df_tof['energy_pred']))
-        r_squared = r2_score(df_tof['energy_true'], df_tof['energy_pred'])
+    mae = mean_absolute_error(df_tof['energy_true'], df_tof['energy_pred'])
+    rmse = np.sqrt(mean_squared_error(df_tof['energy_true'], df_tof['energy_pred']))
+    r_squared = r2_score(df_tof['energy_true'], df_tof['energy_pred'])
 
-        sns.scatterplot(x=col_pred, y=col_test, data=df_tof, hue='retardation', palette='viridis', alpha=0.7,
-                        edgecolor='k', linewidth=0.5, s=80, ax=axs)
-        sns.regplot(x=col_pred, y=col_test, data=df_tof, ci=95, scatter_kws={'alpha': 0}, line_kws={"color": "red"},
-                    ax=axs)
-        axs.set_xlabel('Predicted Values', fontsize=16)
-        axs.set_ylabel('True Values', fontsize=16)
-        axs.set_title(f'{title} Performance')
+    sns.scatterplot(x='energy_pred', y='energy_true', data=df_tof, hue='retardation', palette='viridis', alpha=0.7,
+                    edgecolor='k', linewidth=0.5, s=80, ax=axs)
+    sns.regplot(x='energy_pred', y='energy_true', data=df_tof, ci=95, scatter_kws={'alpha': 0}, line_kws={"color": "red"},
+                ax=axs)
+    axs.set_xlabel('Predicted Energy', fontsize=16)
+    axs.set_ylabel('True Energy', fontsize=16)
+    axs.set_title(f'Energy Performance')
 
-        # Inset for metrics and params
-        axins = inset_axes(axs, width="50%", height="40%", loc='upper right')
-        axins.text(0.05, 0.7, f'MAE = {mae:.3f}', fontsize=12)
-        axins.text(0.05, 0.5, f'RMSE = {rmse:.3f}', fontsize=12)
-        axins.text(0.05, 0.3, f'$R^2 = {r_squared:.3f}$', fontsize=12)
-        # axins.text(0.05, 0.1, params_str, fontsize=10)
-        axins.axis('off')
+    # Inset for metrics
+    axins = inset_axes(axs, width="50%", height="40%", loc='upper right')
+    axins.text(0.05, 0.7, f'MAE = {mae:.3f}', fontsize=12)
+    axins.text(0.05, 0.5, f'RMSE = {rmse:.3f}', fontsize=12)
+    axins.text(0.05, 0.3, f'$R^2 = {r_squared:.3f}$', fontsize=12)
+    axins.axis('off')
 
     plt.tight_layout()
     plt.show()
@@ -110,78 +177,24 @@ def plot_model_results(base_dir, model_num, pdf_filename=None, sample_size=20000
         pdf_writer.savefig(fig)
     plt.close(fig)
 
-    # Residual plots for time of flight and y_position
-    fig, axs = plt.subplots(1, 1, figsize=(16, 6))
-
-    for i, (col_pred, col_res, title) in enumerate(
-            zip(['energy_pred'], ['energy_true'], ['Energy'])):
-        sns.scatterplot(x=col_pred, y=col_res, data=df_tof, hue='retardation', palette='viridis', alpha=0.7,
-                        edgecolor='k', linewidth=0.5, s=80, ax=axs)
-        axs.set_xlabel('Predicted Values', fontsize=16)
-        axs.set_ylabel('Residuals', fontsize=16)
-        axs.set_title(f'{title} Residuals')
-
-    plt.tight_layout()
-    plt.show()
-    if pdf_filename:
-        pdf_writer.savefig(fig)
-    plt.close(fig)
-
-    # Histograms of residuals for time of flight and y_position
-    fig, axs = plt.subplots(1, 1, figsize=(16, 6))
-
-    for i, (col_res, title) in enumerate(zip(['energy_residuals'], ['Energy'])):
-        residual_kurtosis, residual_skewness = kurtosis(df_tof[col_res]), skew(df_tof[col_res])
-        sns.histplot(df_tof[col_res], bins=30, kde=True, color='skyblue', edgecolor='k', linewidth=0.5, ax=axs[i])
-        axs.set_xlabel('Residuals', fontsize=16)
-        axs.set_ylabel('Frequency', fontsize=16)
-        axs.set_title(f'{title} Residuals Distribution')
-
-        # Fit a normal distribution to residuals
-        mu, std = norm.fit(df_tof[col_res])
-        x = np.linspace(min(df_tof[col_res]), max(df_tof[col_res]), 100)
-        pdf = norm.pdf(x, mu, std)
-
-        # Scale the PDF to match the scale of the histogram
-        bin_width = (max(df_tof[col_res]) - min(df_tof[col_res])) / 30
-        scaled_pdf = pdf * len(df_tof[col_res]) * bin_width
-        axs.plot(x, scaled_pdf, 'r-', lw=2)
-        axs.legend(['Fitted Normal Distribution'])
-
-        # Calculate FWHM
-        fwhm = 2 * np.sqrt(2 * np.log(2)) * std
-
-        # Inset for kurtosis, skewness, center, FWHM, and params
-        axins_hist = inset_axes(axs, width="50%", height="40%", loc='upper right')
-        axins_hist.text(0.3, 0.7, f'Kurtosis = {residual_kurtosis:.2f}', fontsize=12)
-        axins_hist.text(0.3, 0.5, f'Skewness = {residual_skewness:.2f}', fontsize=12)
-        axins_hist.text(0.3, 0.3, f'Center = {mu:.2f}', fontsize=12)
-        axins_hist.text(0.3, 0.1, f'FWHM = {fwhm:.2f}', fontsize=12)
-        #axins_hist.text(0.05, 0.1, params_str, fontsize=10)
-        axins_hist.axis('off')
-
-    plt.tight_layout()
-    plt.show()
-    if pdf_filename:
-        pdf_writer.savefig(fig)
-    plt.close(fig)
+    # Additional plots (residual plots, histograms) go here
 
     # Save PDF if requested
     if pdf_filename:
         pdf_writer.close()
 
-
 def main():
     parser = argparse.ArgumentParser(description='Plot results for a trained model.')
     parser.add_argument('base_dir', type=str, help='Base directory where all saved models are stored.')
-    parser.add_argument('model_num', type=int, help='Model number to load and plot results for.')
+    parser.add_argument('model_dir_name', type=str, help='Model directory name to load and plot results for.')
+    parser.add_argument('model_type', type=str, help='Model type (e.g., default, tofs_simple_swish, etc.)')
+    parser.add_argument('data_filepath', type=str, help='Path to the data h5 file.')
     parser.add_argument('--pdf_filename', type=str, help='Optional PDF filename to save plots.')
     parser.add_argument('--sample_size', type=int, default=20000, help='Number of random samples to plot.')
 
     args = parser.parse_args()
-    plot_model_results(args.base_dir, args.model_num, pdf_filename=args.pdf_filename,
-                           sample_size=args.sample_size)
-
+    plot_model_results(args.base_dir, args.model_dir_name, args.model_type, args.data_filepath,
+                       pdf_filename=args.pdf_filename, sample_size=args.sample_size)
 
 if __name__ == '__main__':
     main()

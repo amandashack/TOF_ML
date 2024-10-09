@@ -1,27 +1,38 @@
 #!/bin/bash
 
+# Usage: ./generate_plots.sh /path/to/base_dir /path/to/data.h5
+
 # Define the base directory where models are stored
 BASE_DIR=$1
+DATA_FILEPATH=$2  # Path to the data h5 file
 
-# Loop over all directories that are a number
+# Path to the params file
+PARAMS_FILE="$BASE_DIR/params"
+
+# Loop over all directories in the base directory
 for MODEL_DIR in "$BASE_DIR"/*; do
-    MODEL_ID=$(basename "$MODEL_DIR")
+    MODEL_DIR_NAME=$(basename "$MODEL_DIR")
 
-    # Check if the directory name is a number
-    if [[ "$MODEL_ID" =~ ^[0-9]+$ ]]; then
-        MODEL_PATH="$BASE_DIR/$MODEL_ID"
+    # Check if the directory name matches the pattern
+    if [[ "$MODEL_DIR_NAME" =~ ^([0-9]+)_(.*)$ ]]; then
+        MODEL_ID=${BASH_REMATCH[1]}
+        MODEL_TYPE=${BASH_REMATCH[2]}
+
+        MODEL_PATH="$MODEL_DIR/main_model"
 
         if [ ! -d "$MODEL_PATH" ]; then
-            echo "There is something wrong with your model path: $MODEL_PATH"
+            echo "Model file not found in $MODEL_PATH"
         else
-            # Combine the models from different folds
-            python3 combine_folds.py "$BASE_DIR" "$MODEL_ID"
+            # Read params for this model from the params file (if needed)
+            # PARAMS_LINE=$(grep "^$MODEL_ID " "$PARAMS_FILE")
+            # PARAMS_DICT=$(echo "$PARAMS_LINE" | cut -d' ' -f2-)
 
-            # Generate the PDF plot for the combined model
-            PDF_FILENAME="plots_model_${MODEL_ID}_combined.pdf"
-            python3 analyze_surrogate.py "$BASE_DIR" "$MODEL_ID" --pdf_filename "$PDF_FILENAME"
+            # Generate the PDF plot for the model
+            PDF_FILENAME="plots_model_${MODEL_ID}_${MODEL_TYPE}.pdf"
+            python3 analyze_surrogate.py "$BASE_DIR" "$MODEL_DIR_NAME" "$MODEL_TYPE" "$DATA_FILEPATH" --pdf_filename "$PDF_FILENAME"
         fi
     fi
 done
 
 echo "All plots generated."
+

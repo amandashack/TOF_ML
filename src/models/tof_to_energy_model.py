@@ -1,7 +1,7 @@
 import numpy as np
 import re
 import os
-import fcntl
+#import fcntl
 import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import layers
@@ -11,7 +11,7 @@ from sklearn.preprocessing import MinMaxScaler
 from tensorflow.keras.callbacks import Callback
 
 
-class MetaFileCallback(tf.keras.callbacks.Callback):
+"""class MetaFileCallback(tf.keras.callbacks.Callback):
     def __init__(self, param_ID, job_name, meta_file):
         super(MetaFileCallback, self).__init__()
         self.param_ID = param_ID
@@ -44,7 +44,7 @@ class MetaFileCallback(tf.keras.callbacks.Callback):
                 # Release the lock
                 fcntl.flock(f, fcntl.LOCK_UN)
         except Exception as e:
-            print(f"Error updating meta file: {e}")
+            print(f"Error updating meta file: {e}")"""
 
 
 # BaseModel class using OOP principles
@@ -276,10 +276,10 @@ def train_tof_to_energy_model(dataset_train, dataset_val, params, checkpoint_dir
     )
 
     # Custom MetaFileCallback
-    meta_callback = MetaFileCallback(param_ID, job_name, meta_file)
+    #meta_callback = MetaFileCallback(param_ID, job_name, meta_file)
 
     # Callbacks list
-    callbacks = [reduce_lr, early_stop, checkpoint, meta_callback]
+    callbacks = [reduce_lr, early_stop, checkpoint]#, meta_callback]
 
     if not os.path.exists(checkpoint_dir):
         os.makedirs(checkpoint_dir)
