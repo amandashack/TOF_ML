@@ -5,6 +5,7 @@ import os
 import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import layers
+import datetime
 import glob
 from tensorflow.keras.optimizers import Adam, SGD, RMSprop
 from sklearn.preprocessing import MinMaxScaler
@@ -128,18 +129,24 @@ class TofToEnergyModel(BaseModel):
 
         # Hidden layers
         self.hidden_layers = []
-        if job_name == 'tofs_simple_relu':
+        if job_name == 'tofs_complex_relu':
             self.hidden_layers.append(layers.Dense(layer_size, activation='relu'))
             self.hidden_layers.append(layers.BatchNormalization())
             self.hidden_layers.append(layers.Dropout(dropout_rate))
-            self.hidden_layers.append(layers.Dense(layer_size // 2, activation='relu'))
+            self.hidden_layers.append(layers.Dense(layer_size * 2, activation='relu'))
+            self.hidden_layers.append(layers.BatchNormalization())
+            self.hidden_layers.append(layers.Dropout(dropout_rate))
+            self.hidden_layers.append(layers.Dense(layer_size, activation='relu'))
             self.hidden_layers.append(layers.BatchNormalization())
             self.hidden_layers.append(layers.Dropout(dropout_rate))
         elif job_name == 'tofs_simple_swish':
             self.hidden_layers.append(layers.Dense(layer_size, activation='relu'))
             self.hidden_layers.append(layers.BatchNormalization())
             self.hidden_layers.append(layers.Dropout(dropout_rate))
-            self.hidden_layers.append(layers.Dense(layer_size // 2, activation='swish'))
+            self.hidden_layers.append(layers.Dense(layer_size * 2, activation='swish'))
+            self.hidden_layers.append(layers.BatchNormalization())
+            self.hidden_layers.append(layers.Dropout(dropout_rate))
+            self.hidden_layers.append(layers.Dense(layer_size, activation='swish'))
             self.hidden_layers.append(layers.BatchNormalization())
             self.hidden_layers.append(layers.Dropout(dropout_rate))
         else:
@@ -147,6 +154,9 @@ class TofToEnergyModel(BaseModel):
             self.hidden_layers.append(layers.BatchNormalization())
             self.hidden_layers.append(layers.Dropout(dropout_rate))
             self.hidden_layers.append(layers.Dense(layer_size * 2, activation='relu'))
+            self.hidden_layers.append(layers.BatchNormalization())
+            self.hidden_layers.append(layers.Dropout(dropout_rate))
+            self.hidden_layers.append(layers.Dense(layer_size * 2, activation='swish'))
             self.hidden_layers.append(layers.BatchNormalization())
             self.hidden_layers.append(layers.Dropout(dropout_rate))
             self.hidden_layers.append(layers.Dense(layer_size, activation='swish'))
@@ -235,9 +245,10 @@ def train_tof_to_energy_model(dataset_train, dataset_val, params, checkpoint_dir
     steps_per_epoch = params['steps_per_epoch']
     validation_steps = params['validation_steps']
     steps_per_execution = params.get('steps_per_execution', None)
+    log_dir = os.path.join(checkpoint_dir, "logs", datetime.datetime.now().strftime("%Y%m%d-%H%M%S"))
 
     # Initialize the MirroredStrategy
-    strategy = tf.distribute.MirroredStrategy()
+    strategy = tf.distribute.MirroredStrategy([])
 
     with strategy.scope():
         # Check for existing checkpoints
@@ -255,6 +266,13 @@ def train_tof_to_energy_model(dataset_train, dataset_val, params, checkpoint_dir
         # Optionally, recompile the model to set steps_per_execution
         if steps_per_execution is not None:
             model.compile(loss='mse', optimizer=model.optimizer, steps_per_execution=steps_per_execution)
+
+    tensorboard_callback = tf.keras.callbacks.TensorBoard(
+        log_dir=log_dir,
+        histogram_freq=1,
+        update_freq='batch',
+        profile_batch='500,520'  # Enable profiling for batches 500 to 520
+    )
 
     # Learning rate scheduler and early stopping
     reduce_lr = tf.keras.callbacks.ReduceLROnPlateau(
@@ -279,7 +297,7 @@ def train_tof_to_energy_model(dataset_train, dataset_val, params, checkpoint_dir
     #meta_callback = MetaFileCallback(param_ID, job_name, meta_file)
 
     # Callbacks list
-    callbacks = [reduce_lr, early_stop, checkpoint]#, meta_callback]
+    callbacks = [reduce_lr, early_stop, checkpoint, tensorboard_callback]#, meta_callback]
 
     if not os.path.exists(checkpoint_dir):
         os.makedirs(checkpoint_dir)

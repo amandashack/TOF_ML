@@ -138,7 +138,7 @@ def train_model(data_filepath, model_outpath, params, param_ID, job_name, sample
     train_model(DATA_FILENAME, output_file_path, params, param_ID, job_name)"""
 
 if __name__ == '__main__':
-    model_outpath = r"C:\Users\proxi\Documents\coding\stored_models\test_001\30"
+    model_outpath = r"C:\Users\proxi\Documents\coding\stored_models\test_001\32"
     data_filepath = r"C:\Users\proxi\Documents\coding\TOF_data\TOF_data\combined_data.h5"
     params = {
         "layer_size": 64,
