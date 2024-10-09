@@ -1,7 +1,7 @@
 import numpy as np
 import re
 import os
-#import fcntl
+import fcntl
 import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import layers
@@ -12,7 +12,7 @@ from sklearn.preprocessing import MinMaxScaler
 from tensorflow.keras.callbacks import Callback
 
 
-"""class MetaFileCallback(tf.keras.callbacks.Callback):
+class MetaFileCallback(tf.keras.callbacks.Callback):
     def __init__(self, param_ID, job_name, meta_file):
         super(MetaFileCallback, self).__init__()
         self.param_ID = param_ID
@@ -45,7 +45,7 @@ from tensorflow.keras.callbacks import Callback
                 # Release the lock
                 fcntl.flock(f, fcntl.LOCK_UN)
         except Exception as e:
-            print(f"Error updating meta file: {e}")"""
+            print(f"Error updating meta file: {e}")
 
 
 # BaseModel class using OOP principles
@@ -139,7 +139,7 @@ class TofToEnergyModel(BaseModel):
             self.hidden_layers.append(layers.Dense(layer_size, activation='relu'))
             self.hidden_layers.append(layers.BatchNormalization())
             self.hidden_layers.append(layers.Dropout(dropout_rate))
-        elif job_name == 'tofs_simple_swish':
+        elif job_name == 'tofs_complex_swish':
             self.hidden_layers.append(layers.Dense(layer_size, activation='relu'))
             self.hidden_layers.append(layers.BatchNormalization())
             self.hidden_layers.append(layers.Dropout(dropout_rate))
@@ -149,7 +149,7 @@ class TofToEnergyModel(BaseModel):
             self.hidden_layers.append(layers.Dense(layer_size, activation='swish'))
             self.hidden_layers.append(layers.BatchNormalization())
             self.hidden_layers.append(layers.Dropout(dropout_rate))
-        else:
+        elif job_name == "default_deep":
             self.hidden_layers.append(layers.Dense(layer_size, activation='relu'))
             self.hidden_layers.append(layers.BatchNormalization())
             self.hidden_layers.append(layers.Dropout(dropout_rate))
@@ -162,6 +162,8 @@ class TofToEnergyModel(BaseModel):
             self.hidden_layers.append(layers.Dense(layer_size, activation='swish'))
             self.hidden_layers.append(layers.BatchNormalization())
             self.hidden_layers.append(layers.Dropout(dropout_rate))
+        else:
+            print("job name did not match")
 
         # Output layer
         self.output_layer = layers.Dense(1, activation='linear')
@@ -294,10 +296,10 @@ def train_tof_to_energy_model(dataset_train, dataset_val, params, checkpoint_dir
     )
 
     # Custom MetaFileCallback
-    #meta_callback = MetaFileCallback(param_ID, job_name, meta_file)
+    meta_callback = MetaFileCallback(param_ID, job_name, meta_file)
 
     # Callbacks list
-    callbacks = [reduce_lr, early_stop, checkpoint, tensorboard_callback]#, meta_callback]
+    callbacks = [reduce_lr, early_stop, checkpoint, tensorboard_callback, meta_callback]
 
     if not os.path.exists(checkpoint_dir):
         os.makedirs(checkpoint_dir)
