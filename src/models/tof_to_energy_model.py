@@ -1,6 +1,7 @@
 import numpy as np
 import re
 import os
+import datetime
 #import fcntl
 import tensorflow as tf
 from tensorflow import keras
@@ -232,6 +233,7 @@ def train_tof_to_energy_model(dataset_train, dataset_val, params, checkpoint_dir
     steps_per_epoch = params['steps_per_epoch']
     validation_steps = params['validation_steps']
     steps_per_execution = params.get('steps_per_execution', None)
+    log_dir = os.path.join(checkpoint_dir, "logs", datetime.datetime.now().strftime("%Y%m%d-%H%M%S"))
 
     with strategy.scope():
         # Check for existing checkpoints
@@ -256,12 +258,46 @@ def train_tof_to_energy_model(dataset_train, dataset_val, params, checkpoint_dir
         monitor='val_loss', patience=10, restore_best_weights=True
     )
 
+    # TensorBoard callback with cumulative batch-level logging
+    tensorboard_callback = tf.keras.callbacks.TensorBoard(
+        log_dir=log_dir,
+        histogram_freq=1,
+        update_freq='batch',
+        profile_batch='500,520'  # Enable profiling for batches 500 to 520
+    )
+
+    # Checkpoint callback
+    checkpoint_path = os.path.join(checkpoint_dir, "main_cp-{epoch:04d}")
+    checkpoint = tf.keras.callbacks.ModelCheckpoint(
+        filepath=checkpoint_path,
+        monitor='val_loss',
+        save_best_only=False,
+        save_weights_only=False,  # Save the entire model including optimizer state
+        save_freq='epoch',  # Ensure checkpoints are saved at the end of each epoch
+        save_format='tf',  # Use the TensorFlow SavedModel format
+        verbose=1
+    )
+
     # Determine if the current worker is the chief
     def is_chief():
         task_type, task_id = (strategy.cluster_resolver.task_type, strategy.cluster_resolver.task_id)
         return task_type is None or task_type == 'chief'
 
-    # Checkpoint callback
+    """# Define log directory for TensorBoard (only chief worker)
+    if is_chief():
+        log_dir = os.path.join(checkpoint_dir, "logs", datetime.datetime.now().strftime("%Y%m%d-%H%M%S"))
+
+        # TensorBoard callback with cumulative batch-level logging
+        tensorboard_callback = tf.keras.callbacks.TensorBoard(
+            log_dir=log_dir,
+            histogram_freq=1,
+            update_freq='batch',
+            profile_batch='500,520'  # Enable profiling for batches 500 to 520
+        )
+    else:
+        tensorboard_callback = None"""
+
+    """# Checkpoint callback
     checkpoint_path = os.path.join(checkpoint_dir, "main_cp-{epoch:04d}")
     if is_chief():
         checkpoint = tf.keras.callbacks.ModelCheckpoint(
@@ -274,15 +310,19 @@ def train_tof_to_energy_model(dataset_train, dataset_val, params, checkpoint_dir
             verbose=1
         )
     else:
-        checkpoint = None  # Non-chief workers don't need to save checkpoints
+        checkpoint = None  # Non-chief workers don't need to save checkpoints"""
 
     # Callbacks list
-    callbacks = [reduce_lr, early_stop]
+    """callbacks = [reduce_lr, early_stop]
     if checkpoint:
         callbacks.append(checkpoint)
+    if tensorboard_callback:
+        callbacks.append(tensorboard_callback)
 
     if not os.path.exists(checkpoint_dir) and is_chief():
-        os.makedirs(checkpoint_dir)
+        os.makedirs(checkpoint_dir)"""
+
+    callbacks = [reduce_lr, early_stop, checkpoint, tensorboard_callback]
 
     if latest_checkpoint:
         # Extract the epoch number from the checkpoint directory name

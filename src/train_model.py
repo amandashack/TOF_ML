@@ -37,7 +37,7 @@ if gpus:
 # Training function
 def train_model(data_filepath, model_outpath, params, param_ID, job_name, sample_size=None):
     # Initialize the strategy
-    strategy = tf.distribute.MultiWorkerMirroredStrategy()
+    strategy = tf.distribute.MirroredStrategy(["GPU:0"])
 
     # Define the meta file path
     meta_file = os.path.join(os.path.dirname(model_outpath), 'meta.txt')
@@ -126,7 +126,7 @@ def train_model(data_filepath, model_outpath, params, param_ID, job_name, sample
 
 # Entry point
 if __name__ == '__main__':
-    model_outpath = r"C:\Users\proxi\Documents\coding\stored_models\test_001\29"
+    model_outpath = r"C:\Users\proxi\Documents\coding\stored_models\test_001\31"
     data_filepath = r"C:\Users\proxi\Documents\coding\TOF_data\TOF_data\combined_data.h5"
     params = {
         "layer_size": 32,
@@ -137,7 +137,7 @@ if __name__ == '__main__':
         "job_name": "default",
         "epochs": 200  # Add epochs parameter if needed
     }
-    train_model(data_filepath, model_outpath, params, 12, 'default')
+    train_model(data_filepath, model_outpath, params, 12, 'default', sample_size=20000)
 
 
 """if __name__ == '__main__':
