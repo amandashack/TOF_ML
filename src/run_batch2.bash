@@ -4,8 +4,8 @@
 #SBATCH --job-name=tofs
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=32
-#SBATCH --gpus=2
-#SBATCH --mem-per-cpu=10g
+#SBATCH --gpus=1
+#SBATCH --mem-per-cpu=20g
 #SBATCH --time=0-24:00:00
 
 # Activate the environment

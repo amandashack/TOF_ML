@@ -208,8 +208,6 @@ class TofToEnergyModel(BaseModel):
         max_values = np.array(config.pop('max_values'))
         return cls(params, min_values, max_values, **config)
 
-
-# Training function for TofToEnergyModel
 def train_tof_to_energy_model(dataset_train, dataset_val, params, checkpoint_dir,
                               param_ID, job_name, meta_file, min_values, max_values):
     def get_latest_checkpoint(checkpoint_dir):
@@ -217,21 +215,21 @@ def train_tof_to_energy_model(dataset_train, dataset_val, params, checkpoint_dir
         Finds the latest checkpoint directory in the checkpoint directory.
         Assumes checkpoint directories are named as 'main_cp-XXXX' where XXXX is the epoch number.
         """
-        list_of_dirs = glob.glob(os.path.join(checkpoint_dir, "main_cp-*"))
-        if not list_of_dirs:
+        list_of_checkpoints = glob.glob(os.path.join(checkpoint_dir, "main_cp-*.index"))
+        if not list_of_checkpoints:
             return None
         # Extract epoch numbers and find the highest
-        latest_dir = None
+        latest_checkpoint = None
         latest_epoch = -1
-        for dir_path in list_of_dirs:
-            basename = os.path.basename(dir_path)
-            match = re.match(r"main_cp-(\d+)", basename)
+        for checkpoint_path in list_of_checkpoints:
+            basename = os.path.basename(checkpoint_path)
+            match = re.match(r"main_cp-(\d+)\.index", basename)
             if match:
                 epoch_num = int(match.group(1))
                 if epoch_num > latest_epoch:
                     latest_epoch = epoch_num
-                    latest_dir = dir_path
-        return latest_dir
+                    latest_checkpoint = checkpoint_path.replace(".index", "")
+        return latest_checkpoint
 
     epochs = params.get('epochs', 200)
     steps_per_epoch = params['steps_per_epoch']
@@ -245,20 +243,18 @@ def train_tof_to_energy_model(dataset_train, dataset_val, params, checkpoint_dir
         # Check for existing checkpoints
         latest_checkpoint = get_latest_checkpoint(checkpoint_dir)
         if latest_checkpoint:
-            print(f"Loading model from checkpoint: {latest_checkpoint}")
-            model = tf.keras.models.load_model(latest_checkpoint, custom_objects={
-                'LogTransformLayer': LogTransformLayer,
-                'InteractionLayer': InteractionLayer,
-                'ScalingLayer': ScalingLayer,
-                'TofToEnergyModel': TofToEnergyModel
-            })
+            print(f"Loading model from latest checkpoint: {latest_checkpoint}")
+            # Initialize a new model first
+            model = TofToEnergyModel(params, min_values, max_values)
+            # Load weights from the checkpoint
+            model.load_weights(latest_checkpoint)
         else:
             print("No checkpoint found. Initializing a new model.")
             model = TofToEnergyModel(params, min_values, max_values)
 
         # Optionally, recompile the model to set steps_per_execution
-        #if steps_per_execution is not None:
-        #    model.compile(loss='mse', optimizer=model.optimizer, steps_per_execution=steps_per_execution)
+        if steps_per_execution is not None:
+            model.compile(loss='mse', optimizer=model.optimizer, steps_per_execution=steps_per_execution)
 
     # Learning rate scheduler and early stopping
     reduce_lr = tf.keras.callbacks.ReduceLROnPlateau(
@@ -274,9 +270,8 @@ def train_tof_to_energy_model(dataset_train, dataset_val, params, checkpoint_dir
         filepath=checkpoint_path,
         monitor='val_loss',
         save_best_only=False,
-        save_weights_only=False,  # Save the entire model including optimizer state
+        save_weights_only=True,  # Save only the weights to the checkpoint
         save_freq='epoch',  # Ensure checkpoints are saved at the end of each epoch
-        save_format='tf',  # Use the TensorFlow SavedModel format
         verbose=1
     )
 
@@ -303,6 +298,7 @@ def train_tof_to_energy_model(dataset_train, dataset_val, params, checkpoint_dir
         initial_epoch = 0
         print("No checkpoint found. Starting from epoch 0.")
 
+    # Train the model
     history = model.fit(
         dataset_train,
         epochs=epochs,
@@ -317,3 +313,5 @@ def train_tof_to_energy_model(dataset_train, dataset_val, params, checkpoint_dir
     best_epoch = np.argmin(history.history['val_loss']) + 1
     print(f"Best epoch based on validation loss: {best_epoch}")
     return model, history
+
+

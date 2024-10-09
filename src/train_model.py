@@ -104,7 +104,7 @@ def train_model(data_filepath, model_outpath, params, param_ID, job_name, sample
         dataset_train, dataset_val, params, checkpoint_dir, param_ID, job_name, meta_file, min_values, max_values
     )
 
-    model.save(os.path.join(model_outpath, "main_model.h5"))
+    model.save(os.path.join(model_outpath, "main_model"), save_format="tf")
 
     # Create test dataset
     dataset_test = create_dataset(partition['test'], data_filepath, batch_size, shuffle=False)
