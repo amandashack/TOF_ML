@@ -63,15 +63,13 @@ def create_dataset(indices, data_filepath, batch_size, shuffle=True):
     # Batch the dataset
     dataset = dataset.batch(batch_size)
 
-    # Prefetch
-    dataset = dataset.prefetch(tf.data.AUTOTUNE)
-
     # Set the auto-shard policy
     options = tf.data.Options()
     options.experimental_distribute.auto_shard_policy = tf.data.experimental.AutoShardPolicy.DATA
     dataset = dataset.with_options(options)
 
     return dataset
+
 
 
 def calculate_and_save_scalers(indices, data_filepath, scalers_path):
