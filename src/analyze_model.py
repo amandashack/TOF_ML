@@ -4,6 +4,7 @@ import h5py
 import numpy as np
 import pandas as pd
 import tensorflow as tf
+import pickle
 from models.tof_to_energy_model import TofToEnergyModel
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 import seaborn as sns
@@ -103,12 +104,24 @@ def format_model_params(params_dict):
     return formatted_params
 
 
-def plot_model_results(base_dir, model_dir_name, model_type, data_filepath, pdf_filename=None, sample_size=20000):
-    # Replace underscores with spaces for display
-    model_type_display = model_type.replace('_', ' ')
+def load_scalers(scalers_path):
+    if os.path.exists(scalers_path):
+        with open(scalers_path, 'rb') as f:
+            scalers = pickle.load(f)
+            min_values = scalers['min_values']
+            max_values = scalers['max_values']
+            print(f"Scalers loaded from {scalers_path}")
+            return min_values, max_values
+    else:
+        raise FileNotFoundError(f"Scalers file not found at {scalers_path}")
 
+
+def plot_model_results(base_dir, model_dir_name, model_type, data_filepath, pdf_filename=None, sample_size=1000):
     # Load the model
-    model_path = os.path.join(base_dir, 'main_model')
+    model_path = os.path.join(base_dir, model_dir_name, 'main_model')
+    model_type_display = model_type.replace('_', ' ')
+    print(model_path, '\n\n\n')
+    # i believe that from config and get config handle the scaling and param values
     main_model = tf.keras.models.load_model(model_path, custom_objects={
         'LogTransformLayer': LogTransformLayer,
         'InteractionLayer': InteractionLayer,
@@ -122,20 +135,20 @@ def plot_model_results(base_dir, model_dir_name, model_type, data_filepath, pdf_
     # Format model parameters for display
     params_str = format_model_params(main_model.params)
 
+    #print(main_model.min_values, main_model.max_values, main_model.params)
+    main_model.min_values, main_model.max_values = load_scalers(os.path.join(base_dir, model_dir_name, "scalers.pkl"))
+
     # Load test indices
     indices_path = os.path.join(base_dir, model_dir_name, 'data_indices.npz')
     indices_data = np.load(indices_path)
     test_indices = indices_data['test_indices']
 
-    # Load test data
-    input_data, output_data = load_test_data(data_filepath, test_indices)
+    if sample_size:
+        sample_indices = np.random.choice(test_indices, sample_size, replace=False)
 
-    # Adjust sample size if necessary
-    if sample_size and len(input_data) > sample_size:
-        np.random.seed(42)  # For reproducibility
-        sample_indices = np.random.choice(len(input_data), sample_size, replace=False)
-        input_data = input_data[sample_indices]
-        output_data = output_data[sample_indices]
+
+    # Load test data
+    input_data, output_data = load_test_data(data_filepath, sample_indices)
 
     # Get predictions
     y_pred = main_model.predict(input_data).flatten()
