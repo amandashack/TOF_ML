@@ -99,9 +99,22 @@ def load_test_data(data_filepath, test_indices):
     print("data set created")
     return input_data_array, output_data_array
 
-def plot_model_results(base_dir, model_dir_name, model_type, data_filepath, pdf_filename=None, sample_size=20000):
+def load_scalers(scalers_path):
+    if os.path.exists(scalers_path):
+        with open(scalers_path, 'rb') as f:
+            scalers = pickle.load(f)
+            min_values = scalers['min_values']
+            max_values = scalers['max_values']
+            print(f"Scalers loaded from {scalers_path}")
+            return min_values, max_values
+    else:
+        raise FileNotFoundError(f"Scalers file not found at {scalers_path}")
+
+
+def plot_model_results(base_dir, model_dir_name, model_type, data_filepath, pdf_filename=None, sample_size=1000):
     # Load the model
     model_path = os.path.join(base_dir, model_dir_name, 'main_model')
+    print(model_path, '\n\n\n')
     # i believe that from config and get config handle the scaling and param values
     main_model = tf.keras.models.load_model(model_path, custom_objects={
         'LogTransformLayer': LogTransformLayer,
@@ -109,21 +122,26 @@ def plot_model_results(base_dir, model_dir_name, model_type, data_filepath, pdf_
         'ScalingLayer': ScalingLayer,
         'TofToEnergyModel': TofToEnergyModel
     })
-    print(main_model.min_values, main_model.max_values, main_model.params)
-
+    #print(main_model.min_values, main_model.max_values, main_model.params)
+    main_model.min_values, main_model.max_values = load_scalers(os.path.join(base_dir, model_dir_name, "scalers.pkl"))
+    
     # Load test indices
     indices_path = os.path.join(base_dir, model_dir_name, 'data_indices.npz')
     indices_data = np.load(indices_path)
     test_indices = indices_data['test_indices']
 
+    if sample_size:
+        sample_indices = np.random.choice(test_indices, sample_size, replace=False)
+
+
     # Load test data
-    input_data, output_data = load_test_data(data_filepath, test_indices)
+    input_data, output_data = load_test_data(data_filepath, sample_indices)
 
     # Adjust sample size if necessary
-    if sample_size and len(input_data) > sample_size:
-        sample_indices = np.random.choice(len(input_data), sample_size, replace=False)
-        input_data = input_data[sample_indices]
-        output_data = output_data[sample_indices]
+    #if sample_size and len(input_data) > sample_size:
+    #    sample_indices = np.random.choice(len(input_data), sample_size, replace=False)
+    #    input_data = input_data[sample_indices]
+    #    output_data = output_data[sample_indices]
 
     # Get predictions
     y_pred = main_model.predict(input_data).flatten()
