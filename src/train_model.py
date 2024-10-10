@@ -14,17 +14,20 @@ import pickle
 import argparse
 import tensorflow as tf
 import time
-
-from loaders import DataGenerator, DataGeneratorWithVeto, DataGeneratorTofToKE, calculate_and_save_scalers, create_dataset
+from loaders import calculate_and_save_scalers, create_dataset
 from models import TofToEnergyModel, LogTransformLayer, ScalingLayer, InteractionLayer
-from scripts import random_sample_data
 
-# Set environment variables
-os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
 
-# Ensure current directory is in sys.path
-if '.' not in sys.path:
-    sys.path.insert(0, '.')
+# Check GPU availability and set memory growth
+gpus = tf.config.experimental.list_physical_devices('GPU')
+if gpus:
+    try:
+        for gpu in gpus:
+            tf.config.experimental.set_memory_growth(gpu, True)
+        logical_gpus = tf.config.experimental.list_logical_devices('GPU')
+        #print(len(gpus), "Physical GPUs,", len(logical_gpus), "Logical GPUs")
+    except RuntimeError as e:
+        pass
 
 def get_latest_checkpoint(checkpoint_dir):
     """
@@ -62,7 +65,8 @@ def train_tof_to_energy_model(model, latest_checkpoint, dataset_train, dataset_v
     )
 
     # Define log directory for TensorBoard (only chief worker)
-    if is_chief(strategy):
+    #if is_chief(strategy):
+    if True:
         log_dir = os.path.join(checkpoint_dir, "logs", datetime.datetime.now().strftime("%Y%m%d-%H%M%S"))
         tensorboard_callback = tf.keras.callbacks.TensorBoard(
             log_dir=log_dir,
@@ -91,7 +95,7 @@ def train_tof_to_energy_model(model, latest_checkpoint, dataset_train, dataset_v
     if tensorboard_callback:
         callbacks.append(tensorboard_callback)
 
-    if is_chief(strategy) and not os.path.exists(checkpoint_dir):
+    if not os.path.exists(checkpoint_dir): # and is_chief(strategy):
         os.makedirs(checkpoint_dir)
 
     if latest_checkpoint:
@@ -130,7 +134,7 @@ def train_tof_to_energy_model(model, latest_checkpoint, dataset_train, dataset_v
 # Training function
 def train_model(data_filepath, model_outpath, params, param_ID, job_name, sample_size=None):
     # Initialize the strategy
-    strategy = tf.distribute.MultiWorkerMirroredStrategy()
+    strategy = tf.distribute.MirroredStrategy()
 
     # Define the meta file path
     meta_file = os.path.join(os.path.dirname(model_outpath), 'meta.txt')
@@ -220,7 +224,8 @@ def train_model(data_filepath, model_outpath, params, param_ID, job_name, sample
     print(f"Training completed in {training_time:.2f} seconds.")
 
     # Save the model (ensure only the chief worker saves the model)
-    if is_chief(strategy):
+    #if is_chief(strategy):
+    if True:
         model.save(os.path.join(model_outpath, "main_model"), save_format="tf")
         print("Model saved by the chief worker.")
 
@@ -230,7 +235,7 @@ def train_model(data_filepath, model_outpath, params, param_ID, job_name, sample
     # print(f"Test loss: {loss_test}")
 
 # Entry point with argument parsing
-if __name__ == '__main__':
+"""if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Train the TofToEnergyModel with distributed strategy.')
     parser.add_argument('--model_outpath', type=str, required=True, help='Path to save the trained model.')
     parser.add_argument('--data_filepath', type=str, required=True, help='Path to the HDF5 data file.')
@@ -262,23 +267,23 @@ if __name__ == '__main__':
         param_ID=args.param_ID,
         job_name=args.job_name,
         sample_size=args.sample_size
-    )
+    )"""
 
 
 # Entry point
-#if __name__ == '__main__':
-#    model_outpath = r"C:\Users\proxi\Documents\coding\stored_models\test_001\35"
-#    data_filepath = r"C:\Users\proxi\Documents\coding\TOF_data\TOF_data\combined_data.h5"
-#    params = {
-#        "layer_size": 32,
-#        "batch_size": int(1024/2),
-#        "dropout": 0.2,
-#        "learning_rate": 0.1,
-#        "optimizer": 'RMSprop',
-#        "job_name": "default_deep",
-#        "epochs": 10  # Add epochs parameter if needed
-#    }
-#    train_model(data_filepath, model_outpath, params, 12, 'default', sample_size=200000)
+if __name__ == '__main__':
+    model_outpath = r"C:\Users\proxi\Documents\coding\stored_models\test_001\35"
+    data_filepath = r"C:\Users\proxi\Documents\coding\TOF_data\TOF_data\combined_data.h5"
+    params = {
+        "layer_size": 32,
+        "batch_size": int(1024/2),
+        "dropout": 0.2,
+        "learning_rate": 0.1,
+        "optimizer": 'RMSprop',
+        "job_name": "default_deep",
+        "epochs": 10  # Add epochs parameter if needed
+    }
+    train_model(data_filepath, model_outpath, params, 12, 'default', sample_size=200000)
 
 
 """if __name__ == '__main__':
