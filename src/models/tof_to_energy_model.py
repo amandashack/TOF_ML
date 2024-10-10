@@ -1,6 +1,7 @@
 import numpy as np
 import re
 import os
+import datetime
 #import fcntl
 import tensorflow as tf
 from tensorflow import keras
@@ -61,7 +62,6 @@ class BaseModel(tf.keras.Model):
     def call(self, inputs):
         raise NotImplementedError("Subclasses should implement this method")
 
-
 # Custom preprocessing layers
 class LogTransformLayer(layers.Layer):
     def __init__(self, **kwargs):
@@ -70,11 +70,10 @@ class LogTransformLayer(layers.Layer):
     def call(self, inputs):
         # Apply log2 transformation to specific features (e.g., columns 0 and 3)
         log_transformed = tf.concat([
-            inputs[:, 0:3],  # Keep features 1 and 2 as is
+            inputs[:, 0:3],  # Keep features 0,1,2 as is
             tf.math.log(inputs[:, 3:4]) / tf.math.log(2.0)  # Log2 of fourth feature
         ], axis=1)
         return log_transformed
-
 
 class InteractionLayer(layers.Layer):
     def __init__(self, **kwargs):
@@ -98,7 +97,6 @@ class InteractionLayer(layers.Layer):
         # Concatenate original inputs with interaction terms
         return tf.concat([inputs, interaction_terms], axis=1)
 
-
 class ScalingLayer(layers.Layer):
     def __init__(self, min_values, max_values, **kwargs):
         super(ScalingLayer, self).__init__(**kwargs)
@@ -109,8 +107,7 @@ class ScalingLayer(layers.Layer):
         # Apply Min-Max scaling
         return (inputs - self.min_values) / (self.max_values - self.min_values)
 
-
-# TofToEnergyModel class with preprocessing included in the model graph
+# TofToEnergyModel class
 class TofToEnergyModel(BaseModel):
     def __init__(self, params, min_values, max_values, **kwargs):
         self.min_values = min_values
@@ -220,8 +217,9 @@ class TofToEnergyModel(BaseModel):
         max_values = np.array(config.pop('max_values'))
         return cls(params, min_values, max_values, **config)
 
+# Training function for TofToEnergyModel
 def train_tof_to_energy_model(dataset_train, dataset_val, params, checkpoint_dir,
-                              param_ID, job_name, meta_file, min_values, max_values):
+                              param_ID, job_name, meta_file, min_values, max_values, strategy):
     def get_latest_checkpoint(checkpoint_dir):
         """
         Finds the latest checkpoint directory in the checkpoint directory.
@@ -249,20 +247,20 @@ def train_tof_to_energy_model(dataset_train, dataset_val, params, checkpoint_dir
     steps_per_execution = params.get('steps_per_execution', None)
     log_dir = os.path.join(checkpoint_dir, "logs", datetime.datetime.now().strftime("%Y%m%d-%H%M%S"))
 
-
-    # Check for existing checkpoints
-    latest_checkpoint = get_latest_checkpoint(checkpoint_dir)
-    if latest_checkpoint:
-        print(f"Loading model from checkpoint: {latest_checkpoint}")
-        model = tf.keras.models.load_model(latest_checkpoint, custom_objects={
-            'LogTransformLayer': LogTransformLayer,
-            'InteractionLayer': InteractionLayer,
-            'ScalingLayer': ScalingLayer,
-            'TofToEnergyModel': TofToEnergyModel
-        })
-    else:
-        print("No checkpoint found. Initializing a new model.")
-        model = TofToEnergyModel(params, min_values, max_values)
+    with strategy.scope():
+        # Check for existing checkpoints
+        latest_checkpoint = get_latest_checkpoint(checkpoint_dir)
+        if latest_checkpoint:
+            print(f"Loading model from checkpoint: {latest_checkpoint}")
+            model = tf.keras.models.load_model(latest_checkpoint, custom_objects={
+                'LogTransformLayer': LogTransformLayer,
+                'InteractionLayer': InteractionLayer,
+                'ScalingLayer': ScalingLayer,
+                'TofToEnergyModel': TofToEnergyModel
+            })
+        else:
+            print("No checkpoint found. Initializing a new model.")
+            model = TofToEnergyModel(params, min_values, max_values)
 
     # Learning rate scheduler and early stopping
     reduce_lr = tf.keras.callbacks.ReduceLROnPlateau(
@@ -270,13 +268,6 @@ def train_tof_to_energy_model(dataset_train, dataset_val, params, checkpoint_dir
     )
     early_stop = tf.keras.callbacks.EarlyStopping(
         monitor='val_loss', patience=10, restore_best_weights=True
-    )
-
-    tensorboard_callback = tf.keras.callbacks.TensorBoard(
-        log_dir=log_dir,
-        histogram_freq=1,
-        update_freq='batch',
-        profile_batch='500,520'
     )
 
     # Checkpoint callback
@@ -291,13 +282,51 @@ def train_tof_to_energy_model(dataset_train, dataset_val, params, checkpoint_dir
         verbose=1
     )
 
+    # Determine if the current worker is the chief
+    def is_chief():
+        task_type, task_id = (strategy.cluster_resolver.task_type, strategy.cluster_resolver.task_id)
+        return task_type is None or task_type == 'chief'
+
+    # Define log directory for TensorBoard (only chief worker)
+    if is_chief():
+        log_dir = os.path.join(checkpoint_dir, "logs", datetime.datetime.now().strftime("%Y%m%d-%H%M%S"))
+
+        # TensorBoard callback with cumulative batch-level logging
+        tensorboard_callback = tf.keras.callbacks.TensorBoard(
+            log_dir=log_dir,
+            histogram_freq=1,
+            update_freq='batch',
+            profile_batch='500,520'  # Enable profiling for batches 500 to 520
+        )
+    else:
+        tensorboard_callback = None
+
+    # Checkpoint callback
+    checkpoint_path = os.path.join(checkpoint_dir, "main_cp-{epoch:04d}")
+    if is_chief():
+        checkpoint = tf.keras.callbacks.ModelCheckpoint(
+            filepath=checkpoint_path,
+            monitor='val_loss',
+            save_best_only=False,
+            save_weights_only=False,  # Save the entire model including optimizer state
+            save_freq='epoch',  # Ensure checkpoints are saved at the end of each epoch
+            save_format='tf',  # Use the TensorFlow SavedModel format
+            verbose=1
+        )
+    else:
+        checkpoint = None  # Non-chief workers don't need to save checkpoints"""
+
     # Callbacks list
-    callbacks = [reduce_lr, early_stop, tensorboard_callback]#, meta_callback]
+    callbacks = [reduce_lr, early_stop]
     if checkpoint:
         callbacks.append(checkpoint)
+    if tensorboard_callback:
+        callbacks.append(tensorboard_callback)
 
-    if not os.path.exists(checkpoint_dir):
+    if not os.path.exists(checkpoint_dir) and is_chief():
         os.makedirs(checkpoint_dir)
+
+    callbacks = [reduce_lr, early_stop, checkpoint, tensorboard_callback]
 
     if latest_checkpoint:
         # Extract the epoch number from the checkpoint directory name
