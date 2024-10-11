@@ -1,9 +1,8 @@
-# scripts/launch_workers.py
-
 import os
 import subprocess
 import json
 import time
+import argparse
 
 def launch_worker(task_type, task_index, cluster_spec, training_script, model_outpath,
                   data_filepath, params, param_ID, job_name, sample_size):
@@ -31,10 +30,11 @@ def launch_worker(task_type, task_index, cluster_spec, training_script, model_ou
     params_json = json.dumps(params)
     env['PARAMS'] = params_json
 
-    # Launch the worker
-    subprocess.Popen(cmd, env=env)
+    # Launch the worker and capture output
+    process = subprocess.Popen(cmd, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    return process
 
-def main():
+def main(args):
     # Define your cluster specification
     cluster_spec = {
         'worker': [
@@ -42,32 +42,44 @@ def main():
         ]
     }
 
-    training_script = os.path.abspath(os.path.join('train_model.py'))
-    model_outpath = r"C:\Users\proxi\Documents\coding\stored_models\test_001\35"
-    data_filepath = r"C:\Users\proxi\Documents\coding\TOF_data\TOF_data\combined_data.h5"
+    training_script = os.path.abspath('train_model.py')
+    model_outpath = args.model_outpath
+    data_filepath = args.data_filepath
+    param_ID = args.param_ID
+    job_name = args.job_name
+    sample_size = args.sample_size
     params = {
         "layer_size": 32,
         "batch_size": int(1024/2),
         "dropout": 0.2,
         "learning_rate": 0.1,
         "optimizer": 'RMSprop',
-        "job_name": "default_deep",  # Ensure this matches the handled cases
+        "job_name": job_name,
         "epochs": 10
     }
-    param_ID = 12
-    job_name = 'default_deep'
-    sample_size = 200000
 
     num_workers = len(cluster_spec['worker'])
 
     processes = []
     for i in range(num_workers):
-        launch_worker('worker', i, cluster_spec, training_script, model_outpath, data_filepath, params, param_ID, job_name, sample_size)
+        p = launch_worker('worker', i, cluster_spec, training_script, model_outpath, data_filepath, params, param_ID, job_name, sample_size)
+        processes.append(p)
         time.sleep(1)  # Slight delay to prevent race conditions
 
-    # Optionally, wait for all processes to finish
-    # for p in processes:
-    #     p.wait()
+    # Wait for all processes to finish and capture their output
+    for i, p in enumerate(processes):
+        stdout, stderr = p.communicate()
+        print(f"Worker {i} STDOUT:\n{stdout.decode()}")
+        print(f"Worker {i} STDERR:\n{stderr.decode()}")
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description='Launch TensorFlow workers.')
+    parser.add_argument('--model_outpath', type=str, required=True)
+    parser.add_argument('--data_filepath', type=str, required=True)
+    parser.add_argument('--param_ID', type=int, required=True)
+    parser.add_argument('--job_name', type=str, required=True)
+    parser.add_argument('--sample_size', type=int, default=None)
+    args = parser.parse_args()
+
+    main(args)
+
