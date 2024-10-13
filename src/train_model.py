@@ -215,7 +215,7 @@ def train_model(data_filepath, model_outpath, params, param_ID, job_name, sample
         dataset_train = create_dataset(partition['train'], data_filepath, global_batch_size, num_workers, worker_index,
                                        shuffle=True)
         dataset_val = create_dataset(partition['validation'], data_filepath, global_batch_size, num_workers,
-                                     worker_index, shuffle=False)
+                                     worker_index, shuffle=True)
 
         # Check for existing checkpoints
         latest_checkpoint = get_latest_checkpoint(checkpoint_dir)

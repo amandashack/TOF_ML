@@ -59,7 +59,7 @@ def create_dataset(indices, data_filepath, batch_size, num_workers, worker_index
 
     # Map the parsing function over the batches
     dataset = indices_dataset.map(_parse_function, num_parallel_calls=tf.data.AUTOTUNE)
-    dataset = dataset.unbatch()
+    dataset = dataset.unbatch().repeat()
     dataset = dataset.batch(batch_size)
     dataset = dataset.prefetch(tf.data.AUTOTUNE)
 
