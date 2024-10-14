@@ -65,7 +65,7 @@ def train_tof_to_energy_model(model, latest_checkpoint, dataset_train, dataset_v
     )
 
     # Define log directory for TensorBoard (only chief worker)
-    #if is_chief(strategy):
+    #if is_chief(strategy)
     if True:
         log_dir = os.path.join(checkpoint_dir, "logs", datetime.datetime.now().strftime("%Y%m%d-%H%M%S"))
         tensorboard_callback = tf.keras.callbacks.TensorBoard(
