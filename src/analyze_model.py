@@ -25,6 +25,14 @@ class LogTransformLayer(tf.keras.layers.Layer):
         ], axis=1)
         return log_transformed
 
+    def get_config(self):
+        config = super(LogTransformLayer, self).get_config()
+        return config
+
+    @classmethod
+    def from_config(cls, config):
+        return cls(**config)
+
 
 class InteractionLayer(tf.keras.layers.Layer):
     def __init__(self, **kwargs):
@@ -43,6 +51,14 @@ class InteractionLayer(tf.keras.layers.Layer):
         ], axis=1)
         return tf.concat([inputs, interaction_terms], axis=1)
 
+    def get_config(self):
+        config = super(InteractionLayer, self).get_config()
+        return config
+
+    @classmethod
+    def from_config(cls, config):
+        return cls(**config)
+
 
 class ScalingLayer(tf.keras.layers.Layer):
     def __init__(self, min_values, max_values, **kwargs):
@@ -52,6 +68,14 @@ class ScalingLayer(tf.keras.layers.Layer):
 
     def call(self, inputs):
         return (inputs - self.min_values) / (self.max_values - self.min_values)
+
+    def get_config(self):
+        config = super(ScalingLayer, self).get_config()
+        return config
+
+    @classmethod
+    def from_config(cls, config):
+        return cls(**config)
 
 
 def process_input(input_data):

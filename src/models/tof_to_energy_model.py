@@ -51,9 +51,8 @@ from tensorflow.keras.callbacks import Callback
 
 # BaseModel class using OOP principles
 class BaseModel(tf.keras.Model):
-    def __init__(self, params):
+    def __init__(self):
         super(BaseModel, self).__init__()
-        self.params = params
         self.build_model()
 
     def build_model(self):
@@ -61,6 +60,14 @@ class BaseModel(tf.keras.Model):
 
     def call(self, inputs):
         raise NotImplementedError("Subclasses should implement this method")
+
+    def get_config(self):
+        config = super(BaseModel, self).get_config()
+        return config
+
+    @classmethod
+    def from_config(cls, config):
+        return cls(**config)
 
 # Custom preprocessing layers
 class LogTransformLayer(layers.Layer):
@@ -74,6 +81,14 @@ class LogTransformLayer(layers.Layer):
             tf.math.log(inputs[:, 3:4]) / tf.math.log(2.0)  # Log2 of fourth feature
         ], axis=1)
         return log_transformed
+
+    def get_config(self):
+        config = super(LogTransformLayer, self).get_config()
+        return config
+
+    @classmethod
+    def from_config(cls, config):
+        return cls(**config)
 
 class InteractionLayer(layers.Layer):
     def __init__(self, **kwargs):
@@ -97,6 +112,14 @@ class InteractionLayer(layers.Layer):
         # Concatenate original inputs with interaction terms
         return tf.concat([inputs, interaction_terms], axis=1)
 
+    def get_config(self):
+        config = super(InteractionLayer, self).get_config()
+        return config
+
+    @classmethod
+    def from_config(cls, config):
+        return cls(**config)
+
 class ScalingLayer(layers.Layer):
     def __init__(self, min_values, max_values, **kwargs):
         super(ScalingLayer, self).__init__(**kwargs)
@@ -107,12 +130,27 @@ class ScalingLayer(layers.Layer):
         # Apply Min-Max scaling
         return (inputs - self.min_values) / (self.max_values - self.min_values)
 
+    def get_config(self):
+        config = super(ScalingLayer, self).get_config()
+        config.update({
+            'min_values': self.min_values.numpy().tolist(),
+            'max_values': self.max_values.numpy().tolist(),
+        })
+        return config
+
+    @classmethod
+    def from_config(cls, config):
+        min_values = np.array(config.pop('min_values'))
+        max_values = np.array(config.pop('max_values'))
+        return cls(min_values=min_values, max_values=max_values, **config)
+
 # TofToEnergyModel class
 class TofToEnergyModel(BaseModel):
     def __init__(self, params, min_values, max_values, **kwargs):
         self.min_values = min_values
         self.max_values = max_values
-        super(TofToEnergyModel, self).__init__(params, **kwargs)
+        self.params = params
+        super(TofToEnergyModel, self).__init__(**kwargs)
 
     def build_model(self):
         layer_size = int(self.params['layer_size'])

@@ -64,9 +64,9 @@ def create_dataset(indices, data_filepath, batch_size, num_workers, worker_index
     dataset = dataset.prefetch(tf.data.AUTOTUNE)
 
     # Set the auto-shard policy to OFF since we are sharding manually
-    options = tf.data.Options()
-    options.experimental_distribute.auto_shard_policy = tf.data.experimental.AutoShardPolicy.OFF
-    dataset = dataset.with_options(options)
+    #options = tf.data.Options()
+    #options.experimental_distribute.auto_shard_policy = tf.data.experimental.AutoShardPolicy.OFF
+    #dataset = dataset.with_options(options)
 
     return dataset
 

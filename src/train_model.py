@@ -25,7 +25,7 @@ if gpus:
         for gpu in gpus:
             tf.config.experimental.set_memory_growth(gpu, True)
         logical_gpus = tf.config.experimental.list_logical_devices('GPU')
-        #print(len(gpus), "Physical GPUs,", len(logical_gpus), "Logical GPUs")
+        print(len(gpus), "Physical GPUs,", len(logical_gpus), "Logical GPUs")
     except RuntimeError as e:
         pass
 
@@ -134,7 +134,7 @@ def train_tof_to_energy_model(model, latest_checkpoint, dataset_train, dataset_v
 # Training function
 def train_model(data_filepath, model_outpath, params, param_ID, job_name, sample_size=None):
     # Initialize the strategy
-    strategy = tf.distribute.MirroredStrategy()
+    strategy = tf.distribute.MultiWorkerMirroredStrategy()
 
     # Obtain task information from TF_CONFIG
     tf_config = json.loads(os.environ.get('TF_CONFIG', '{}'))
@@ -145,7 +145,7 @@ def train_model(data_filepath, model_outpath, params, param_ID, job_name, sample
     task_index = task.get('index', 0)
     print(task_index)
     cluster_spec = tf_config.get('cluster', {})
-    num_workers = len(cluster_spec.get('worker', []))  # Include chief in the count
+    num_workers = len(cluster_spec.get('worker', [])) + 1 # Include chief in the count
     print(num_workers)
     worker_index = task_index
 
@@ -292,7 +292,7 @@ def train_model(data_filepath, model_outpath, params, param_ID, job_name, sample
 
 # Entry point
 if __name__ == '__main__':
-    model_outpath = r"C:\Users\proxi\Documents\coding\stored_models\test_001\35"
+    model_outpath = r"C:\Users\proxi\Documents\coding\stored_models\test_001\36"
     data_filepath = r"C:\Users\proxi\Documents\coding\TOF_data\TOF_data\combined_data.h5"
     params = {
         "layer_size": 32,
