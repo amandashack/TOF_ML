@@ -52,7 +52,7 @@ def get_latest_checkpoint(checkpoint_dir):
 
 def is_chief(strategy):
     task_type, task_id = (strategy.cluster_resolver.task_type, strategy.cluster_resolver.task_id)
-    return (task_type == 'worker' and task_id == 0) or task_type is None
+    return task_type == 'chief'
 
 def train_tof_to_energy_model(model, latest_checkpoint, dataset_train, dataset_val, params,
                               checkpoint_dir, param_ID, job_name, meta_file, strategy):
@@ -136,15 +136,28 @@ def train_model(data_filepath, model_outpath, params, param_ID, job_name, sample
     # Initialize the strategy
     strategy = tf.distribute.MirroredStrategy()
 
+    # Obtain task information from TF_CONFIG
+    tf_config = json.loads(os.environ.get('TF_CONFIG', '{}'))
+    task = tf_config.get('task', {})
+    print('task ', task)
+    task_type = task.get('type', 'worker')
+    print(task_type)
+    task_index = task.get('index', 0)
+    print(task_index)
+    cluster_spec = tf_config.get('cluster', {})
+    num_workers = len(cluster_spec.get('worker', []))  # Include chief in the count
+    print(num_workers)
+    worker_index = task_index
+
     # Define the meta file path
     meta_file = os.path.join(os.path.dirname(model_outpath), 'meta.txt')
     scalers_path = os.path.join(model_outpath, 'scalers.pkl')
     indices_path = os.path.join(model_outpath, 'data_indices.npz')
     checkpoint_dir = os.path.join(model_outpath, "checkpoints")
 
-    per_worker_batch_size = params.get('batch_size', 512)  # Changed to 512 for batch_size=1024/2
-    num_workers = 2  # This should match the number of workers in TF_CONFIG
+    per_worker_batch_size = params.get('batch_size', 512)
     global_batch_size = per_worker_batch_size * num_workers
+    print(global_batch_size)
 
     # Load or create data indices
     if os.path.exists(indices_path):
@@ -187,17 +200,27 @@ def train_model(data_filepath, model_outpath, params, param_ID, job_name, sample
         partition['validation'] = sample_indices(partition['validation'], int(0.1 * sample_size))
         partition['test'] = sample_indices(partition['test'], int(0.1 * sample_size))
 
-    # Calculate steps per epoch
-    params['steps_per_epoch'] = math.ceil(len(partition['train']) / global_batch_size)
-    params['validation_steps'] = math.ceil(len(partition['validation']) / global_batch_size)
-    params['steps_per_execution'] = max(params['steps_per_epoch'] // 10, 1)  # Ensure it's at least 1
+    # Calculate steps per epoch based on sharded data
+    sharded_train_size = len(partition['train']) // num_workers
+    sharded_validation_size = len(partition['validation']) // num_workers
 
-    print(params['steps_per_epoch'], params['steps_per_execution'])
+    params['steps_per_epoch'] = math.ceil(sharded_train_size / global_batch_size)
+    params['validation_steps'] = math.ceil(sharded_validation_size / global_batch_size)
+    params['steps_per_execution'] = max(params['steps_per_epoch'] // 10, 1)  # Ensure at least 1
+
+    print(
+        f"Worker {worker_index}: steps_per_epoch={params['steps_per_epoch']}, "
+        f"steps_per_execution={params['steps_per_execution']}")
 
     # Calculate min and max values for scaling
     min_values, max_values = calculate_and_save_scalers(partition['train'], data_filepath, scalers_path)
 
     with strategy.scope():
+        dataset_train = create_dataset(partition['train'], data_filepath, global_batch_size, num_workers, worker_index,
+                                       shuffle=True)
+        dataset_val = create_dataset(partition['validation'], data_filepath, global_batch_size, num_workers,
+                                     worker_index, shuffle=True)
+
         # Check for existing checkpoints
         latest_checkpoint = get_latest_checkpoint(checkpoint_dir)
         if latest_checkpoint:
@@ -211,9 +234,6 @@ def train_model(data_filepath, model_outpath, params, param_ID, job_name, sample
         else:
             print("No checkpoint found. Initializing a new model.")
             model = TofToEnergyModel(params, min_values, max_values)
-
-    dataset_train = create_dataset(partition['train'], data_filepath, global_batch_size, shuffle=True)
-    dataset_val = create_dataset(partition['validation'], data_filepath, global_batch_size, shuffle=True)
 
     start_time = time.time()
     # Train the main model
