@@ -8,12 +8,15 @@ from sklearn.preprocessing import MinMaxScaler
 import tensorflow as tf
 
 
-def create_dataset(indices, data_filepath, batch_size, num_workers, worker_index, shuffle=True):
+def create_dataset(indices, data_filepath, batch_size, shuffle=True):
     input_dim = 4  # Adjust based on your data
     output_dim = 1
 
+    options = tf.data.Options()
+    options.experimental_distribute.auto_shard_policy = tf.data.experimental.AutoShardPolicy.DATA
+
     # Manually shard the indices
-    indices = indices[worker_index::num_workers]
+    #indices = indices[worker_index::num_workers]
 
     # Create a dataset of indices
     indices_dataset = tf.data.Dataset.from_tensor_slices(indices)
@@ -58,15 +61,16 @@ def create_dataset(indices, data_filepath, batch_size, num_workers, worker_index
         return inp, outp
 
     # Map the parsing function over the batches
-    dataset = indices_dataset.map(_parse_function, num_parallel_calls=tf.data.AUTOTUNE)
-    dataset = dataset.unbatch().repeat()
+    dataset = indices_dataset.map(_parse_function, num_parallel_calls=tf.data.AUTOTUNE).cache()
+    # operations like unbatch can interfere with auto sharding
+    dataset = dataset.unbatch()
     dataset = dataset.batch(batch_size)
-    dataset = dataset.prefetch(tf.data.AUTOTUNE)
+    dataset = dataset.prefetch(tf.data.AUTOTUNE).repeat()
 
     # Set the auto-shard policy to OFF since we are sharding manually
     #options = tf.data.Options()
-    #options.experimental_distribute.auto_shard_policy = tf.data.experimental.AutoShardPolicy.OFF
-    #dataset = dataset.with_options(options)
+    #options.experimental_distribute.auto_shard_policy = tf.data.experimental.AutoShardPolicy.AUTO
+    dataset = dataset.with_options(options)
 
     return dataset
 
