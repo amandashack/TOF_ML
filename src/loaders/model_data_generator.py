@@ -32,29 +32,24 @@ def create_dataset(indices, data_filepath, batch_size, shuffle=True):
             with h5py.File(data_filepath, 'r') as hf:
                 batch_indices_np = np.sort(batch_indices.numpy())
                 data_rows = hf['combined_data'][batch_indices_np]
-
-                input_list = []
-                output_list = []
-                for data_row in data_rows:
-                    if data_row.ndim == 1:
-                        data_row = np.expand_dims(data_row, axis=0)
-                    mask = data_row[:, -1].astype(bool)
-                    masked_data_row = data_row[mask]
-                    if masked_data_row.shape[0] == 0:
-                        continue
-                    input_data = masked_data_row[:, [2, 3, 4, 5]]
-                    output_data = masked_data_row[:, 0].reshape(-1, 1)
-                    output_data = np.log2(output_data)
-                    input_list.append(input_data.astype(np.float32))
-                    output_list.append(output_data.astype(np.float32))
-                # Concatenate the lists
-                if input_list and output_list:
-                    inputs = np.concatenate(input_list, axis=0)
-                    outputs = np.concatenate(output_list, axis=0)
-                    return inputs, outputs
-                else:
-                    # Return empty arrays if no data
-                    return np.empty((0, input_dim), dtype=np.float32), np.empty((0, output_dim), dtype=np.float32)
+                if data_rows.ndim == 1:
+                    data_rows = np.expand_dims(data_rows, axis=0)
+                mask = data_rows[:, -1].astype(bool)
+                masked_data_rows = data_rows[mask]
+                retardation = masked_data_rows[:, 2]
+                mask_retardation = retardation <= 0
+                masked_data_rows = masked_data_rows[mask_retardation]
+                if masked_data_rows.shape[0] == 0:
+                    # Return empty arrays if no data after filtering
+                    return (
+                        np.empty((0, input_dim), dtype=np.float32),
+                        np.empty((0, output_dim), dtype=np.float32)
+                    )
+                input_data = masked_data_rows[:, [2, 3, 4, 5]].astype(np.float32)
+                initial_ke = masked_data_rows[:, 0]
+                pass_energy = initial_ke + masked_data_rows[:, 2]
+                output_data = np.log2(pass_energy).reshape(-1, 1).astype(np.float32)
+                return input_data, output_data
         inp, outp = tf.py_function(py_function, [batch_indices], [tf.float32, tf.float32])
         inp.set_shape([None, input_dim])
         outp.set_shape([None, output_dim])
@@ -73,8 +68,6 @@ def create_dataset(indices, data_filepath, batch_size, shuffle=True):
     dataset = dataset.with_options(options)
 
     return dataset
-
-
 
 def calculate_and_save_scalers(indices, data_filepath, scalers_path):
     if os.path.exists(scalers_path):
@@ -115,6 +108,9 @@ def calculate_and_save_scalers(indices, data_filepath, scalers_path):
             x2 * x3,
             x2 * x4,
             x3 * x4,
+            x1 ** 2,
+            x2 ** 2,
+            x3 ** 2,
             x4 ** 2
         ])
         processed_input = np.hstack([input_data, interaction_terms])
@@ -122,6 +118,7 @@ def calculate_and_save_scalers(indices, data_filepath, scalers_path):
         # Combine output and input data
         output_data = data[:, 0].reshape(-1, 1)  # Output variable
         full_data = np.hstack([output_data, processed_input])
+        print(full_data.shape)
 
         # Fit the scaler
         from sklearn.preprocessing import MinMaxScaler
@@ -195,71 +192,6 @@ def load_scalers(scalers_path):
             return min_values, max_values
     else:
         raise FileNotFoundError(f"Scalers file not found at {scalers_path}")
-
-
-def process_input(input_data):
-    x1 = input_data[:, 0:1]
-    x2 = input_data[:, 1:2]
-    x3 = input_data[:, 2:3]
-    x4 = input_data[:, 3:4]
-    interaction_terms = np.hstack([
-        x1 * x2,
-        x1 * x3,
-        x1 * x4,
-        x2 * x3,
-        x2 * x4,
-        x3 * x4,
-        x4 ** 2
-    ])
-    return np.hstack([input_data, interaction_terms])
-
-
-def calculate_and_save_scalers(indices, data_filepath, scalers_path):
-    if os.path.exists(scalers_path):
-        with open(scalers_path, 'rb') as f:
-            scalers = pickle.load(f)
-            min_values = scalers['min_values']
-            max_values = scalers['max_values']
-            print(f"Scalers loaded from {scalers_path}")
-            return min_values, max_values
-    else:
-        # Read the entire dataset into memory
-        with h5py.File(data_filepath, 'r') as hf:
-            data = hf['combined_data'][:]
-
-        # Filter data using indices
-        data = data[indices]
-
-        # Apply mask to filter valid data
-        mask = data[:, -1].astype(bool)
-        data = data[mask]
-
-        # Apply log transforms
-        data[:, 0] = np.log2(data[:, 0])  # Log transform of output
-        data[:, 5] = np.log2(data[:, 5])  # Log transform of sixth feature
-
-        # Process input data
-        input_data = data[:, [2, 3, 4, 5]]  # Adjust indices based on your data
-
-        # Apply interaction terms
-        interaction_data = process_input(input_data)
-
-        # Combine output and input data
-        output_data = data[:, 0].reshape(-1, 1)  # Output variable
-        full_data = np.hstack([output_data, interaction_data])
-
-        # Fit the scaler
-        scaler = MinMaxScaler()
-        scaler.fit(full_data)
-        min_values = scaler.data_min_
-        max_values = scaler.data_max_
-
-        # Save the scalers to disk
-        with open(scalers_path, 'wb') as f:
-            pickle.dump({'min_values': min_values, 'max_values': max_values}, f)
-            print(f"Scalers saved to {scalers_path}")
-
-        return min_values, max_values
 
 
 class DataGenerator(keras.utils.Sequence):

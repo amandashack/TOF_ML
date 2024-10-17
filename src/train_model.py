@@ -111,7 +111,7 @@ def train_tof_to_energy_model(model, latest_checkpoint, dataset_train, dataset_v
         initial_epoch = 0
         print("No checkpoint found. Starting from epoch 0.")
 
-    epochs = params.get('epochs', 10)
+    epochs = params.get('epochs', 200)
     steps_per_epoch = params.get('steps_per_epoch', 10)
     validation_steps = params.get('validation_steps', 10)
 
@@ -241,6 +241,9 @@ def train_model(data_filepath, model_outpath, params, param_ID, job_name, sample
                 'ScalingLayer': ScalingLayer,
                 'TofToEnergyModel': TofToEnergyModel
             })
+            model.params = params
+            model.min_values = min_values
+            model.max_values = max_values
         else:
             print("No checkpoint found. Initializing a new model.")
             model = TofToEnergyModel(params, min_values, max_values)

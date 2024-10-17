@@ -107,6 +107,9 @@ class InteractionLayer(layers.Layer):
             x2 * x3,
             x2 * x4,
             x3 * x4,
+            tf.square(x1),
+            tf.square(x2),
+            tf.square(x3),
             tf.square(x4)
         ], axis=1)
         # Concatenate original inputs with interaction terms
@@ -122,9 +125,9 @@ class InteractionLayer(layers.Layer):
 
 class ScalingLayer(layers.Layer):
     def __init__(self, min_values, max_values, **kwargs):
-        super(ScalingLayer, self).__init__(**kwargs)
         self.min_values = tf.constant(min_values, dtype=tf.float32)
         self.max_values = tf.constant(max_values, dtype=tf.float32)
+        super(ScalingLayer, self).__init__(**kwargs)
 
     def call(self, inputs):
         # Apply Min-Max scaling
