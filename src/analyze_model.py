@@ -5,77 +5,13 @@ import numpy as np
 import pandas as pd
 import tensorflow as tf
 import pickle
-from models.tof_to_energy_model import TofToEnergyModel
+from models.tof_to_energy_model import TofToEnergyModel, InteractionLayer, ScalingLayer, LogTransformLayer
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 import seaborn as sns
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
 from scipy.stats import kurtosis, skew, norm
 from mpl_toolkits.axes_grid1.inset_locator import inset_axes
-
-# Custom layers used in the model
-class LogTransformLayer(tf.keras.layers.Layer):
-    def __init__(self, **kwargs):
-        super(LogTransformLayer, self).__init__(**kwargs)
-
-    def call(self, inputs):
-        log_transformed = tf.concat([
-            inputs[:, 0:3],
-            tf.math.log(inputs[:, 3:4]) / tf.math.log(2.0)
-        ], axis=1)
-        return log_transformed
-
-    def get_config(self):
-        config = super(LogTransformLayer, self).get_config()
-        return config
-
-    @classmethod
-    def from_config(cls, config):
-        return cls(**config)
-
-
-class InteractionLayer(tf.keras.layers.Layer):
-    def __init__(self, **kwargs):
-        super(InteractionLayer, self).__init__(**kwargs)
-
-    def call(self, inputs):
-        x1, x2, x3, x4 = inputs[:, 0:1], inputs[:, 1:2], inputs[:, 2:3], inputs[:, 3:4]
-        interaction_terms = tf.concat([
-            x1 * x2,
-            x1 * x3,
-            x1 * x4,
-            x2 * x3,
-            x2 * x4,
-            x3 * x4,
-            tf.square(x4)
-        ], axis=1)
-        return tf.concat([inputs, interaction_terms], axis=1)
-
-    def get_config(self):
-        config = super(InteractionLayer, self).get_config()
-        return config
-
-    @classmethod
-    def from_config(cls, config):
-        return cls(**config)
-
-
-class ScalingLayer(tf.keras.layers.Layer):
-    def __init__(self, min_values, max_values, **kwargs):
-        super(ScalingLayer, self).__init__(**kwargs)
-        self.min_values = tf.constant(min_values, dtype=tf.float32)
-        self.max_values = tf.constant(max_values, dtype=tf.float32)
-
-    def call(self, inputs):
-        return (inputs - self.min_values) / (self.max_values - self.min_values)
-
-    def get_config(self):
-        config = super(ScalingLayer, self).get_config()
-        return config
-
-    @classmethod
-    def from_config(cls, config):
-        return cls(**config)
 
 
 def process_input(input_data):
@@ -99,7 +35,7 @@ def load_test_data(data_filepath, test_indices):
     with h5py.File(data_filepath, 'r') as hf:
         print("Opened HDF5 file and loading data...")
         # Assuming 'combined_data' is a 2D dataset
-        combined_data = hf['combined_data'][test_indices]
+        combined_data = hf['combined_data'][sorted(test_indices)]
 
     # Ensure combined_data is 2D
     if combined_data.ndim == 1:
