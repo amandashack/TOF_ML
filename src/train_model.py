@@ -29,30 +29,11 @@ if gpus:
     except RuntimeError as e:
         pass
 
-def get_latest_checkpoint(checkpoint_dir):
-    """
-    Finds the latest checkpoint directory in the checkpoint directory.
-    Assumes checkpoint directories are named as 'main_cp-XXXX' where XXXX is the epoch number.
-    """
-    list_of_dirs = glob.glob(os.path.join(checkpoint_dir, "main_cp-*"))
-    if not list_of_dirs:
-        return None
-    # Extract epoch numbers and find the highest
-    latest_dir = None
-    latest_epoch = -1
-    for dir_path in list_of_dirs:
-        basename = os.path.basename(dir_path)
-        match = re.match(r"main_cp-(\d+)", basename)
-        if match:
-            epoch_num = int(match.group(1))
-            if epoch_num > latest_epoch:
-                latest_epoch = epoch_num
-                latest_dir = dir_path
-    return latest_dir
 
-def is_chief(strategy):
-    task_type, task_id = (strategy.cluster_resolver.task_type, strategy.cluster_resolver.task_id)
-    return task_type == 'chief'
+def get_latest_checkpoint(checkpoint_dir):
+    latest_checkpoint = tf.train.latest_checkpoint(checkpoint_dir)
+    return latest_checkpoint
+
 
 def train_tof_to_energy_model(model, latest_checkpoint, dataset_train, dataset_val, params,
                               checkpoint_dir, param_ID, job_name, meta_file, strategy):
@@ -64,42 +45,32 @@ def train_tof_to_energy_model(model, latest_checkpoint, dataset_train, dataset_v
         monitor='val_loss', patience=10, restore_best_weights=True
     )
 
-    # Define log directory for TensorBoard (only chief worker)
-    #if is_chief(strategy)
-    if True:
-        log_dir = os.path.join(checkpoint_dir, "logs", datetime.datetime.now().strftime("%Y%m%d-%H%M%S"))
-        tensorboard_callback = tf.keras.callbacks.TensorBoard(
-            log_dir=log_dir,
-            histogram_freq=1,
-            profile_batch='100,120'  # Enable profiling for batches 500 to 520
-        )
-        checkpoint_path = os.path.join(checkpoint_dir, "main_cp-{epoch:04d}")
-        checkpoint = tf.keras.callbacks.ModelCheckpoint(
-            filepath=checkpoint_path,
-            monitor='val_loss',
-            save_best_only=False,
-            save_weights_only=False,  # Save the entire model including optimizer state
-            save_freq='epoch',  # Ensure checkpoints are saved at the end of each epoch
-            save_format='tf',  # Use the TensorFlow SavedModel format
-            verbose=1
-        )
-    else:
-        tensorboard_callback = None
-        checkpoint = None
+    # Define log directory for TensorBoard
+    log_dir = os.path.join(checkpoint_dir, "logs", datetime.datetime.now().strftime("%Y%m%d-%H%M%S"))
+    tensorboard_callback = tf.keras.callbacks.TensorBoard(
+        log_dir=log_dir,
+        histogram_freq=1,
+        profile_batch='100,120'  # Enable profiling for batches 100 to 120
+    )
+    checkpoint_path = os.path.join(checkpoint_dir, "main_cp-{epoch:04d}.ckpt")
+    checkpoint = tf.keras.callbacks.ModelCheckpoint(
+        filepath=checkpoint_path,
+        monitor='val_loss',
+        save_best_only=False,
+        save_weights_only=True,
+        save_freq='epoch',
+        verbose=1
+    )
 
     # Callbacks list
-    callbacks = [reduce_lr, early_stop]
-    if checkpoint:
-        callbacks.append(checkpoint)
-    if tensorboard_callback:
-        callbacks.append(tensorboard_callback)
+    callbacks = [reduce_lr, early_stop, checkpoint, tensorboard_callback]
 
-    if not os.path.exists(checkpoint_dir): # and is_chief(strategy):
+    if not os.path.exists(checkpoint_dir):
         os.makedirs(checkpoint_dir)
 
     if latest_checkpoint:
-        # Extract the epoch number from the checkpoint directory name
-        checkpoint_pattern = r"main_cp-(\d+)"
+        # Extract the epoch number from the checkpoint file name
+        checkpoint_pattern = r"main_cp-(\d{4})\.ckpt"
         match = re.search(checkpoint_pattern, os.path.basename(latest_checkpoint))
         if match:
             initial_epoch = int(match.group(1))
@@ -114,8 +85,6 @@ def train_tof_to_energy_model(model, latest_checkpoint, dataset_train, dataset_v
     epochs = params.get('epochs', 200)
     steps_per_epoch = params.get('steps_per_epoch', 10)
     validation_steps = params.get('validation_steps', 10)
-
-    #tf.profiler.experimental.start(log_dir)
 
     start_time = time.time()
 
@@ -133,8 +102,6 @@ def train_tof_to_energy_model(model, latest_checkpoint, dataset_train, dataset_v
     training_time = end_time - start_time
     print(f"Training completed in {training_time:.2f} seconds.")
 
-    #tf.profiler.experimental.stop()
-
     print(f"Early stopping at epoch {early_stop.stopped_epoch}")
     best_epoch = np.argmin(history.history['val_loss']) + 1
     print(f"Best epoch based on validation loss: {best_epoch}")
@@ -145,58 +112,22 @@ def train_model(data_filepath, model_outpath, params, param_ID, job_name, sample
     # Initialize the strategy
     strategy = tf.distribute.MirroredStrategy()
 
-    # Obtain task information from TF_CONFIG
-    # tf_config = json.loads(os.environ.get('TF_CONFIG', '{}'))
-    # task = tf_config.get('task', {})
-    # print('task ', task)
-    # task_type = task.get('type', 'worker')
-    # print(task_type)
-    # task_index = task.get('index', 0)
-    # print(task_index)
-    # cluster_spec = tf_config.get('cluster', {})
-    # num_workers = len(cluster_spec.get('worker', [])) + 1 # Include chief in the count
-    # print(num_workers)
-    # worker_index = task_index
-
     # Define the meta file path
     meta_file = os.path.join(os.path.dirname(model_outpath), 'meta.txt')
-    scalers_path = os.path.join(model_outpath, 'scalers.pkl')
-    indices_path = os.path.join(model_outpath, 'data_indices.npz')
+    scalers_path = '/sdf/home/a/ajshack/scalers.pkl'  # Path to where scalers are saved
+    indices_path = '/sdf/home/a/ajshack/data_indices.npz'  # Path to where indices are saved
     checkpoint_dir = os.path.join(model_outpath, "checkpoints")
 
-    # per_worker_batch_size = params.get('batch_size', 512)
-    # global_batch_size = per_worker_batch_size * num_workers
-    # print(global_batch_size)
+    batch_size = params['batch_size']
 
-    # Load or create data indices
-    if os.path.exists(indices_path):
-        # Load existing indices
-        print("Loading existing data indices...")
-        indices_data = np.load(indices_path)
-        partition = {
-            'train': indices_data['train_indices'],
-            'validation': indices_data['validation_indices'],
-            'test': indices_data['test_indices']
-        }
-    else:
-        # Load the dataset length from the file
-        with h5py.File(data_filepath, 'r') as hf:
-            data_len = len(hf['combined_data'])
-
-        # Create partition dictionary for train, validation, and test sets (80/10/10 split)
-        indices = np.arange(data_len)
-        partition = {
-            'train': indices[:int(0.8 * data_len)],
-            'validation': indices[int(0.8 * data_len):int(0.9 * data_len)],
-            'test': indices[int(0.9 * data_len):]
-        }
-
-        # Save indices
-        np.savez(indices_path,
-                 train_indices=partition['train'],
-                 validation_indices=partition['validation'],
-                 test_indices=partition['test'])
-        print(f"Data indices saved to {indices_path}")
+    # Load existing indices
+    print("Loading existing data indices...")
+    indices_data = np.load(indices_path)
+    partition = {
+        'train': indices_data['train_indices'],
+        'validation': indices_data['validation_indices'],
+        'test': indices_data['test_indices']
+    }
 
     # Apply sampling if a sample size is provided
     if sample_size:
@@ -209,21 +140,16 @@ def train_model(data_filepath, model_outpath, params, param_ID, job_name, sample
         partition['validation'] = sample_indices(partition['validation'], int(0.1 * sample_size))
         partition['test'] = sample_indices(partition['test'], int(0.1 * sample_size))
 
-    # Calculate steps per epoch based on sharded data
-    # sharded_train_size = len(partition['train']) // num_workers
-    # sharded_validation_size = len(partition['validation']) // num_workers
-    batch_size = params['batch_size']
+    params['steps_per_epoch'] = math.ceil(len(partition['train']) / params['batch_size'])
+    params['validation_steps'] = math.ceil(len(partition['validation'])  / params['batch_size'])
+    params['steps_per_execution'] = max(params['steps_per_epoch'] // 10, 1)
 
-    params['steps_per_epoch'] = math.ceil(len(partition['train']) / params['batch_size'])  # global_batch_size)
-    params['validation_steps'] = math.ceil(len(partition['validation'])  / params['batch_size'])  # global_batch_size)
-    params['steps_per_execution'] = max(params['steps_per_epoch'] // 10, 1)  # Ensure at least 1
-
-    # print(
-    #     f"Worker {worker_index}: steps_per_epoch={params['steps_per_epoch']}, "
-    #     f"steps_per_execution={params['steps_per_execution']}")
-
-    # Calculate min and max values for scaling
-    min_values, max_values = calculate_and_save_scalers(partition['train'], data_filepath, scalers_path)
+    # Load scalers
+    with open(scalers_path, 'rb') as f:
+        scalers = pickle.load(f)
+        min_values = scalers['min_values']
+        max_values = scalers['max_values']
+        print(f"Scalers loaded from {scalers_path}")
 
     with strategy.scope():
         dataset_train = create_dataset(partition['train'], data_filepath, batch_size,
@@ -234,16 +160,9 @@ def train_model(data_filepath, model_outpath, params, param_ID, job_name, sample
         # Check for existing checkpoints
         latest_checkpoint = get_latest_checkpoint(checkpoint_dir)
         if latest_checkpoint:
-            print(f"Loading model from checkpoint: {latest_checkpoint}")
-            model = tf.keras.models.load_model(latest_checkpoint, custom_objects={
-                'LogTransformLayer': LogTransformLayer,
-                'InteractionLayer': InteractionLayer,
-                'ScalingLayer': ScalingLayer,
-                'TofToEnergyModel': TofToEnergyModel
-            })
-            model.params = params
-            model.min_values = min_values
-            model.max_values = max_values
+            print(f"Loading model weights from checkpoint: {latest_checkpoint}")
+            model = TofToEnergyModel(params, min_values, max_values)
+            model.load_weights(latest_checkpoint)
         else:
             print("No checkpoint found. Initializing a new model.")
             model = TofToEnergyModel(params, min_values, max_values)
@@ -252,11 +171,9 @@ def train_model(data_filepath, model_outpath, params, param_ID, job_name, sample
     model, history = train_tof_to_energy_model(model, latest_checkpoint, dataset_train, dataset_val, params,
                                                checkpoint_dir, param_ID, job_name, meta_file, strategy)
 
-    # Save the model (ensure only the chief worker saves the model)
-    #if is_chief(strategy):
-    if True:
-        model.save(os.path.join(model_outpath, "main_model"), save_format="tf")
-        print("Model saved by the chief worker.")
+    # Save the entire model after training
+    model.save(os.path.join(model_outpath, "main_model"), save_format="tf")
+    print("Model saved.")
 
     # Optionally, handle evaluation on the test set
     # dataset_test = create_dataset(partition['test'], data_filepath, global_batch_size, shuffle=False)

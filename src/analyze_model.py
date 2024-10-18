@@ -46,6 +46,23 @@ def format_model_params(params_dict):
     return formatted_params
 
 
+def parse_params_line(params_line):
+    """
+    Parses a params line into a dictionary.
+    Example input: '--batch_size=1024 --dropout=0.2 --layer_size=32 --learning_rate=0.4 --optimizer=Adam'
+    Returns: {'batch_size': '1024', 'dropout': '0.2', 'layer_size': '32', 'learning_rate': '0.4', 'optimizer': 'Adam'}
+    """
+    params_dict = {}
+    if params_line:
+        params_list = params_line.strip().split()
+        for param in params_list:
+            if param.startswith('--'):
+                key_value = param[2:].split('=')
+                if len(key_value) == 2:
+                    key, value = key_value
+                    params_dict[key] = value
+    return params_dict
+
 def load_scalers(scalers_path):
     if os.path.exists(scalers_path):
         with open(scalers_path, 'rb') as f:
