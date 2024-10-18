@@ -29,30 +29,11 @@ if gpus:
     except RuntimeError as e:
         pass
 
-def get_latest_checkpoint(checkpoint_dir):
-    """
-    Finds the latest checkpoint directory in the checkpoint directory.
-    Assumes checkpoint directories are named as 'main_cp-XXXX' where XXXX is the epoch number.
-    """
-    list_of_dirs = glob.glob(os.path.join(checkpoint_dir, "main_cp-*"))
-    if not list_of_dirs:
-        return None
-    # Extract epoch numbers and find the highest
-    latest_dir = None
-    latest_epoch = -1
-    for dir_path in list_of_dirs:
-        basename = os.path.basename(dir_path)
-        match = re.match(r"main_cp-(\d+)", basename)
-        if match:
-            epoch_num = int(match.group(1))
-            if epoch_num > latest_epoch:
-                latest_epoch = epoch_num
-                latest_dir = dir_path
-    return latest_dir
 
-def is_chief(strategy):
-    task_type, task_id = (strategy.cluster_resolver.task_type, strategy.cluster_resolver.task_id)
-    return task_type == 'chief'
+def get_latest_checkpoint(checkpoint_dir):
+    latest_checkpoint = tf.train.latest_checkpoint(checkpoint_dir)
+    return latest_checkpoint
+
 
 def train_tof_to_energy_model(model, latest_checkpoint, dataset_train, dataset_val, params,
                               checkpoint_dir, param_ID, job_name, meta_file, strategy):
@@ -64,42 +45,32 @@ def train_tof_to_energy_model(model, latest_checkpoint, dataset_train, dataset_v
         monitor='val_loss', patience=15, restore_best_weights=True
     )
 
-    # Define log directory for TensorBoard (only chief worker)
-    #if is_chief(strategy)
-    if True:
-        log_dir = os.path.join(checkpoint_dir, "logs", datetime.datetime.now().strftime("%Y%m%d-%H%M%S"))
-        tensorboard_callback = tf.keras.callbacks.TensorBoard(
-            log_dir=log_dir,
-            histogram_freq=1,
-            profile_batch='100,120'  # Enable profiling for batches 500 to 520
-        )
-        checkpoint_path = os.path.join(checkpoint_dir, "main_cp-{epoch:04d}")
-        checkpoint = tf.keras.callbacks.ModelCheckpoint(
-            filepath=checkpoint_path,
-            monitor='val_loss',
-            save_best_only=False,
-            save_weights_only=False,  # Save the entire model including optimizer state
-            save_freq='epoch',  # Ensure checkpoints are saved at the end of each epoch
-            save_format='tf',  # Use the TensorFlow SavedModel format
-            verbose=1
-        )
-    else:
-        tensorboard_callback = None
-        checkpoint = None
+    # Define log directory for TensorBoard
+    log_dir = os.path.join(checkpoint_dir, "logs", datetime.datetime.now().strftime("%Y%m%d-%H%M%S"))
+    tensorboard_callback = tf.keras.callbacks.TensorBoard(
+        log_dir=log_dir,
+        histogram_freq=1,
+        profile_batch='100,120'  # Enable profiling for batches 100 to 120
+    )
+    checkpoint_path = os.path.join(checkpoint_dir, "main_cp-{epoch:04d}.ckpt")
+    checkpoint = tf.keras.callbacks.ModelCheckpoint(
+        filepath=checkpoint_path,
+        monitor='val_loss',
+        save_best_only=False,
+        save_weights_only=True,
+        save_freq='epoch',
+        verbose=1
+    )
 
     # Callbacks list
-    callbacks = [reduce_lr, early_stop]
-    if checkpoint:
-        callbacks.append(checkpoint)
-    if tensorboard_callback:
-        callbacks.append(tensorboard_callback)
+    callbacks = [reduce_lr, early_stop, checkpoint, tensorboard_callback]
 
-    if not os.path.exists(checkpoint_dir): # and is_chief(strategy):
+    if not os.path.exists(checkpoint_dir):
         os.makedirs(checkpoint_dir)
 
     if latest_checkpoint:
-        # Extract the epoch number from the checkpoint directory name
-        checkpoint_pattern = r"main_cp-(\d+)"
+        # Extract the epoch number from the checkpoint file name
+        checkpoint_pattern = r"main_cp-(\d{4})\.ckpt"
         match = re.search(checkpoint_pattern, os.path.basename(latest_checkpoint))
         if match:
             initial_epoch = int(match.group(1))
@@ -114,8 +85,6 @@ def train_tof_to_energy_model(model, latest_checkpoint, dataset_train, dataset_v
     epochs = params.get('epochs', 200)
     steps_per_epoch = params.get('steps_per_epoch', 10)
     validation_steps = params.get('validation_steps', 10)
-
-    #tf.profiler.experimental.start(log_dir)
 
     start_time = time.time()
 
@@ -132,8 +101,6 @@ def train_tof_to_energy_model(model, latest_checkpoint, dataset_train, dataset_v
     end_time = time.time()
     training_time = end_time - start_time
     print(f"Training completed in {training_time:.2f} seconds.")
-
-    #tf.profiler.experimental.stop()
 
     print(f"Early stopping at epoch {early_stop.stopped_epoch}")
     best_epoch = np.argmin(history.history['val_loss']) + 1
@@ -193,16 +160,9 @@ def train_model(data_filepath, model_outpath, params, param_ID, job_name, sample
         # Check for existing checkpoints
         latest_checkpoint = get_latest_checkpoint(checkpoint_dir)
         if latest_checkpoint:
-            print(f"Loading model from checkpoint: {latest_checkpoint}")
-            model = tf.keras.models.load_model(latest_checkpoint, custom_objects={
-                'LogTransformLayer': LogTransformLayer,
-                'InteractionLayer': InteractionLayer,
-                'ScalingLayer': ScalingLayer,
-                'TofToEnergyModel': TofToEnergyModel
-            })
-            model.params = params
-            model.min_values = min_values
-            model.max_values = max_values
+            print(f"Loading model weights from checkpoint: {latest_checkpoint}")
+            model = TofToEnergyModel(params, min_values, max_values)
+            model.load_weights(latest_checkpoint)
         else:
             print("No checkpoint found. Initializing a new model.")
             model = TofToEnergyModel(params, min_values, max_values)
@@ -211,7 +171,7 @@ def train_model(data_filepath, model_outpath, params, param_ID, job_name, sample
     model, history = train_tof_to_energy_model(model, latest_checkpoint, dataset_train, dataset_val, params,
                                                checkpoint_dir, param_ID, job_name, meta_file, strategy)
 
-    # Save the model
+    # Save the entire model after training
     model.save(os.path.join(model_outpath, "main_model"), save_format="tf")
     print("Model saved.")
 

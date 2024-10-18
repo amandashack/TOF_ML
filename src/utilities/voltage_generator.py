@@ -98,6 +98,7 @@ def calculateVoltage_NelderMeade(retardation_value, mid1_ratio=0.11248, mid2_rat
     voltage_back = retardation_value
     voltage_mid1 = voltage_back + mid1_ratio * (voltage_front - voltage_back)
     voltage_mid2 = voltage_back + mid2_ratio * (voltage_front - voltage_back)
+    print(voltage_mid1, voltage_mid2)
     # #run for NM
     # get voltage array and resistor values
     va, rv = voltageArrayGeneratorWrapperNM(voltage_front, voltage_back,

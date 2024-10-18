@@ -45,6 +45,7 @@ def format_model_params(params_dict):
     formatted_params = "\n".join([f"{key}: {value}" for key, value in params_dict.items()])
     return formatted_params
 
+
 def parse_params_line(params_line):
     """
     Parses a params line into a dictionary.
@@ -61,7 +62,6 @@ def parse_params_line(params_line):
                     key, value = key_value
                     params_dict[key] = value
     return params_dict
-
 
 def load_scalers(scalers_path):
     if os.path.exists(scalers_path):
