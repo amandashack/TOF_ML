@@ -263,6 +263,9 @@ def train_model(data_filepath, model_outpath, params, param_ID, job_name, sample
     # loss_test = model.evaluate(dataset_test, verbose=0)
     # print(f"Test loss: {loss_test}")
 
+DATA_FILENAME = "/sdf/home/a/ajshack/combined_data_large.h5"
+
+
 # Entry point with argument parsing
 """if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Train the TofToEnergyModel with distributed strategy.')
@@ -300,22 +303,22 @@ def train_model(data_filepath, model_outpath, params, param_ID, job_name, sample
 
 
 # Entry point
+#if __name__ == '__main__':
+#    model_outpath = r"C:\Users\proxi\Documents\coding\stored_models\test_001\37"
+#    data_filepath = r"C:\Users\proxi\Documents\coding\TOF_data\TOF_data\combined_data.h5"
+#    params = {
+#        "layer_size": 32,
+#        "batch_size": int(1024/2),
+#        "dropout": 0.2,
+#        "learning_rate": 0.1,
+#        "optimizer": 'RMSprop',
+#        "job_name": "default_deep",
+#        "epochs": 5  # Add epochs parameter if needed
+#    }
+#    train_model(data_filepath, model_outpath, params, 12, 'default', sample_size=200000)
+
+
 if __name__ == '__main__':
-    model_outpath = r"C:\Users\proxi\Documents\coding\stored_models\test_001\37"
-    data_filepath = r"C:\Users\proxi\Documents\coding\TOF_data\TOF_data\combined_data.h5"
-    params = {
-        "layer_size": 32,
-        "batch_size": int(1024/2),
-        "dropout": 0.2,
-        "learning_rate": 0.1,
-        "optimizer": 'RMSprop',
-        "job_name": "default_deep",
-        "epochs": 5  # Add epochs parameter if needed
-    }
-    train_model(data_filepath, model_outpath, params, 12, 'default', sample_size=200000)
-
-
-"""if __name__ == '__main__':
     # Collect parameters passed through command line
     output_file_path = sys.argv[1]
     job_name = sys.argv[2]
@@ -337,4 +340,4 @@ if __name__ == '__main__':
     params['job_name'] = job_name
 
     # Call the training function with parsed parameters
-    train_model(DATA_FILENAME, output_file_path, params, param_ID, job_name)"""
+    train_model(DATA_FILENAME, output_file_path, params, param_ID, job_name)

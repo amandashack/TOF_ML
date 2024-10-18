@@ -24,7 +24,7 @@ for MODEL_DIR in "$BASE_DIR"/*; do
             echo "Model file not found in $MODEL_PATH"
         else
             # Read params for this model from the params file (if needed)
-            # PARAMS_LINE=$(grep "^$MODEL_ID " "$PARAMS_FILE")
+            PARAMS_LINE=$(grep "^$MODEL_ID " "$PARAMS_FILE")
             # PARAMS_DICT=$(echo "$PARAMS_LINE" | cut -d' ' -f2-)
 
             # Generate the PDF plot for the model
