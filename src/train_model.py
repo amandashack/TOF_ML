@@ -58,10 +58,10 @@ def train_tof_to_energy_model(model, latest_checkpoint, dataset_train, dataset_v
                               checkpoint_dir, param_ID, job_name, meta_file, strategy):
     # Learning rate scheduler and early stopping
     reduce_lr = tf.keras.callbacks.ReduceLROnPlateau(
-        monitor='val_loss', factor=0.1, patience=5, min_lr=1e-6, verbose=1
+        monitor='val_loss', factor=0.1, patience=10, min_lr=1e-6, verbose=1
     )
     early_stop = tf.keras.callbacks.EarlyStopping(
-        monitor='val_loss', patience=10, restore_best_weights=True
+        monitor='val_loss', patience=15, restore_best_weights=True
     )
 
     # Define log directory for TensorBoard (only chief worker)
@@ -145,58 +145,22 @@ def train_model(data_filepath, model_outpath, params, param_ID, job_name, sample
     # Initialize the strategy
     strategy = tf.distribute.MirroredStrategy()
 
-    # Obtain task information from TF_CONFIG
-    # tf_config = json.loads(os.environ.get('TF_CONFIG', '{}'))
-    # task = tf_config.get('task', {})
-    # print('task ', task)
-    # task_type = task.get('type', 'worker')
-    # print(task_type)
-    # task_index = task.get('index', 0)
-    # print(task_index)
-    # cluster_spec = tf_config.get('cluster', {})
-    # num_workers = len(cluster_spec.get('worker', [])) + 1 # Include chief in the count
-    # print(num_workers)
-    # worker_index = task_index
-
     # Define the meta file path
     meta_file = os.path.join(os.path.dirname(model_outpath), 'meta.txt')
-    scalers_path = os.path.join(model_outpath, 'scalers.pkl')
-    indices_path = os.path.join(model_outpath, 'data_indices.npz')
+    scalers_path = '/sdf/scratch/users/a/ajshack/scalers.pkl'  # Path to where scalers are saved
+    indices_path = '/sdf/scratch/users/a/ajshack/data_indices.npz'  # Path to where indices are saved
     checkpoint_dir = os.path.join(model_outpath, "checkpoints")
 
-    # per_worker_batch_size = params.get('batch_size', 512)
-    # global_batch_size = per_worker_batch_size * num_workers
-    # print(global_batch_size)
+    batch_size = params['batch_size']
 
-    # Load or create data indices
-    if os.path.exists(indices_path):
-        # Load existing indices
-        print("Loading existing data indices...")
-        indices_data = np.load(indices_path)
-        partition = {
-            'train': indices_data['train_indices'],
-            'validation': indices_data['validation_indices'],
-            'test': indices_data['test_indices']
-        }
-    else:
-        # Load the dataset length from the file
-        with h5py.File(data_filepath, 'r') as hf:
-            data_len = len(hf['combined_data'])
-
-        # Create partition dictionary for train, validation, and test sets (80/10/10 split)
-        indices = np.arange(data_len)
-        partition = {
-            'train': indices[:int(0.8 * data_len)],
-            'validation': indices[int(0.8 * data_len):int(0.9 * data_len)],
-            'test': indices[int(0.9 * data_len):]
-        }
-
-        # Save indices
-        np.savez(indices_path,
-                 train_indices=partition['train'],
-                 validation_indices=partition['validation'],
-                 test_indices=partition['test'])
-        print(f"Data indices saved to {indices_path}")
+    # Load existing indices
+    print("Loading existing data indices...")
+    indices_data = np.load(indices_path)
+    partition = {
+        'train': indices_data['train_indices'],
+        'validation': indices_data['validation_indices'],
+        'test': indices_data['test_indices']
+    }
 
     # Apply sampling if a sample size is provided
     if sample_size:
@@ -209,21 +173,16 @@ def train_model(data_filepath, model_outpath, params, param_ID, job_name, sample
         partition['validation'] = sample_indices(partition['validation'], int(0.1 * sample_size))
         partition['test'] = sample_indices(partition['test'], int(0.1 * sample_size))
 
-    # Calculate steps per epoch based on sharded data
-    # sharded_train_size = len(partition['train']) // num_workers
-    # sharded_validation_size = len(partition['validation']) // num_workers
-    batch_size = params['batch_size']
+    params['steps_per_epoch'] = math.ceil(len(partition['train']) / params['batch_size'])
+    params['validation_steps'] = math.ceil(len(partition['validation'])  / params['batch_size'])
+    params['steps_per_execution'] = max(params['steps_per_epoch'] // 10, 1)
 
-    params['steps_per_epoch'] = math.ceil(len(partition['train']) / params['batch_size'])  # global_batch_size)
-    params['validation_steps'] = math.ceil(len(partition['validation'])  / params['batch_size'])  # global_batch_size)
-    params['steps_per_execution'] = max(params['steps_per_epoch'] // 10, 1)  # Ensure at least 1
-
-    # print(
-    #     f"Worker {worker_index}: steps_per_epoch={params['steps_per_epoch']}, "
-    #     f"steps_per_execution={params['steps_per_execution']}")
-
-    # Calculate min and max values for scaling
-    min_values, max_values = calculate_and_save_scalers(partition['train'], data_filepath, scalers_path)
+    # Load scalers
+    with open(scalers_path, 'rb') as f:
+        scalers = pickle.load(f)
+        min_values = scalers['min_values']
+        max_values = scalers['max_values']
+        print(f"Scalers loaded from {scalers_path}")
 
     with strategy.scope():
         dataset_train = create_dataset(partition['train'], data_filepath, batch_size,
@@ -252,18 +211,16 @@ def train_model(data_filepath, model_outpath, params, param_ID, job_name, sample
     model, history = train_tof_to_energy_model(model, latest_checkpoint, dataset_train, dataset_val, params,
                                                checkpoint_dir, param_ID, job_name, meta_file, strategy)
 
-    # Save the model (ensure only the chief worker saves the model)
-    #if is_chief(strategy):
-    if True:
-        model.save(os.path.join(model_outpath, "main_model"), save_format="tf")
-        print("Model saved by the chief worker.")
+    # Save the model
+    model.save(os.path.join(model_outpath, "main_model"), save_format="tf")
+    print("Model saved.")
 
     # Optionally, handle evaluation on the test set
     # dataset_test = create_dataset(partition['test'], data_filepath, global_batch_size, shuffle=False)
     # loss_test = model.evaluate(dataset_test, verbose=0)
     # print(f"Test loss: {loss_test}")
 
-DATA_FILENAME = "/sdf/home/a/ajshack/combined_data_large.h5"
+DATA_FILENAME = "/sdf/scratch/users/a/ajshack/combined_data_large.h5"
 
 
 # Entry point with argument parsing

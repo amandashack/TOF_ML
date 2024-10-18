@@ -67,7 +67,7 @@ def create_dataset(indices, data_filepath, batch_size, shuffle=True):
     #options.experimental_distribute.auto_shard_policy = tf.data.experimental.AutoShardPolicy.AUTO
     dataset = dataset.with_options(options)
 
-    yield dataset
+    return dataset
 
 def calculate_and_save_scalers(indices, data_filepath, scalers_path):
     if os.path.exists(scalers_path):
