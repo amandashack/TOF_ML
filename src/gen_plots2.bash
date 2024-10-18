@@ -23,13 +23,12 @@ for MODEL_DIR in "$BASE_DIR"/*; do
         if [ ! -d "$MODEL_PATH" ]; then
             echo "Model file not found in $MODEL_PATH"
         else
-            # Read params for this model from the params file (if needed)
-            # PARAMS_LINE=$(grep "^$MODEL_ID " "$PARAMS_FILE")
-            # PARAMS_DICT=$(echo "$PARAMS_LINE" | cut -d' ' -f2-)
+            # Read params for this model from the params file
+            PARAMS_LINE=$(sed "${MODEL_ID}q;d" "$PARAMS_FILE")
 
             # Generate the PDF plot for the model
             PDF_FILENAME="plots_model_${MODEL_ID}_${MODEL_TYPE}.pdf"
-            python3 analyze_model.py "$BASE_DIR" "$MODEL_DIR_NAME" "$MODEL_TYPE" "$DATA_FILEPATH" --pdf_filename "$PDF_FILENAME"
+            python3 analyze_model.py "$BASE_DIR" "$MODEL_DIR_NAME" "$MODEL_TYPE" "$DATA_FILEPATH" --params_line "PARAMS_LINE" --pdf_filename "$PDF_FILENAME"
         fi
     fi
 done

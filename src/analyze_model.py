@@ -58,28 +58,32 @@ def load_scalers(scalers_path):
         raise FileNotFoundError(f"Scalers file not found at {scalers_path}")
 
 
-def plot_model_results(base_dir, model_dir_name, model_type, data_filepath, pdf_filename=None, sample_size=1000):
+def plot_model_results(base_dir, model_dir_name, model_type, data_filepath, params_dict=None, pdf_filename=None, sample_size=1000):
     # Load the model
     model_path = os.path.join(base_dir, model_dir_name, 'main_model')
     model_type_display = model_type.replace('_', ' ')
     print(model_path, '\n\n\n')
-    # i believe that from config and get config handle the scaling and param values
+
     main_model = tf.keras.models.load_model(model_path, custom_objects={
         'LogTransformLayer': LogTransformLayer,
         'InteractionLayer': InteractionLayer,
         'ScalingLayer': ScalingLayer,
         'TofToEnergyModel': TofToEnergyModel
     })
-    try:
-        print("Model loaded with min_values:", main_model.min_values)
-        print("Model loaded with max_values:", main_model.max_values)
-        print("Model parameters:", main_model.params)
-    except AttributeError:
-        main_model.min_values, main_model.max_values = load_scalers(os.path.join(base_dir, model_dir_name, 'scalers.pkl'))
 
+    # Load scalers
+    main_model.min_values, main_model.max_values = load_scalers(os.path.join(base_dir, model_dir_name, "scalers.pkl"))
+    print("Model loaded with min_values:", main_model.min_values)
+    print("Model loaded with max_values:", main_model.max_values)
+    main_model.params = params_dict
 
-    # Format model parameters for display
-    params_str = format_model_params(main_model.params)
+    # Get model parameters
+    if hasattr(main_model, 'params') and main_model.params:
+        params = main_model.params
+    else:
+        params = params_dict or {}
+
+    params_str = format_model_params(params)
 
     #print(main_model.min_values, main_model.max_values, main_model.params)
     main_model.min_values, main_model.max_values = load_scalers(os.path.join(base_dir, model_dir_name, "scalers.pkl"))
@@ -258,15 +262,21 @@ def main():
     parser.add_argument('model_dir_name', type=str, help='Model directory name to load and plot results for.')
     parser.add_argument('model_type', type=str, help='Model type (e.g., default, tofs_simple_swish, etc.)')
     parser.add_argument('data_filepath', type=str, help='Path to the data h5 file.')
+    parser.add_argument('--params_line', type=str, help='Model parameters in string format.')
     parser.add_argument('--pdf_filename', type=str, help='Optional PDF filename to save plots.')
     parser.add_argument('--sample_size', type=int, default=20000, help='Number of random samples to plot.')
 
     args = parser.parse_args()
+
+    # Parse the params_line into a dictionary
+    params_dict = parse_params_line(args.params_line)
+
     plot_model_results(
         args.base_dir,
         args.model_dir_name,
         args.model_type,
         args.data_filepath,
+        params_dict=params_dict,
         pdf_filename=args.pdf_filename,
         sample_size=args.sample_size
     )
