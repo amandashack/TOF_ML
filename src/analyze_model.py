@@ -14,45 +14,27 @@ from scipy.stats import kurtosis, skew, norm
 from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 
 
-def process_input(input_data):
-    x1 = input_data[:, 0:1]
-    x2 = input_data[:, 1:2]
-    x3 = input_data[:, 2:3]
-    x4 = input_data[:, 3:4]
-    interaction_terms = np.hstack([
-        x1 * x2,
-        x1 * x3,
-        x1 * x4,
-        x2 * x3,
-        x2 * x4,
-        x3 * x4,
-        x4 ** 2
-    ])
-    return np.hstack([input_data, interaction_terms])
-
-
 def load_test_data(data_filepath, test_indices):
     with h5py.File(data_filepath, 'r') as hf:
-        print("Opened HDF5 file and loading data...")
-        # Assuming 'combined_data' is a 2D dataset
-        combined_data = hf['combined_data'][sorted(test_indices)]
-
-    # Ensure combined_data is 2D
-    if combined_data.ndim == 1:
-        combined_data = np.expand_dims(combined_data, axis=0)
-
-    # Apply mask where the last column is True
-    mask = combined_data[:, -1].astype(bool)
-    masked_data = combined_data[mask]
-
-    if masked_data.size == 0:
-        raise ValueError("No data available after applying mask.")
-
-    # Extract input and output data
-    input_data = masked_data[:, [2, 3, 4, 5]].astype(np.float32)
-    output_data = np.log2(masked_data[:, 0]).reshape(-1, 1).astype(np.float32)
-
-    print("Test dataset loaded successfully.")
+        sorted_indices = sorted(test_indices)
+        data_rows = hf['combined_data'][sorted_indices]
+    if data_rows.ndim == 1:
+        data_rows = np.expand_dims(data_rows, axis=0)
+    mask = data_rows[:, -1].astype(bool)
+    masked_data_rows = data_rows[mask]
+    retardation = masked_data_rows[:, 2]
+    mask_retardation = retardation <= 0
+    masked_data_rows = masked_data_rows[mask_retardation]
+    if masked_data_rows.shape[0] == 0:
+        # Return empty arrays if no data after filtering
+        return (
+            np.empty((0, 4), dtype=np.float32),
+            np.empty((0, 1), dtype=np.float32)
+        )
+    input_data = masked_data_rows[:, [2, 3, 4, 5]].astype(np.float32)
+    initial_ke = masked_data_rows[:, 0]
+    pass_energy = initial_ke + masked_data_rows[:, 2]
+    output_data = np.log2(pass_energy).reshape(-1, 1).astype(np.float32)
     return input_data, output_data
 
 
@@ -76,24 +58,32 @@ def load_scalers(scalers_path):
         raise FileNotFoundError(f"Scalers file not found at {scalers_path}")
 
 
-def plot_model_results(base_dir, model_dir_name, model_type, data_filepath, pdf_filename=None, sample_size=1000):
+def plot_model_results(base_dir, model_dir_name, model_type, data_filepath, params_dict=None, pdf_filename=None, sample_size=1000):
     # Load the model
     model_path = os.path.join(base_dir, model_dir_name, 'main_model')
     model_type_display = model_type.replace('_', ' ')
     print(model_path, '\n\n\n')
-    # i believe that from config and get config handle the scaling and param values
+
     main_model = tf.keras.models.load_model(model_path, custom_objects={
         'LogTransformLayer': LogTransformLayer,
         'InteractionLayer': InteractionLayer,
         'ScalingLayer': ScalingLayer,
         'TofToEnergyModel': TofToEnergyModel
     })
+
+    # Load scalers
+    main_model.min_values, main_model.max_values = load_scalers(os.path.join(base_dir, model_dir_name, "scalers.pkl"))
     print("Model loaded with min_values:", main_model.min_values)
     print("Model loaded with max_values:", main_model.max_values)
-    print("Model parameters:", main_model.params)
+    main_model.params = params_dict
 
-    # Format model parameters for display
-    params_str = format_model_params(main_model.params)
+    # Get model parameters
+    if hasattr(main_model, 'params') and main_model.params:
+        params = main_model.params
+    else:
+        params = params_dict or {}
+
+    params_str = format_model_params(params)
 
     #print(main_model.min_values, main_model.max_values, main_model.params)
     main_model.min_values, main_model.max_values = load_scalers(os.path.join(base_dir, model_dir_name, "scalers.pkl"))
@@ -272,15 +262,21 @@ def main():
     parser.add_argument('model_dir_name', type=str, help='Model directory name to load and plot results for.')
     parser.add_argument('model_type', type=str, help='Model type (e.g., default, tofs_simple_swish, etc.)')
     parser.add_argument('data_filepath', type=str, help='Path to the data h5 file.')
+    parser.add_argument('--params_line', type=str, help='Model parameters in string format.')
     parser.add_argument('--pdf_filename', type=str, help='Optional PDF filename to save plots.')
     parser.add_argument('--sample_size', type=int, default=20000, help='Number of random samples to plot.')
 
     args = parser.parse_args()
+
+    # Parse the params_line into a dictionary
+    params_dict = parse_params_line(args.params_line)
+
     plot_model_results(
         args.base_dir,
         args.model_dir_name,
         args.model_type,
         args.data_filepath,
+        params_dict=params_dict,
         pdf_filename=args.pdf_filename,
         sample_size=args.sample_size
     )
