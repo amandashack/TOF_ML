@@ -17,7 +17,8 @@ from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 def load_test_data(data_filepath, test_indices):
     with h5py.File(data_filepath, 'r') as hf:
         sorted_indices = sorted(test_indices)
-        data_rows = hf['combined_data'][sorted_indices]
+        data_rows = hf['combined_data'][:]
+        data_rows = data_rows[sorted_indices]
     if data_rows.ndim == 1:
         data_rows = np.expand_dims(data_rows, axis=0)
     mask = data_rows[:, -1].astype(bool)
@@ -77,6 +78,8 @@ def load_scalers(scalers_path):
 
 def plot_model_results(base_dir, model_dir_name, model_type, data_filepath, params_dict=None, pdf_filename=None, sample_size=1000):
     # Load the model
+    scalers_path = '/sdf/scratch/users/a/ajshack/scalers.pkl'  # Path to where scalers are saved
+    indices_path = '/sdf/scratch/users/a/ajshack/data_indices.npz'  # Path to where indices are saved
     model_path = os.path.join(base_dir, model_dir_name, 'main_model')
     model_type_display = model_type.replace('_', ' ')
     print(model_path, '\n\n\n')
@@ -89,10 +92,11 @@ def plot_model_results(base_dir, model_dir_name, model_type, data_filepath, para
     })
 
     # Load scalers
-    main_model.min_values, main_model.max_values = load_scalers(os.path.join(base_dir, model_dir_name, "scalers.pkl"))
+    main_model.min_values, main_model.max_values = load_scalers(scalers_path)
     print("Model loaded with min_values:", main_model.min_values)
     print("Model loaded with max_values:", main_model.max_values)
     main_model.params = params_dict
+    print(params_dict)
 
     # Get model parameters
     if hasattr(main_model, 'params') and main_model.params:
@@ -102,11 +106,7 @@ def plot_model_results(base_dir, model_dir_name, model_type, data_filepath, para
 
     params_str = format_model_params(params)
 
-    #print(main_model.min_values, main_model.max_values, main_model.params)
-    main_model.min_values, main_model.max_values = load_scalers(os.path.join(base_dir, model_dir_name, "scalers.pkl"))
-
     # Load test indices
-    indices_path = os.path.join(base_dir, model_dir_name, 'data_indices.npz')
     indices_data = np.load(indices_path)
     test_indices = indices_data['test_indices']
 
@@ -121,10 +121,10 @@ def plot_model_results(base_dir, model_dir_name, model_type, data_filepath, para
     y_pred = main_model.predict(input_data).flatten()
 
     # Invert transformations
-    energy_pred = 2 ** y_pred
-    energy_true = 2 ** output_data.flatten()
+    energy_pred = y_pred
+    energy_true = output_data.flatten()
     retardation = input_data[:, 0]
-
+    print(retardation.tolist())
     # Create DataFrame
     df_tof = pd.DataFrame({
         'energy_pred': energy_pred,
