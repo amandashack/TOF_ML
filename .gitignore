@@ -84,7 +84,7 @@ ipython_config.py
 
 # pycharm project-specific settings
 .idea/
-
+figures/*
 # slurm output
 
 slurm*
