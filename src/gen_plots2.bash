@@ -28,7 +28,7 @@ for MODEL_DIR in "$BASE_DIR"/*; do
 
             # Generate the PDF plot for the model
             PDF_FILENAME="plots_model_${MODEL_ID}_${MODEL_TYPE}.pdf"
-            python3 analyze_model.py "$BASE_DIR" "$MODEL_DIR_NAME" "$MODEL_TYPE" "$DATA_FILEPATH" --params_line "PARAMS_LINE" --pdf_filename "$PDF_FILENAME"
+            python3 analyze_model.py "$BASE_DIR" "$MODEL_DIR_NAME" "$MODEL_TYPE" "$DATA_FILEPATH" --params_line "$PARAMS_LINE" --pdf_filename "$PDF_FILENAME"
         fi
     fi
 done

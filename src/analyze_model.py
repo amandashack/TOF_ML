@@ -12,7 +12,8 @@ import matplotlib.pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
 from scipy.stats import kurtosis, skew, norm
 from mpl_toolkits.axes_grid1.inset_locator import inset_axes
-
+from matplotlib.colors import LogNorm
+import matplotlib as mpl
 
 def load_test_data(data_filepath, test_indices):
     with h5py.File(data_filepath, 'r') as hf:
@@ -130,7 +131,7 @@ def plot_model_results(base_dir, model_dir_name, model_type, data_filepath, para
         'energy_pred': energy_pred,
         'energy_true': energy_true,
         'energy_residuals': energy_true - energy_pred,
-        'retardation': retardation.flatten()
+        'retardation': np.abs(retardation.flatten())
     })
 
     # Prepare to save plots to PDF if requested
@@ -146,6 +147,8 @@ def plot_model_results(base_dir, model_dir_name, model_type, data_filepath, para
     rmse = np.sqrt(mean_squared_error(df_tof['energy_true'], df_tof['energy_pred']))
     r_squared = r2_score(df_tof['energy_true'], df_tof['energy_pred'])
 
+    #norm = LogNorm(vmin=1, vmax=2000)  # Apply to absolute values
+
     scatter = sns.scatterplot(
         x='energy_pred',
         y='energy_true',
@@ -156,7 +159,8 @@ def plot_model_results(base_dir, model_dir_name, model_type, data_filepath, para
         edgecolor='k',
         linewidth=0.5,
         s=80,
-        ax=ax
+        ax=ax,
+        hue_norm=mpl.colors.Normalize(vmin=1, vmax=2000)
     )
     sns.regplot(
         x='energy_pred',
@@ -201,7 +205,8 @@ def plot_model_results(base_dir, model_dir_name, model_type, data_filepath, para
         edgecolor='k',
         linewidth=0.5,
         s=80,
-        ax=ax
+        ax=ax,
+        hue_norm=mpl.colors.Normalize(vmin=1, vmax=2000)
     )
     ax.set_xlabel('Predicted Energy', fontsize=16)
     ax.set_ylabel('Residuals', fontsize=16)
