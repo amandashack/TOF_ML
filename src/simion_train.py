@@ -1,9 +1,10 @@
 """
 This file is a sandbox for testing/running functions
 """
-from plotter import one_plot_multi_scatter, pass_versus_counts
+#from plotter import one_plot_multi_scatter, pass_versus_counts
 from sklearn.model_selection import train_test_split
 from sklearn.utils import shuffle
+from sklearn.preprocessing import StandardScaler
 import matplotlib.pyplot as plt
 import numpy as np
 from model_gen import run_model
@@ -13,20 +14,54 @@ import tensorflow as tf
 from model_eval import evaluate
 import re
 from loaders.load_and_save import load_from_h5
+import joblib
 
 
-def y0_fit(x_value):
-    y0 = -0.4986 * x_value - 0.5605
-    return y0
-
-
-def preprocess_features(time_of_flight, retardation, mid1, mid2, kinetic_energy):
+def preprocess_features(data):
     # these are already log
-    log_tof = time_of_flight
-    log_ke = np.log(kinetic_energy)
-    residual = log_tof - y0_fit(log_ke)
+    ke = 0
+    ele = 1
+    ret = 2
+    v1 = 3
+    v2 = 4
+    tof = 5
+    ypos = 6
+    m = 7
+    print(data.shape)
+    ATOL = 1e-2      # Absolute tolerance for floating-point comparison
 
-    return np.column_stack((log_tof, residual, retardation, mid1, mid2)), log_ke
+    # Create boolean masks using np.isclose for v1 and v2
+    v1_mask = np.isclose(data[:, v1], 0.11248, atol=ATOL)
+    v2_mask = np.isclose(data[:, v2], 0.1354, atol=ATOL)
+    print(v1_mask[:10], v2_mask[:10], data[:10].tolist())
+    #ret_mask = np.where(data[:, ret] >= 0, 1, 0)
+    vmask = data[:, m].astype(bool)
+    combined_mask = v1_mask & v2_mask & vmask #& ret_mask
+    filtered_data = data[combined_mask]
+    print(filtered_data[:10].tolist())
+    X = filtered_data[:, [ret, tof]]
+    # Apply interaction terms
+    x1 = X[:, 0]
+    x2 = np.log(X[:, 1])
+    interaction_terms = np.column_stack([
+        x1 * x2,
+        x1 ** 2,
+        x2 ** 2,
+        ])
+    processed_input = np.hstack([X, interaction_terms])
+    # Extract output: log(Kinetic Energy)
+    y = np.log(filtered_data[:, ke]).reshape(-1, 1)  # Reshape for scaler
+    
+    # Initialize scalers
+    scaler_X = StandardScaler()
+    scaler_y = StandardScaler()
+    
+    # Fit scalers on the respective data
+    X_scaled = scaler_X.fit_transform(processed_input)
+    y_scaled = scaler_y.fit_transform(y).flatten()  # Flatten to 1D array
+    
+    return X_scaled, y_scaled, scaler_X, scaler_y
+
 
 def run_train(out_path, params, h5_filename):
     """
@@ -44,23 +79,16 @@ def run_train(out_path, params, h5_filename):
     cleaned_combined = combined_array[~nan_mask]
 
     # Split the data into inputs and outputs
-    inputs = cleaned_combined[:, :-1]  # [TOF, retardation, mid1, mid2]
-    outputs = cleaned_combined[:, -1]  # [kinetic_energy]
-
-    inputs_preprocessed, outputs_preprocessed = preprocess_features(inputs[:, 0], inputs[:, 1], inputs[:, 2],
-                                                                    inputs[:, 3], outputs)
-
-    if inputs.shape[0] != outputs.shape[0]:
-        raise ValueError("Mismatch between number of samples in inputs and outputs")
+    inputs_preprocessed, outputs_preprocessed, scaler_x, scaler_y = preprocess_features(cleaned_combined)
 
     # Shuffle the data
-    inputs_preprocessed, outputs_preprocessed = shuffle(inputs_preprocessed, outputs_preprocessed,
-                                                        random_state=42)
-    print(np.unique(inputs_preprocessed[:, 2]))
+    #inputs_preprocessed, outputs_preprocessed = shuffle(inputs_preprocessed, outputs_preprocessed,
+    #                                                    random_state=42)
+    
 
     # Further split the data into training, validation, and test sets
     x_train, x_temp, y_train, y_temp = train_test_split(inputs_preprocessed, outputs_preprocessed,
-                                                        test_size=0.3, random_state=42)
+                                                        test_size=0.25, random_state=42)
     x_val, x_test, y_val, y_test = train_test_split(x_temp, y_temp, test_size=0.5, random_state=42)
 
     # Verify data shapes
@@ -72,12 +100,22 @@ def run_train(out_path, params, h5_filename):
     print(f"y_test shape: {y_test.shape}")
 
     # Train the model
-    model, history = run_model(np.array(x_train), np.array(y_train),
-                               np.array(x_val), np.array(y_val), params)
+    model, history = run_model(x_train, y_train, x_val, y_val, params)
 
-    model.save(out_path)
+    # Ensure the output directory exists
+    os.makedirs(out_path, exist_ok=True)
+    
+    # Save the model (assuming TensorFlow/Keras)
+    model_save_path = os.path.join(out_path, "saved_model")
+    model.save(model_save_path)
+    
+    # Save the scalers for later inverse transformation
+    scaler_path_X = os.path.join(out_path, "scaler_X.joblib")
+    scaler_path_y = os.path.join(out_path, "scaler_y.joblib")
+    joblib.dump(scaler_x, scaler_path_X)
+    joblib.dump(scaler_y, scaler_path_y)
 
-    loss_test = evaluate(model, x_test, y_test, plot=True)
+    loss_test = evaluate(model, x_test, y_test, scaler_y, plot=True)
 
     print(f"test_loss {loss_test}")
 
@@ -87,7 +125,7 @@ if __name__ == '__main__':
     #params = dict((p[i][0], p[i][1]) for i in range(len(p)))
     #output_file_path = sys.argv[1]
     #run_train(output_file_path, params)
-    h5_filename = r"C:\Users\proxi\Documents\coding\TOF_ML\src\simulations\tof_to_energy_data.h5"
-    run_train("/Users/proxi/Documents/coding/TOF_ML/stored_models/test_001/13",
-              {"layer_size": 64, "batch_size": 256, 'dropout': 0.2,
-               'learning_rate': 0.0001, 'optimizer': 'RMSprop'}, h5_filename)
+    h5_filename = r"/sdf/scratch/users/a/ajshack/combined_data_large.h5"
+    run_train("/sdf/scratch/users/a/ajshack/tmox1016823/model_trials/1",
+              {"layer_size": 16, "batch_size": 256, 'dropout': 0.2,
+                  'learning_rate': 0.01, 'optimizer': 'RMSprop'}, h5_filename)

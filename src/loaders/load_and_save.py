@@ -176,7 +176,7 @@ def load_from_h5(filename):
     np.ndarray: The loaded NumPy array.
     """
     with h5py.File(filename, 'r') as h5f:
-        array = h5f['data1'][:]
+        array = h5f['combined_data'][:]
     print(f"Data loaded from {filename}")
     return array
 
@@ -184,8 +184,8 @@ def load_from_h5(filename):
 def read_h5_data(file_path):
     with h5py.File(file_path, 'r') as f:
         data = {}
-        for key in f['data1'].keys():
-            data[key] = f['data1'][key][:]
+        for key in f['combined_data'].keys():
+            data[key] = f['combined_data'][key][:]
     return data
 
 
@@ -201,13 +201,13 @@ def shuffle_h5(filename, out_filename):
         f.create_dataset('data', data=array)
 
 if __name__ == '__main__':
-    h5_filename = r"C:\Users\proxi\Documents\coding\TOF_ML_backup\src\simulations\combined_data.h5"
-    out_filename = r"C:\Users\proxi\Documents\coding\TOF_ML_backup\src\simulations\combined_data_shuffled.h5"
+    h5_filename = r"/sdf/scratch/users/a/ajshack/combined_data_large.h5"
+    #out_filename = r"C:\Users\proxi\Documents\coding\TOF_ML_backup\src\simulations\combined_data_shuffled.h5"
     #shuffle_h5(h5_filename, out_filename)
     #data = np.random.rand(1000, 8)
     with h5py.File(h5_filename, 'r') as hf:
-        data = hf["data"][:256]
-    print(data)
+        data = hf["combined_data"][:256]
+    print(data[:10].tolist())
     gen = DataGenerator(data, batch_size=256)
     for x, y in gen():
         print("Inputs:", x.shape)

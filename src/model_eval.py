@@ -9,17 +9,41 @@ import pandas as pd
 from matplotlib.backends.backend_pdf import PdfPages
 
 
-def evaluate(model, x_test, y_test, plot=True):
-    test_loss = model.evaluate(x_test, y_test, verbose=0)
+
+def evaluate(model, x_test, y_test, scaler_y, plot=True):
+    """
+    Evaluates the trained model on the test set and optionally plots the results.
+
+    Parameters:
+    - model: Trained machine learning model.
+    - x_test (np.ndarray): Scaled test input features.
+    - y_test (np.ndarray): Scaled test outputs.
+    - scaler_y (StandardScaler): Fitted scaler for the output variable.
+    - plot (bool): Whether to generate evaluation plots.
+
+    Returns:
+    - loss_test (float): Evaluation metric (e.g., RMSE).
+    """
+    # Evaluate the model using the scaled test data
+    loss_test = model.evaluate(x_test, y_test, verbose=0)
+    
     if plot:
-        retardation_values = x_test[:, 2]
-        y_pred = model.predict(x_test)
-        y_pred = y_pred.flatten()
-        residuals = y_test - y_pred
+        # Predict on the test data
+        y_pred_scaled = model.predict(x_test).flatten()
+        
+        # Inverse transform the scaled predictions and true values
+        y_pred = scaler_y.inverse_transform(y_pred_scaled.reshape(-1, 1)).flatten()
+        y_true = scaler_y.inverse_transform(y_test.reshape(-1, 1)).flatten()
+        
+        # Calculate residuals
+        residuals = y_true - y_pred
+        
+        # Assume 'retardation' is the first feature in x_test
+        retardation_values = x_test[:, 0]
         df = pd.DataFrame({
-            'y_pred': np.exp(y_pred.tolist()),
-            'y_test': np.exp(y_test.tolist()),
-            'residuals': np.exp(residuals.tolist()),
+            'y_pred': y_pred.tolist(),
+            'y_test': y_test.tolist(),
+            'residuals': residuals.tolist(),
             'retardation': retardation_values.tolist()
         })
 

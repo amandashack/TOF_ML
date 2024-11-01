@@ -67,7 +67,7 @@ def train_tof_to_energy_model(train_gen, val_gen, params, checkpoint_dir):
     model = create_tof_to_energy_model(params, steps_per_execution)
 
     reduce_lr = tf.keras.callbacks.ReduceLROnPlateau(
-        monitor='val_loss', factor=0.1, patience=5, min_lr=1e-4, verbose=1
+        monitor='val_loss', factor=0.1, patience=5, min_lr=1e-7, verbose=1
     )
     early_stop = tf.keras.callbacks.EarlyStopping(
         monitor='val_loss', patience=10, restore_best_weights=True

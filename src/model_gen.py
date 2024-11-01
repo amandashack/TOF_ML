@@ -7,21 +7,6 @@ from tensorflow.keras.optimizers import Adam, SGD, RMSprop
 from tensorflow.keras import Input, Model
 
 
-# Custom loss function to incorporate mask
-def time_of_flight_loss(y_true, y_pred):
-    time_of_flight_true, mask = y_true[:, 0], y_true[:, 2]
-    mask = tf.cast(mask, dtype=tf.float32)
-    loss = tf.square(time_of_flight_true - y_pred)
-    return tf.reduce_mean(mask * loss)
-
-
-def y_tof_loss(y_true, y_pred):
-    y_tof_true, mask = y_true[:, 1], y_true[:, 2]
-    mask = tf.cast(mask, dtype=tf.float32)
-    loss = tf.square(y_tof_true - y_pred)
-    return tf.reduce_mean(mask * loss)
-
-
 def swish(x):
     return x * tf.sigmoid(x)
 
