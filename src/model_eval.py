@@ -25,7 +25,7 @@ def evaluate(model, x_test, y_test, scaler_y, plot=True):
     - loss_test (float): Evaluation metric (e.g., RMSE).
     """
     # Evaluate the model using the scaled test data
-    loss_test = model.evaluate(x_test, y_test, verbose=0)
+    test_loss = model.evaluate(x_test, y_test, verbose=0)
     
     if plot:
         # Predict on the test data

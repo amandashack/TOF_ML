@@ -41,13 +41,13 @@ def preprocess_features(data):
     X = filtered_data[:, [ret, tof]]
     # Apply interaction terms
     x1 = X[:, 0]
-    x2 = np.log(X[:, 1])
+    x2 = np.log2(X[:, 1])
     interaction_terms = np.column_stack([
         x1 * x2,
         x1 ** 2,
         x2 ** 2,
         ])
-    processed_input = np.hstack([X, interaction_terms])
+    processed_input = np.hstack([x1.flatten(), x2.flatten(), interaction_terms])
     # Extract output: log(Kinetic Energy)
     y = np.log(filtered_data[:, ke]).reshape(-1, 1)  # Reshape for scaler
     
@@ -125,6 +125,6 @@ if __name__ == '__main__':
     #output_file_path = sys.argv[1]
     #run_train(output_file_path, params)
     h5_filename = r"/sdf/scratch/users/a/ajshack/combined_data_large.h5"
-    run_train("/sdf/scratch/users/a/ajshack/tmox1016823/model_trials/1",
-              {"layer_size": 16, "batch_size": 256, 'dropout': 0.2,
+    run_train("/sdf/scratch/users/a/ajshack/tmox1016823/model_trials/2",
+              {"layer_size": 16, "batch_size": 256, 'dropout': 0.4,
                   'learning_rate': 0.01, 'optimizer': 'RMSprop'}, h5_filename)
