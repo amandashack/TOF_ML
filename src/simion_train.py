@@ -1,7 +1,6 @@
 """
 This file is a sandbox for testing/running functions
 """
-#from plotter import one_plot_multi_scatter, pass_versus_counts
 from sklearn.model_selection import train_test_split
 from sklearn.utils import shuffle
 from sklearn.preprocessing import StandardScaler

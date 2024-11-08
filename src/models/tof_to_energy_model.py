@@ -5,39 +5,32 @@ from tensorflow.keras.layers import Dense, Dropout, LeakyReLU, BatchNormalizatio
 from tensorflow.keras.callbacks import ReduceLROnPlateau, EarlyStopping, ProgbarLogger
 from tensorflow.keras.optimizers import Adam, SGD, RMSprop
 import os
+from tensorflow.keras.regularizers import l1, l2
 
 
 def create_tof_to_energy_model(params, steps_per_execution):
-    """
-    Model providing function:
-
-    Create Keras model with double curly brackets dropped-in as needed.
-    Return value has to be a valid python dictionary with two customary keys:
-        - loss: Specify a numeric evaluation metric to be minimized
-        - status: Just use STATUS_OK and see hyperopt documentation if not feasible
-    The last one is optional, though recommended, namely:
-        - model: specify the model just created so that we can later use it again.
-    """
     layer_size = int(params['layer_size'])
     dropout_rate = float(params['dropout'])
     learning_rate = float(params['learning_rate'])
     optimizer = params['optimizer']
+    regularization = float(params.get('regularization', 0.01))  # Default regularization
 
     model = Sequential()
 
-    # Input layer
-    model.add(Dense(layer_size, input_shape=(14,)))
+    # Input layer with L2 regularization
+    model.add(Dense(layer_size, input_shape=(14,),
+                    kernel_regularizer=l2(regularization)))
     model.add(LeakyReLU(alpha=0.02))
     model.add(BatchNormalization())
     model.add(Dropout(dropout_rate))
 
-    # Hidden layers
-    model.add(Dense(layer_size * 2))
+    # Hidden layers with L2 regularization
+    model.add(Dense(layer_size * 2, kernel_regularizer=l2(regularization)))
     model.add(LeakyReLU(alpha=0.02))
     model.add(BatchNormalization())
     model.add(Dropout(dropout_rate))
 
-    model.add(Dense(layer_size))
+    model.add(Dense(layer_size, kernel_regularizer=l2(regularization)))
     model.add(Activation('swish'))
     model.add(BatchNormalization())
     model.add(Dropout(dropout_rate))
@@ -45,12 +38,12 @@ def create_tof_to_energy_model(params, steps_per_execution):
     # Output layer
     model.add(Dense(1, activation='linear'))
 
-    # Learning rate scheduling
+    # Optimizer setup
     if optimizer == "Adam":
         optimizer = Adam(learning_rate=learning_rate)
-    if optimizer == "SGD":
+    elif optimizer == "SGD":
         optimizer = SGD(learning_rate=learning_rate)
-    if optimizer == "RMSprop":
+    elif optimizer == "RMSprop":
         optimizer = RMSprop(learning_rate=learning_rate)
     model.compile(loss='mean_squared_error', optimizer=optimizer,
                   steps_per_execution=steps_per_execution)
@@ -67,10 +60,10 @@ def train_tof_to_energy_model(train_gen, val_gen, params, checkpoint_dir):
     model = create_tof_to_energy_model(params, steps_per_execution)
 
     reduce_lr = tf.keras.callbacks.ReduceLROnPlateau(
-        monitor='val_loss', factor=0.1, patience=5, min_lr=1e-7, verbose=1
+        monitor='val_loss', factor=0.2, patience=3, min_lr=1e-6, verbose=1
     )
     early_stop = tf.keras.callbacks.EarlyStopping(
-        monitor='val_loss', patience=10, restore_best_weights=True
+        monitor='val_loss', patience=7, restore_best_weights=True
     )
     checkpoint_path = os.path.join(checkpoint_dir, "main_cp-{epoch:04d}.ckpt")
     checkpoint = tf.keras.callbacks.ModelCheckpoint(
