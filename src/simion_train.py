@@ -1,6 +1,3 @@
-"""
-This file is a sandbox for testing/running functions
-"""
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 import numpy as np
