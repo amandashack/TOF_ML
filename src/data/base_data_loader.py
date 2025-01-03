@@ -1,16 +1,16 @@
-# src/data/base_data_loader.py
 from abc import ABC, abstractmethod
-from typing import Any, Tuple
+from typing import Tuple, Any
+import numpy as np
 import pandas as pd
-
 
 class BaseDataLoader(ABC):
     """
     Abstract base class for data loaders.
-    Each data loader should handle:
-      - Reading raw data from a specified source (file, DB, etc.)
-      - Optional initial preprocessing steps to produce a standardized data format
-      - Returning data in a consistent interface (e.g., a DataFrame or a tuple of (X, y))
+    Each data loader should:
+      - read raw data from a specified source (file, DB, etc.)
+      - parse or compute columns to produce an (N,8) array:
+        [initial_ke, initial_elevation, x_tof, y_tof, mid1_ratio, mid2_ratio, retardation, tof_values]
+      - split_data if needed (optional train/test/val splits).
     """
 
     def __init__(self, config: dict):
@@ -24,18 +24,19 @@ class BaseDataLoader(ABC):
         self.config = config
 
     @abstractmethod
-    def load_data(self) -> Any:
+    def load_data(self) -> np.ndarray:
         """
-        Load the data from the source and return it.
-        The return type should be consistent across implementations:
-          - Could return a pd.DataFrame or (X, y) tuple depending on your pipeline design.
+        Load the data from the source and return a shape (N, 8) numpy array.
+        The columns must be:
+        [initial_ke, initial_elevation, x_tof, y_tof, mid1_ratio, mid2_ratio, retardation, tof_values]
         """
         pass
 
     @abstractmethod
-    def split_data(self, data: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    def split_data(self, data: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         """
         Splits the data into train/test (and optionally validation) sets.
-        Returns tuple: (X_train, X_test, y_train, y_test)
+        Returns a tuple: (X_train, X_test, y_train, y_test), or another format as needed.
         """
         pass
+
