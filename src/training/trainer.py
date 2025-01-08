@@ -1,5 +1,3 @@
-# src/training/trainer.py
-
 import os
 import logging
 import numpy as np
@@ -10,6 +8,9 @@ from tensorflow.keras.callbacks import ModelCheckpoint, EarlyStopping, ReduceLRO
 
 from src.models.model_factory import ModelFactory
 from src.utils.plotting_tools import evaluate_and_plot_test
+from src.data.column_mapping import COLUMN_MAPPING
+
+logger = logging.getLogger('trainer')
 
 
 class Trainer:
@@ -50,29 +51,25 @@ class Trainer:
         self.test_mse = None
 
     def prepare_data(self):
-        """
-        1) Splits df into train/val/test
-        2) Scales if specified
-        3) Adds interaction terms to X_train/X_val/X_test
-           or does any custom transformations.
-        """
-        # 1) Extract arrays from df
         feature_cols = self.training_config["features"]["input_columns"]
         output_col = self.training_config["features"]["output_column"]
 
-        self.logger.info("Select X and y.")
+        # 1) Convert feature names -> indices
+        # e.g. if feature_cols=["retardation","tof"], then indices=[4,5]
+        feature_indices = [COLUMN_MAPPING[f] for f in feature_cols]
 
-        X = self.df[:, [7, 6]]
-        y = self.df[:, 0]
+        # 2) Convert output col -> index
+        output_idx = COLUMN_MAPPING[output_col]
 
-        # 2) Split into train+val vs test
-        test_ratio = self.training_config.get("test_ratio", 0.1)
+        # Suppose self.df is shape (N,8). We map each feature to its column index.
+        X = self.df[:, feature_indices]
+        y = np.log2(self.df[:, output_idx])
+
+        # Then do your train/val/test splits, scaling, etc.
+        test_ratio   = self.training_config.get("test_ratio", 0.1)
         random_state = self.training_config.get("random_state", 42)
-        X_temp, X_test, y_temp, y_test = train_test_split(
-            X, y, test_size=test_ratio, random_state=random_state
-        )
+        X_temp, X_test, y_temp, y_test = train_test_split(X, y, test_size=test_ratio, random_state=random_state)
 
-        # 3) Now split X_temp -> train vs val
         val_ratio = self.training_config.get("val_ratio", 0.2)
         X_train, X_val, y_train, y_val = train_test_split(
             X_temp, y_temp, test_size=val_ratio, random_state=random_state
@@ -96,14 +93,14 @@ class Trainer:
         #    For example, if you want to do log2(X_train[:,0]) * X_train[:,1], etc.
         #    We'll demonstrate a simple function call for each subset.
         if self.training_config["features"].get("generate_interactions", False):
-            X_train = self._add_interactions(X_train)
-            X_val = self._add_interactions(X_val)
-            X_test = self._add_interactions(X_test)
+            X_train = self._add_interactions(X_train, [0])
+            X_val = self._add_interactions(X_val, [0])
+            X_test = self._add_interactions(X_test, [0])
 
         # Store them in class attributes
         self.X_train, self.y_train = X_train, y_train
-        self.X_val, self.y_val = X_val,   y_val
-        self.X_test, self.y_test = X_test,  y_test
+        self.X_val, self.y_val = X_val, y_val
+        self.X_test, self.y_test = X_test, y_test
 
         self.logger.info(f"Data prepared. Train shape: {X_train.shape}, Val shape: {X_val.shape}, Test shape: {X_test.shape}")
 
@@ -203,27 +200,50 @@ class Trainer:
         )
         self.logger.info("Recorded results to Notion DB.")
 
-    def _add_interactions(self, X: np.ndarray) -> np.ndarray:
+    def _add_interactions(self, X: np.ndarray,
+                                log_transform_cols: list[int] = None,
+                                max_degree: int = 2) -> np.ndarray:
         """
-        Example: X has 2 columns => [x1, x2]
-        We'll log2(x1), keep x2 as-is, then add x1*x2, x1^2, x2^2, etc.
-        Return the new array with shape (N, 5).
-        Adjust logic as needed for your data shape.
+        Dynamically create interaction terms up to 'max_degree' for all columns in X.
+        - Optionally log-transform certain columns before generating interactions.
+        - If max_degree=2, we get original columns, squares, and cross-products.
+
+        :param X: shape (N, d)
+        :param log_transform_cols: list of column indices to log-transform
+                                   before generating interactions
+        :param max_degree: up to 2 for squares, cross terms;
+                           can be extended to 3 for cubes, etc.
+        :return: new_X (N, > d) with original & expanded columns.
         """
-        if X.shape[1] < 2:
-            self.logger.warning("X does not have at least 2 columns, skipping interaction terms.")
-            return X
+        if log_transform_cols is None:
+            log_transform_cols = []
 
-        x1 = X[:, 0]
-        x2 = X[:, 1]
+        # 1) Possibly log-transform certain columns
+        X_copy = X.copy()
+        for col_idx in log_transform_cols:
+            # avoid log(0)
+            X_copy[:, col_idx] = np.log2(np.clip(X_copy[:, col_idx], 1e-9, None))
 
-        # log2(x1), keep x2
-        x1_log = np.log2(np.clip(x1, 1e-9, None))  # avoid log(0)
-        interactions = np.column_stack([
-            x1_log * x2,
-            x1_log**2,
-            x2**2
-        ])
-        new_X = np.column_stack([x1_log, x2, interactions])
+        # 2) Start with the original columns
+        features = [X_copy]
+
+        # 3) If max_degree >= 2, add squares & cross-terms
+        #    For each pair (i, j) with i <= j, create X[:,i] * X[:,j].
+        #    That includes squares (i == j).
+        if max_degree >= 2:
+            n_cols = X_copy.shape[1]
+            cross_terms = []
+            for i in range(n_cols):
+                for j in range(i, n_cols):
+                    product_ij = X_copy[:, i] * X_copy[:, j]
+                    cross_terms.append(product_ij.reshape(-1, 1))
+            cross_array = np.hstack(cross_terms) if cross_terms else None
+            if cross_array is not None:
+                features.append(cross_array)
+
+        # 4) If we wanted max_degree=3 for cubes or triple interactions, we could extend further.
+
+        # 5) Concatenate all
+        new_X = np.hstack(features)
         return new_X
 

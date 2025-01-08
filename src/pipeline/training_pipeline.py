@@ -6,6 +6,8 @@ from src.logging.logging_utils import setup_logger
 from src.training.trainer import Trainer
 from src.data.data_filtering import filter_data
 from src.utils.config_utils import load_config
+import datetime
+
 
 def main():
     # 1. Load base config
@@ -31,6 +33,7 @@ def main():
 
     # 6. Load data
     df = data_loader.load_data()
+    df = df[df[:, 6] > 406]
 
     # 7. Filter
     mid1 = loader_params.get("mid1", None)
@@ -54,34 +57,41 @@ def main():
     training_config["features"] = features_config
 
     # 9. Setup logger, DB
-    logger = setup_logger("trainer_logger")
+    logger = setup_logger("trainer")
     logger.info("Setting up the database connection.")
     db_api = DBApi(config_path="config/database_config.yaml")
 
-    # 10. Instantiate Trainer (pass df_filtered)
-    logger.info("Run training.")
+    # 10. Generate a unique subdirectory under base_config["model_output_dir"]
+    base_output_dir = base_config.get("model_output_dir", "./artifacts")
+    # E.g. "2023_10_09_153012" or a random UUID
+    timestamp_str = datetime.datetime.now().strftime("%Y_%m_%d_%H%M%S")
+    unique_subdir = f"run_{timestamp_str}"
+    full_output_path = os.path.join(base_output_dir, unique_subdir)
+
+    # 11. Instantiate Trainer
+    logger.info(f"Creating trainer with output path: {full_output_path}")
     trainer = Trainer(
         model_config=model_config,
         training_config=training_config,
         logger=logger,
         db_api=db_api,
         df=df_filtered,
-        output_path="./artifacts"
+        output_path=full_output_path
     )
 
-    # 11. Prepare data (splits train/val/test, scales, adds interactions)
+    # 12. Prepare data (splits train/val/test, scales, adds interactions)
     trainer.prepare_data()
 
-    # 12. Run training (report best epoch val MSE)
+    # 13. Run training (report best epoch val MSE)
     trainer.run_training()
 
-    # 13. Evaluate on test
+    # 14. Evaluate on test
     trainer.evaluate_model()
 
-    # 14. Record to DB
+    # 15. Record to DB
     trainer.record_to_database(base_config)
 
-    logger.info("Pipeline complete!")
+    logger.info(f"Pipeline complete! Model artifacts stored in: {full_output_path}")
 
 
 if __name__ == "__main__":

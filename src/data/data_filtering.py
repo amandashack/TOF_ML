@@ -16,12 +16,12 @@ def filter_data(
     Expects data of shape (N, 8) with the following columns:
       [0] = initial_ke
       [1] = initial_elevation
-      [2] = x_tof
-      [3] = y_tof
-      [4] = mid1_ratio
-      [5] = mid2_ratio
-      [6] = retardation
-      [7] = tof_values
+      [2] = mid1_ratio
+      [3] = mid2_ratio
+      [4] = retardation
+      [5] = tof_values
+      [6] = x_tof
+      [7] = y_tof
 
     :param data: Numpy array of shape (N, 8)
     :param retardation_range: Optional [low, high] for filtering.
@@ -35,19 +35,19 @@ def filter_data(
     # 1. Retardation range filter
     if retardation_range and len(retardation_range) == 2:
         low, high = retardation_range
-        mask = (data[:, 6] >= low) & (data[:, 6] <= high)
+        mask = (data[:, 4] >= low) & (data[:, 4] <= high)
         data = data[mask]
 
     # 2. mid1 filtering (if needed)
     if mid1 is not None and not isinstance(mid1, str):
         # If the user sets mid1=some_float, filter exactly or by tolerance
         # For exact match:
-        data = data[np.isclose(data[:, 4], mid1)]
+        data = data[np.isclose(data[:, 2], mid1)]
 
     # 3. mid2 filtering (if needed)
     if mid2 is not None and not isinstance(mid2, str):
         # Similarly, exact match or tolerance
-        data = data[np.isclose(data[:, 5], mid2)]
+        data = data[np.isclose(data[:, 3], mid2)]
 
     # 4. Subsampling
     if number_of_samples and number_of_samples < len(data):

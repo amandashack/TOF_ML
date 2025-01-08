@@ -84,12 +84,12 @@ class H5DataLoader(BaseDataLoader):
         data_array = np.column_stack([
             initial_ke,
             initial_elev,
-            x_tof,
-            y_tof,
             mid1_arr,
             mid2_arr,
             ret_array,
-            tof_values
+            tof_values,
+            x_tof,
+            y_tof
         ])
         return data_array
 
@@ -171,7 +171,7 @@ class H5DataLoader(BaseDataLoader):
 
     def split_data(self, data: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         from sklearn.model_selection import train_test_split
-        X = data[:, [0, 2, 3, 4, 5, 7]]  # some subset of columns as features
-        y = data[:, 6]  # treat retardation as the target
+        X = data[:, [0, 1, 2, 3, 4, 6, 7]]  # some subset of columns as features
+        y = data[:, 5]
         return train_test_split(X, y, test_size=0.2, random_state=42)
 

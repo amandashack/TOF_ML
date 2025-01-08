@@ -14,7 +14,7 @@ from src.database.drive_utils import (
 )
 import yaml
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger('trainer')
 
 class DBApi:
     def __init__(self, config_path: str = "config/database_config.yaml"):
@@ -92,6 +92,9 @@ class DBApi:
             },
             "url": {
                 "url": {}
+            },
+            "files": {  # Added 'files' type
+                "files": {}
             }
             # Add more mappings as needed
         }
@@ -120,7 +123,7 @@ class DBApi:
         """
         Records a training run to Notion:
           - config_dict: e.g. entire base config
-          - training_results: e.g. {"final_train_mse": ..., "test_mse": ...}
+          - training_results: e.g. {"val_mse": ..., "test_mse": ...}
           - model_path: path to the final model
           - plot_paths: e.g. { "true_vs_pred": "...", "residuals": "...", ... }
 
@@ -131,7 +134,7 @@ class DBApi:
              and each training result key.
         """
         # Step 1: Define desired properties based on config_dict and training_results
-        desired_properties = self._gather_desired_properties(config_dict, training_results)
+        desired_properties = self._gather_desired_properties(config_dict, training_results, plot_paths)
 
         # Ensure properties exist
         self._ensure_properties_exist(desired_properties)
@@ -147,8 +150,9 @@ class DBApi:
                 if file_id:
                     made_public = make_file_public(file_id)
                     if made_public:
-                        public_url = get_public_link(file_id)
+                        public_url = get_public_link(file_id)  # Should return direct image URL
                         drive_links[plot_name] = public_url
+                        logger.debug(f"Direct image URL for {plot_name}: {public_url}")
             else:
                 logger.warning(f"Plot file not found: {file_path}")
 
@@ -166,8 +170,7 @@ class DBApi:
         try:
             new_page = self.notion_client.pages.create(
                 parent={"database_id": self.notion_db_id},
-                properties=page_properties,
-                children=self._build_image_blocks(drive_links)
+                properties=page_properties
             )
             logger.info(f"Created new Notion page: {new_page['id']}")
             return new_page
@@ -175,7 +178,9 @@ class DBApi:
             logger.error(f"Failed to create new page: {e}")
             raise
 
-    def _gather_desired_properties(self, config_dict: Dict[str, Any], training_results: Dict[str, Any]) -> Dict[str, str]:
+    def _gather_desired_properties(self, config_dict: Dict[str, Any],
+                                   training_results: Dict[str, Any],
+                                   plot_paths: Dict[str, Any]) -> Dict[str, str]:
         """
         Gathers all desired properties with their types based on config and training results.
         :return: Dict where key is property name and value is property type.
@@ -190,12 +195,7 @@ class DBApi:
         # Config properties
         flat_config = self._flatten_config(config_dict)
         for key, val in flat_config.items():
-            if isinstance(val, dict):
-                # Handle nested dictionaries if any remain after flattening
-                for sub_key, sub_val in val.items():
-                    prop_name = f"{key} {sub_key}"
-                    desired[prop_name] = "multi_select" if isinstance(sub_val, list) else "rich_text"
-            elif isinstance(val, list):
+            if isinstance(val, list):
                 prop_name_size = f"{key} size"
                 desired[prop_name_size] = "number"
                 prop_name = f"{key}"
@@ -212,7 +212,7 @@ class DBApi:
         # Plot links
         for plot_name in plot_paths.keys():
             prop_name = f"Plot: {plot_name}"
-            desired[prop_name] = "url"
+            desired[prop_name] = "files"  # Changed from 'url' to 'files'
 
         return desired
 
@@ -306,28 +306,16 @@ class DBApi:
             # e.g. "Plot: true_vs_pred"
             prop_name = f"Plot: {plot_name}"
             props[prop_name] = {
-                "url": url
+                "files": [{
+                    "type": "external",
+                    "name": plot_name,
+                    "external": {
+                        "url": url
+                    }
+                }]
             }
 
         return props
-
-    def _build_image_blocks(self, drive_links: Dict[str, str]):
-        """
-        Optionally embed each image in the Notion page as an 'image' block.
-        """
-        blocks = []
-        for plot_name, link in drive_links.items():
-            blocks.append({
-                "object": "block",
-                "type": "image",
-                "image": {
-                    "type": "external",
-                    "external": {
-                        "url": link
-                    }
-                }
-            })
-        return blocks
 
     def _get_git_commit(self) -> str:
         try:
@@ -342,5 +330,6 @@ class DBApi:
             raise FileNotFoundError(f"Config file not found: {path}")
         with open(path, 'r') as f:
             return yaml.safe_load(f)
+
 
 
