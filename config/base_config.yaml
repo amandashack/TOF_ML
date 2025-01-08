@@ -1,0 +1,73 @@
+# ==============================================================================
+# Base config for training pipeline
+# This file can be updated by the user or read from command line args.
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# 1. DATA LOADING
+#    - The "directory" might determine which loader to use in your code
+#    - Example: If the directory contains "simion" data, it might use SimionDataLoader
+# ------------------------------------------------------------------------------
+# Vandana's continuous data
+# "/sdf/home/v/vkaushik/Sim_csv_files/0.5eV_resolution"
+# "vandana_continuous_nm"
+
+# old discrete data subset
+# C:\Users\proxi\Documents\coding\TOF_data
+# "old_discrete"
+
+data:
+  directory: /Users/proxi/Documents/coding/TOF_data      # Path or identifier to the raw data directory
+  loader_config_key: old_discrete     # The key that indicates which loader block
+  parameters:
+    mid1: none                     # Example metadata param for loader
+    mid2: none                     # Example metadata param for loader
+    retardation_range: none     # Example range
+    number_of_samples: 10000       # Example data size or sampling specification
+
+# ------------------------------------------------------------------------------
+# 2. FEATURE CONFIGURATION
+#    - Which columns are used as features (inputs)
+#    - Which column is the target (output)
+#    - Whether we generate interaction terms
+# ------------------------------------------------------------------------------
+features:
+  input_columns: ['tof', 'retardation']
+  output_column: initial_ke
+  generate_interactions: true
+
+# ------------------------------------------------------------------------------
+# 3. SCALING CONFIGURATION
+#    - If you want to apply a scaler, specify which kind
+#    - Options might include "StandardScaler", "MinMaxScaler", "None"
+# ------------------------------------------------------------------------------
+scaler:
+  type: StandardScaler
+
+# ------------------------------------------------------------------------------
+# 4. TRAINING PARAMETERS
+#    - General training settings (split size, random seed, etc.)
+# ------------------------------------------------------------------------------
+training:
+  test_size: 0.2
+  random_state: 42
+
+# ------------------------------------------------------------------------------
+# 5. MODEL CONFIGURATION
+#    - Which model to use (e.g., "MLPRegressor", "RandomForestRegressor")
+#    - Hyperparameters for that model
+# ------------------------------------------------------------------------------
+model:
+  type: "MLPRegressor"  # or "RandomForestRegressor" in the future
+  params:
+    hidden_layers: [32, 64, 32]   # Example: 3 layers with 32->64->32
+    activations: ['leaky_relu', 'leaky_relu', 'swish']  # corresponding activation per layer
+    learning_rate: 0.001
+    epochs: 50
+    batch_size: 32
+
+# ------------------------------------------------------------------------------
+# 5. MODEL OUTPUT DIRECTORY
+#    - Where would you like to save the model??
+# ------------------------------------------------------------------------------
+model_output_dir: \Users\proxi\Documents\coding\stored_models\test_001

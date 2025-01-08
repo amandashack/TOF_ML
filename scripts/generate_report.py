@@ -1,4 +1,3 @@
-# tof_ml/scripts/generate_report.py
 
 import logging
 import os
@@ -10,7 +9,7 @@ import subprocess
 import requests
 import sys
 
-from src.utils.logging_utils import setup_logging
+from src.logging.logging_utils import setup_logger
 
 # The child data loaders
 from src.data.h5_data_loader import H5DataLoader
@@ -19,13 +18,16 @@ from src.data.nm_csv_data_loader import NMCsvDataLoader
 NOTION_API_URL = "https://api.notion.com/v1/pages"
 NOTION_VERSION = "2022-06-28"  # or stable version date
 
+
 def get_range_or_full(data_column, user_range):
     if user_range is not None:
         return user_range
     return (float(np.min(data_column)), float(np.max(data_column)))
 
+
 def midpoint_of_range(rng):
     return (rng[0] + rng[1]) / 2.0
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Generate Report")
@@ -56,7 +58,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # Set up logging
-    setup_logging(log_file="reports/logs/data_loading.log", level=logging.DEBUG)
+    setup_logger(log_file="reports/logs/data_loading.log", level=logging.DEBUG)
     logger = logging.getLogger("data_loader")
 
     # ------------------------------------------------------------------------
@@ -213,7 +215,7 @@ if __name__ == "__main__":
     plot1_url = None
     plot2_url = None
     if args.upload_drive:
-        from src.utils.google_drive_uploader import (
+        from database.drive_utils import (
             upload_file_to_drive,
             make_file_public,
             get_public_link

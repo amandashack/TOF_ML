@@ -1,0 +1,14 @@
+
+# loader_config.yaml
+# ==============================================================================
+# Contains configurations for each possible data loader in the project
+# ==============================================================================
+
+vandana_continuous_nm:
+  loader_class: src.data.nm_csv_data_loader.NMCsvDataLoader
+
+old_discrete:
+  loader_class: src.data.h5_data_loader.H5DataLoader
+
+OtherData:
+  loader_class: src.data.other_data_loader.OtherDataLoader

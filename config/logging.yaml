@@ -1,0 +1,50 @@
+version: 1
+disable_existing_loggers: false
+
+formatters:
+  standard:
+    format: "%(asctime)s - %(levelname)s - %(name)s - %(message)s"
+    datefmt: "%Y-%m-%d %H:%M:%S"
+
+handlers:
+  console:
+    class: logging.StreamHandler
+    level: INFO
+    formatter: standard
+    stream: ext://sys.stdout
+
+  rotating_file:
+    class: logging.handlers.RotatingFileHandler
+    level: INFO
+    formatter: standard
+    filename: "reports/logs/app.log"
+    maxBytes: 5242880    # 5 MB
+    backupCount: 5
+
+loggers:
+  trainer:
+    level: INFO
+    handlers: [console, rotating_file]
+    propagate: false
+
+  # If you want other named loggers, e.g. "inference"
+  inference:
+    level: DEBUG
+    handlers: [console, rotating_file]
+    propagate: false
+
+  # Suppress or reduce logs from matplotlib
+  matplotlib:
+    level: WARNING
+    handlers: []
+    propagate: false
+
+  matplotlib.font_manager:
+    level: WARNING
+    handlers: []
+    propagate: false
+
+root:
+  level: WARNING
+  handlers: [console]
+

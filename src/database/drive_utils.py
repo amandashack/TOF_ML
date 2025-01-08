@@ -1,7 +1,8 @@
-# src/utils/google_drive_uploader.py
+# src/utils/drive_utils.py
 
 import os
 import logging
+import time
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 from google.auth.transport.requests import Request
@@ -39,14 +40,16 @@ def get_drive_service():
     return service
 
 def upload_file_to_drive(file_path: str, folder_id: str = None) -> str:
-    """
-    Uploads the file at file_path to Google Drive.
-    Optionally provide a folder_id to place the file in a specific folder.
-    Returns the newly created file ID.
-    """
     service = get_drive_service()
+
+    # Generate a unique suffix
+    timestamp = int(time.time())  # or str(uuid.uuid4())
+    base_name = os.path.basename(file_path)
+    unique_name = f"{os.path.splitext(base_name)[0]}_{timestamp}.png"
+    # or .ext if your file is .png
+
     file_metadata = {
-        'name': os.path.basename(file_path)
+        'name': unique_name
     }
     if folder_id:
         file_metadata['parents'] = [folder_id]

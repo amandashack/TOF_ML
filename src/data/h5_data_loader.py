@@ -102,7 +102,7 @@ class H5DataLoader(BaseDataLoader):
         Also skip any file whose filename doesn’t match our required regex pattern.
         Returns a stacked (N,8) array.
         """
-        folder_path = self.config.get('folder_path')
+        folder_path = self.config.get('directory')
         if not folder_path:
             raise ValueError("H5DataLoader requires 'folder_path' in config.")
 
@@ -117,7 +117,7 @@ class H5DataLoader(BaseDataLoader):
             return single_arr
 
         # 2) If parse_data_directories is True, look for subfolders matching R(\d+).
-        parse_dirs = self.config.get("parse_data_directories", False)
+        parse_dirs = self.config.get("parse_data_directories", True)
         all_arrays = []
 
         if parse_dirs:

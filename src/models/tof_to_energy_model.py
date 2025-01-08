@@ -1,89 +1,125 @@
-import numpy as np
+# src/models/mlp_keras_regressor.py
+
 import tensorflow as tf
+from tensorflow.keras import layers
 from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Dense, Dropout, LeakyReLU, BatchNormalization, Activation
-from tensorflow.keras.callbacks import ReduceLROnPlateau, EarlyStopping, ProgbarLogger
+from tensorflow.keras.regularizers import l2
 from tensorflow.keras.optimizers import Adam, SGD, RMSprop
-import os
-from tensorflow.keras.regularizers import l1, l2
 
 
-def create_tof_to_energy_model(params, steps_per_execution):
-    layer_size = int(params['layer_size'])
-    dropout_rate = float(params['dropout'])
-    learning_rate = float(params['learning_rate'])
-    optimizer = params['optimizer']
-    regularization = float(params.get('regularization', 0.01))  # Default regularization
+class MLPKerasRegressor:
+    """
+    A simple Keras-based MLP regressor with a scikit-learn-like interface.
+    Takes hyperparams in __init__ and uses them in fit().
+    """
 
-    model = Sequential()
+    def __init__(
+            self,
+            hidden_layers=[32, 64, 32],
+            activations=["leaky_relu", "leaky_relu", "swish"],
+            learning_rate=1e-3,
+            optimizer_name="Adam",
+            epochs=50,
+            batch_size=32,
+            regularization=0.0,
+            dropout=0.2,
+            **kwargs
+    ):
+        """
+        Store parameters. Build model in _build_model().
+        """
+        self.hidden_layers = hidden_layers
+        self.activations = activations
+        self.learning_rate = learning_rate
+        self.optimizer_name = optimizer_name
+        self.epochs = epochs
+        self.batch_size = batch_size
+        self.regularization = regularization
+        self.dropout = dropout
 
-    # Input layer with L2 regularization
-    model.add(Dense(layer_size, input_shape=(14,),
-                    kernel_regularizer=l2(regularization)))
-    model.add(LeakyReLU(alpha=0.02))
-    model.add(BatchNormalization())
-    model.add(Dropout(dropout_rate))
+        self.model = None
+        self._build_model()
 
-    # Hidden layers with L2 regularization
-    model.add(Dense(layer_size * 2, kernel_regularizer=l2(regularization)))
-    model.add(LeakyReLU(alpha=0.02))
-    model.add(BatchNormalization())
-    model.add(Dropout(dropout_rate))
+    def _build_model(self):
+        """
+        Build a Sequential model using self.hidden_layers, self.activations, etc.
+        """
+        model = Sequential()
 
-    model.add(Dense(layer_size, kernel_regularizer=l2(regularization)))
-    model.add(Activation('swish'))
-    model.add(BatchNormalization())
-    model.add(Dropout(dropout_rate))
+        # Example: input_dim is unknown at init,
+        # so we handle dynamic shape in fit(...) or specify input_shape in constructor.
+        # For simplicity, we won't specify input shape here. Keras can infer on first .fit().
+        for i, (units, act) in enumerate(zip(self.hidden_layers, self.activations)):
+            # If first layer:
+            if i == 0:
+                # We'll just define input_dim in fit() or let Keras infer
+                model.add(layers.Dense(units, kernel_regularizer=l2(self.regularization)))
+            else:
+                model.add(layers.Dense(units, kernel_regularizer=l2(self.regularization)))
 
-    # Output layer
-    model.add(Dense(1, activation='linear'))
+            # Activation
+            if act.lower() == "leaky_relu":
+                model.add(layers.LeakyReLU(alpha=0.02))
+            else:
+                model.add(layers.Activation(act))
 
-    # Optimizer setup
-    if optimizer == "Adam":
-        optimizer = Adam(learning_rate=learning_rate)
-    elif optimizer == "SGD":
-        optimizer = SGD(learning_rate=learning_rate)
-    elif optimizer == "RMSprop":
-        optimizer = RMSprop(learning_rate=learning_rate)
-    model.compile(loss='mean_squared_error', optimizer=optimizer,
-                  steps_per_execution=steps_per_execution)
+            # Optional: dropout
+            if self.dropout > 0:
+                model.add(layers.Dropout(self.dropout))
 
-    return model
+        # Output layer
+        model.add(layers.Dense(1, activation="linear"))
 
+        # Choose optimizer
+        if self.optimizer_name == "Adam":
+            opt = Adam(learning_rate=self.learning_rate)
+        elif self.optimizer_name == "SGD":
+            opt = SGD(learning_rate=self.learning_rate)
+        elif self.optimizer_name == "RMSprop":
+            opt = RMSprop(learning_rate=self.learning_rate)
+        else:
+            raise ValueError(f"Unsupported optimizer {self.optimizer_name}")
 
-def train_tof_to_energy_model(train_gen, val_gen, params, checkpoint_dir):
-    epochs = params.get('epochs', 200)
-    steps_per_epoch = params['steps_per_epoch']
-    validation_steps = params['validation_steps']
-    steps_per_execution = steps_per_epoch // 10
+        model.compile(loss="mse", optimizer=opt)
+        self.model = model
 
-    model = create_tof_to_energy_model(params, steps_per_execution)
+    def fit(self,
+            X,
+            y,
+            validation_data=None,
+            callbacks=None,
+            verbose=1
+        ):
+        """
+        Fit the model using *internal* epochs, batch_size.
+        Accepts optional validation_data, callbacks, verbose.
 
-    reduce_lr = tf.keras.callbacks.ReduceLROnPlateau(
-        monitor='val_loss', factor=0.2, patience=3, min_lr=1e-6, verbose=1
-    )
-    early_stop = tf.keras.callbacks.EarlyStopping(
-        monitor='val_loss', patience=7, restore_best_weights=True
-    )
-    checkpoint_path = os.path.join(checkpoint_dir, "main_cp-{epoch:04d}.ckpt")
-    checkpoint = tf.keras.callbacks.ModelCheckpoint(
-        filepath=checkpoint_path, monitor='val_loss', save_best_only=True,
-        save_weights_only=True, verbose=1
-    )
-    # memory_callback = MemoryUsageCallback()
+        We do *not* allow the user to pass epochs=..., batch_size=...
+        here to avoid TypeError. These are set in the constructor.
+        """
+        if callbacks is None:
+            callbacks = []
 
-    if not os.path.exists(checkpoint_dir):
-        os.makedirs(checkpoint_dir)
+        history = self.model.fit(
+            X,
+            y,
+            epochs=self.epochs,
+            batch_size=self.batch_size,
+            validation_data=validation_data,
+            callbacks=callbacks,
+            verbose=verbose
+        )
+        return history
 
-    history = model.fit(
-        train_gen,
-        epochs=epochs,
-        validation_data=val_gen,
-        steps_per_epoch=steps_per_epoch,
-        validation_steps=validation_steps,
-        callbacks=[reduce_lr, early_stop, checkpoint]
-    )
+    def predict(self, X):
+        """
+        Return predictions as a 1D numpy array.
+        """
+        preds = self.model.predict(X).flatten()
+        return preds
 
-    print(f"early_stop {early_stop.stopped_epoch}")
-    print(f"best_epoch {np.argmin(history.history['val_loss']) + 1}")
-    return model, history
+    def save(self, filepath):
+        """
+        Save the entire model (architecture + weights).
+        """
+        self.model.save(filepath)

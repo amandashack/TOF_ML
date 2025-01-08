@@ -1,6 +1,7 @@
 # personal
 
 token.json
+notion_token.json
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

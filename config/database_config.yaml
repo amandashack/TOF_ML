@@ -1,0 +1,10 @@
+notion:
+  token_file: notion_token.json
+  database_id: 173d57b3c56d80d0924ef2f2d14e5d04
+
+google_drive:
+  folder_id: 1s6n7YgoUoo8DHeYJqyaSR-l_TQlNeTLd
+  scopes:
+    - https://www.googleapis.com/auth/drive.file
+  token_file: token.json
+  client_secret_file: /Users/proxi/Documents/coding/goauth/client_secret_1058501869990-5nnvgvmsqnt61vkns6vd21v15798f8pn.apps.googleusercontent.com.json
