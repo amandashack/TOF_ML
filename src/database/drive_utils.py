@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 SCOPES = ['https://www.googleapis.com/auth/drive.file']
 TOKEN_FILE = 'token.json'  # Where we store user credentials
-CLIENT_SECRET_FILE = r'C:\Users\proxi\Documents\coding\goauth\client_secret_1058501869990-5nnvgvmsqnt61vkns6vd21v15798f8pn.apps.googleusercontent.com.json'
+CLIENT_SECRET_FILE = '/sdf/home/a/ajshack/goauth.json'
 
 def get_drive_service():
     """

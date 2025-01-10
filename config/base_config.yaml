@@ -17,8 +17,8 @@
 # "old_discrete"
 
 data:
-  directory: /Users/proxi/Documents/coding/TOF_data      # Path or identifier to the raw data directory
-  loader_config_key: old_discrete     # The key that indicates which loader block
+  directory: /sdf/home/v/vkaushik/Sim_csv_files/0.5eV_resolution      # Path or identifier to the raw data directory
+  loader_config_key: vandana_continuous_nm     # The key that indicates which loader block
   parameters:
     mid1: none                     # Example metadata param for loader
     mid2: none                     # Example metadata param for loader
@@ -32,7 +32,7 @@ data:
 #    - Whether we generate interaction terms
 # ------------------------------------------------------------------------------
 features:
-  input_columns: ['tof', 'retardation', 'mid1_ratio', 'mid2_ratio', 'elevation']
+  input_columns: ['tof', 'retardation']
   output_column: initial_ke
   generate_interactions: true
 

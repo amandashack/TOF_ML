@@ -33,7 +33,9 @@ def main():
 
     # 6. Load data
     df = data_loader.load_data()
-    df = df[df[:, 6] > 406]
+    print(df, df.shape)
+    #df = df[df[:, 6] > 406]
+    print(df, df.shape)
 
     # 7. Filter
     mid1 = loader_params.get("mid1", None)

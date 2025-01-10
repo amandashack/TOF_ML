@@ -73,12 +73,12 @@ class NMCsvDataLoader(BaseDataLoader):
                     row = [
                         initial_ke,
                         initial_elev,
-                        x_val,
-                        y_val,
                         mid1,
                         mid2,
                         ret,
-                        tof_val
+                        tof_val,
+                        x_val,
+                        y_val
                     ]
                     data_rows.append(row)
                 except ValueError as e:
@@ -90,7 +90,7 @@ class NMCsvDataLoader(BaseDataLoader):
         return np.array(data_rows)
 
     def load_data(self) -> np.ndarray:
-        folder_path = self.config.get('folder_path')
+        folder_path = self.config.get('directory')
         if not folder_path:
             raise ValueError("NMCsvDataLoader requires 'folder_path' in config.")
 
