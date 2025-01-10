@@ -9,9 +9,8 @@ import shutil
 from multiprocessing import Pool, cpu_count
 from collections import defaultdict
 matplotlib.rcParams['pdf.fonttype'] = 42
-from matplotlib.backends.backend_pdf import PdfPages
-sys.path.insert(0, os.path.abspath('..'))
-from voltage_generator import calculateVoltage_NelderMeade
+sys.path.insert(0, os.path.abspath('../..'))
+from tof_ml.simulations.voltage_generator import calculateVoltage_NelderMeade
 from run_simion import parse_and_process_data, runSimion
 from loaders.load_and_save import read_h5_data
 

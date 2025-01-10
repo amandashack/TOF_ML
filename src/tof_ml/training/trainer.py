@@ -6,7 +6,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
 from tensorflow.keras.callbacks import ModelCheckpoint, EarlyStopping, ReduceLROnPlateau
 
-from src.models.model_factory import ModelFactory
+from tof_ml.models.model_factory import ModelFactory
 from src.utils.plotting_tools import evaluate_and_plot_test
 from src.data.column_mapping import COLUMN_MAPPING
 

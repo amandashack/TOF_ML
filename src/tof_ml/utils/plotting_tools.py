@@ -16,7 +16,7 @@ import matplotlib
 matplotlib.rcParams['pdf.fonttype'] = 42
 from pandas.plotting import parallel_coordinates
 import xarray as xr
-sys.path.insert(0, os.path.abspath('..'))
+sys.path.insert(0, os.path.abspath('../..'))
 
 
 def get_cmap(n, name='seismic'):

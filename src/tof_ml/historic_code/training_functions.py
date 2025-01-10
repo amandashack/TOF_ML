@@ -5,7 +5,7 @@ import sys
 import os
 import h5py
 import glob
-sys.path.insert(0, os.path.abspath('..'))
+sys.path.insert(0, os.path.abspath('../..'))
 from loaders.load_and_save import DataGenerator, DataGeneratorWithVeto
 
 

@@ -2,8 +2,8 @@ from PyLTSpice import RawRead
 import os
 import argparse
 import sys
-sys.path.insert(0, os.path.abspath('..'))
-from voltage_generator import *
+sys.path.insert(0, os.path.abspath('../..'))
+from tof_ml.simulations.voltage_generator import *
 from ltspice_runner import *
 import matplotlib.pyplot as plt
 from plotter import get_cmap

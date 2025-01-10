@@ -8,13 +8,11 @@ Created on Jan 30 2014
 import subprocess
 import os
 import argparse
-import re
 import h5py
-import matplotlib.pyplot as plt
 import csv
 import sys
-sys.path.insert(0, os.path.abspath('..'))
-from voltage_generator import calculateVoltage_NelderMeade
+sys.path.insert(0, os.path.abspath('../..'))
+from tof_ml.simulations.voltage_generator import calculateVoltage_NelderMeade
 import time
 import numpy as np
 

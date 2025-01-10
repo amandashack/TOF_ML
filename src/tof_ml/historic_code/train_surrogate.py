@@ -3,7 +3,7 @@ from sklearn.model_selection import KFold
 import re
 from training_functions import *
 import sys
-sys.path.insert(0, os.path.abspath('..'))
+sys.path.insert(0, os.path.abspath('../..'))
 from loaders.load_and_save import DataGenerator, DataGeneratorWithVeto
 from models.surrogate_model import train_main_model
 from models.veto_model import train_veto_model

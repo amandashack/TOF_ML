@@ -1,13 +1,11 @@
 import subprocess
 import re
-import h5py
 from PyLTSpice import RawRead
 import os
 import argparse
-import numpy as np
 import sys
-sys.path.insert(0, os.path.abspath('..'))
-from voltage_generator import *
+sys.path.insert(0, os.path.abspath('../..'))
+from tof_ml.simulations.voltage_generator import *
 
 
 # Function to modify the .cir file with new voltage values

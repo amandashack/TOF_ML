@@ -70,4 +70,4 @@ model:
 # 5. MODEL OUTPUT DIRECTORY
 #    - Where would you like to save the model??
 # ------------------------------------------------------------------------------
-model_output_dir: \Users\proxi\Documents\coding\stored_models\test_001
+model_output_dir: /sdf/scratch/users/a/ajshack/hp_database

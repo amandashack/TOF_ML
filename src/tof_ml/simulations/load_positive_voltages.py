@@ -1,4 +1,3 @@
-import matplotlib.pyplot as plt
 import numpy as np
 import h5py
 import os
@@ -6,14 +5,11 @@ import sys
 import json
 import xarray as xr
 from matplotlib.colors import Normalize
-from scipy.stats import ks_2samp
 from matplotlib.cm import ScalarMappable
-sys.path.insert(0, os.path.abspath('..'))
-from loaders.load_and_save import save_to_h5, load_from_h5
-from loaders.load_xarrays import save_xarray, load_xarray
+sys.path.insert(0, os.path.abspath('../..'))
 #from utils.plotting_tools import plot_imagetool, plot_relation, plot_heatmap, plot_histogram, plot_energy_resolution
 from utils.mask_data import create_mask
-from utils.calculation_tools import calculate_ks_score, normalize_3D
+from tof_ml.utils.calculation_tools import calculate_ks_score, normalize_3D
 from utils.plotting_tools import plot_ks_score
 
 class DS_positive():

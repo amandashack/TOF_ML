@@ -2,9 +2,10 @@ import argparse
 import os
 import numpy as np
 import sys
-sys.path.insert(0, os.path.abspath('..'))
-from voltage_generator import calculateVoltage_NelderMeade
-from run_simion import parse_and_process_data, runSimion, generate_fly2File_lognorm
+sys.path.insert(0, os.path.abspath('../..'))
+from tof_ml.simulations.voltage_generator import calculateVoltage_NelderMeade
+from run_simion import parse_and_process_data, runSimion
+
 
 def generate_fly2File2(filenameToWriteTo, max_energy, numParticles=100, max_angle=3):
 

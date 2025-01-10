@@ -8,7 +8,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import sys
 import os
-sys.path.insert(0, os.path.abspath('..'))
+sys.path.insert(0, os.path.abspath('../..'))
 from loaders.load_and_save import DataGenerator, DataGeneratorWithVeto
 
 def fig_to_pdf_page(fig):

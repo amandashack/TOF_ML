@@ -6,11 +6,10 @@ import sys
 import shutil
 import tempfile
 import time
-import matplotlib.pyplot as plt
-from run_simion import parse_and_process_data, runSimion, generate_fly2File_lognorm
+from run_simion import parse_and_process_data, runSimion
 from ltspice_runner import run_spice_simulation, modify_cir_file, check_currents
-sys.path.insert(0, os.path.abspath('..'))
-from voltage_generator import calculateVoltage_NelderMeade
+sys.path.insert(0, os.path.abspath('../..'))
+from tof_ml.simulations.voltage_generator import calculateVoltage_NelderMeade
 
 
 ResultsDir = r"C:\Users\proxi\Documents\coding\TOF_data"
