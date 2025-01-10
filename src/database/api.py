@@ -37,9 +37,6 @@ class DBApi:
 
         drive_section = self.config.get("google_drive", {})
         self.drive_folder_id = drive_section.get("folder_id")
-        self.drive_scopes = drive_section.get("scopes", ["https://www.googleapis.com/auth/drive.file"])
-        self.drive_token_file = drive_section.get("token_file", "token.json")
-        self.client_secret_file = drive_section.get("client_secret_file")
 
         # Fetch existing properties once during initialization
         self.existing_properties = self._fetch_existing_properties()
