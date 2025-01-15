@@ -6,7 +6,7 @@ import h5py
 from typing import Tuple
 from src.tof_ml.data.base_data_loader import BaseDataLoader
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("trainer")
 
 
 class H5DataLoader(BaseDataLoader):
@@ -129,6 +129,7 @@ class H5DataLoader(BaseDataLoader):
                     entry_path = os.path.join(folder_path, entry)
                     if os.path.isdir(entry_path) and subdir_pattern.match(entry):
                         logger.info(f"Loading data from {entry_path}")
+                        print(f"Loading data from {entry_path}")
                         # Load .h5 files from this subdirectory
                         for fname in os.listdir(entry_path):
                             if fname.endswith('.h5'):
@@ -143,6 +144,7 @@ class H5DataLoader(BaseDataLoader):
                                 arr = self._read_h5_file(full_path)
                                 if arr.size > 0:
                                     all_arrays.append(arr)
+                        print("Done")
             except Exception as e:
                 logger.error(f"Error while parsing subdirectories: {e}")
                 return np.array([])
@@ -166,7 +168,7 @@ class H5DataLoader(BaseDataLoader):
         if not all_arrays:
             logger.warning("No valid .h5 data found.")
             return np.array([])
-
+        print("Returning Array.")
         return np.vstack(all_arrays)  # (N,8)
 
     def split_data(self, data: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:

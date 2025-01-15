@@ -17,8 +17,8 @@
 # "old_discrete"
 
 data:
-  directory: /sdf/home/v/vkaushik/Sim_csv_files/0.5eV_resolution      # Path or identifier to the raw data directory
-  loader_config_key: vandana_continuous_nm     # The key that indicates which loader block
+  directory: C:\Users\proxi\Documents\coding\TOF_data      # Path or identifier to the raw data directory
+  loader_config_key: old_discrete     # The key that indicates which loader block
   parameters:
     mid1: none                     # Example metadata param for loader
     mid2: none                     # Example metadata param for loader
@@ -42,7 +42,7 @@ features:
 #    - Options might include "StandardScaler", "MinMaxScaler", "None"
 # ------------------------------------------------------------------------------
 scaler:
-  type: StandardScaler
+  type: MinMaxScaler
 
 # ------------------------------------------------------------------------------
 # 4. TRAINING PARAMETERS
@@ -60,11 +60,11 @@ training:
 model:
   type: "MLPRegressor"  # or "RandomForestRegressor" in the future
   params:
-    hidden_layers: [16, 34, 16]   # Example: 3 layers with 32->64->32
-    activations: ['leaky_relu', 'leaky_relu', 'swish']  # corresponding activation per layer
-    learning_rate: 0.01
-    epochs: 50
-    batch_size: 32
+    hidden_layers: [5, 10, 5]   # Example: 3 layers with 32->64->32
+    activations: ['leaky_relu', 'leaky_relu', 'leaky_relu']  # corresponding activation per layer
+    learning_rate: 0.1
+    epochs: 100
+    batch_size: 16
 
 # ------------------------------------------------------------------------------
 # 5. MODEL OUTPUT DIRECTORY

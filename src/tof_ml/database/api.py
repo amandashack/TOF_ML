@@ -7,7 +7,7 @@ from typing import Dict, Any
 
 from notion_client import Client
 from notion_client.errors import APIResponseError
-from src.database.drive_utils import (
+from src.tof_ml.database.drive_utils import (
     upload_file_to_drive,
     make_file_public,
     get_public_link,

@@ -6,9 +6,9 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
 from tensorflow.keras.callbacks import ModelCheckpoint, EarlyStopping, ReduceLROnPlateau
 
-from tof_ml.models.model_factory import ModelFactory
-from src.utils.plotting_tools import evaluate_and_plot_test
-from src.data.column_mapping import COLUMN_MAPPING
+from src.tof_ml.models.model_factory import ModelFactory
+from src.tof_ml.utils.plotting_tools import evaluate_and_plot_test
+from src.tof_ml.data.column_mapping import COLUMN_MAPPING
 
 logger = logging.getLogger('trainer')
 
@@ -66,11 +66,11 @@ class Trainer:
         y = np.log2(self.df[:, output_idx])
 
         # Then do your train/val/test splits, scaling, etc.
-        test_ratio   = self.training_config.get("test_ratio", 0.1)
+        test_ratio = self.training_config.get("test_size", 0.2)
         random_state = self.training_config.get("random_state", 42)
         X_temp, X_test, y_temp, y_test = train_test_split(X, y, test_size=test_ratio, random_state=random_state)
 
-        val_ratio = self.training_config.get("val_ratio", 0.2)
+        val_ratio = self.training_config.get("val_size", 0.2)
         X_train, X_val, y_train, y_val = train_test_split(
             X_temp, y_temp, test_size=val_ratio, random_state=random_state
         )

@@ -1,11 +1,11 @@
 # src/pipelines/training_pipeline.py
 import os
 import importlib
-from src.database.api import DBApi
-from src.logging.logging_utils import setup_logger
-from src.training.trainer import Trainer
-from src.data.data_filtering import filter_data
-from src.utils.config_utils import load_config
+from src.tof_ml.database.api import DBApi
+from src.tof_ml.logging.logging_utils import setup_logger
+from src.tof_ml.training.trainer import Trainer
+from src.tof_ml.data.data_filtering import filter_data
+from src.tof_ml.utils.config_utils import load_config
 import datetime
 
 
