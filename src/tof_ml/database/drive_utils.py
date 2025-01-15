@@ -9,8 +9,8 @@ logger = logging.getLogger(__name__)
 
 # Define the scope and path to your service account key file
 SCOPES = ['https://www.googleapis.com/auth/drive.file']
-SERVICE_ACCOUNT_FILE = r'/sdf/home/a/ajshack/TOF_ML/tof-ml-001.json'  # Replace with your service account key file path
-
+#SERVICE_ACCOUNT_FILE = r'/sdf/home/a/ajshack/TOF_ML/tof-ml-001.json'  # Replace with your service account key file path
+SERVICE_ACCOUNT_FILE = r'C:\Users\proxi\Documents\coding\goauth\tof-ml-700027c73907.json'
 def get_drive_service():
     """
     Uses service account credentials to get a Google Drive service object.

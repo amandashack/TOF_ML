@@ -15,7 +15,6 @@ from src.database.drive_utils import (
 import yaml
 
 logger = logging.getLogger('trainer')
-
 class DBApi:
     def __init__(self, config_path: str = "config/database_config.yaml"):
         self.config = self._load_config(config_path)
@@ -327,6 +326,7 @@ class DBApi:
             raise FileNotFoundError(f"Config file not found: {path}")
         with open(path, 'r') as f:
             return yaml.safe_load(f)
+
 
 
 
