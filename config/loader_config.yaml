@@ -5,10 +5,13 @@
 # ==============================================================================
 
 vandana_continuous_nm:
-  loader_class: src.data.nm_csv_data_loader.NMCsvDataLoader
+  loader_class: src.tof_ml.data.nm_csv_data_loader.NMCsvDataLoader
+  loader_type: csv
 
 old_discrete:
-  loader_class: src.data.h5_data_loader.H5DataLoader
+  loader_class: src.tof_ml.data.h5_data_loader.H5DataLoader
+  loader_type: h5
 
 OtherData:
   loader_class: src.data.other_data_loader.OtherDataLoader
+  loader_type: otherloadertype

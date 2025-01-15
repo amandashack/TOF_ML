@@ -40,14 +40,13 @@ def filter_data(
 
     # 2. mid1 filtering (if needed)
     if mid1 is not None and not isinstance(mid1, str):
-        # If the user sets mid1=some_float, filter exactly or by tolerance
-        # For exact match:
-        data = data[np.isclose(data[:, 2], mid1)]
+        low, high = mid1
+        data = data[(data[:, 2] >= low) & (data[:, 2] <= high)]
 
     # 3. mid2 filtering (if needed)
     if mid2 is not None and not isinstance(mid2, str):
-        # Similarly, exact match or tolerance
-        data = data[np.isclose(data[:, 3], mid2)]
+        low, high = mid2
+        data = data[(data[:, 3] >= low) & (data[:, 3] <= high)]
 
     # 4. Subsampling
     if number_of_samples and number_of_samples < len(data):

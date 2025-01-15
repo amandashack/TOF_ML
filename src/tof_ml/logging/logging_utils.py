@@ -3,6 +3,7 @@ import os
 import sys
 from logging.handlers import RotatingFileHandler
 import yaml
+import logging.config
 
 
 def setup_logger(name: str, config_path: str = "config/logging.yaml") -> logging.Logger:

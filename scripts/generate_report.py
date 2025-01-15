@@ -4,16 +4,17 @@ import os
 import argparse
 import numpy as np
 import matplotlib.pyplot as plt
-import datetime
+from datetime import datetime
 import subprocess
 import requests
 import sys
-
-from src.logging.logging_utils import setup_logger
-
-# The child data loaders
-from src.data.h5_data_loader import H5DataLoader
-from src.data.nm_csv_data_loader import NMCsvDataLoader
+import yaml
+import json
+from notion_client import Client
+from notion_client.errors import APIResponseError
+from src.tof_ml.logging.logging_utils import setup_logger
+from src.tof_ml.data.data_filtering import filter_data
+from src.tof_ml.database.drive_utils import upload_file_to_drive, make_file_public, get_public_link
 
 NOTION_API_URL = "https://api.notion.com/v1/pages"
 NOTION_VERSION = "2022-06-28"  # or stable version date
@@ -29,12 +30,33 @@ def midpoint_of_range(rng):
     return (rng[0] + rng[1]) / 2.0
 
 
+def load_config(config_path: str) -> dict:
+    if not os.path.exists(config_path):
+        raise FileNotFoundError(f"Config file not found: {config_path}")
+    with open(config_path, "r") as f:
+        return yaml.safe_load(f)
+
+def merge_configs(base_config: dict, cli_args: dict) -> dict:
+    """
+    Merge CLI arguments into the base configuration.
+    CLI arguments override values in the base configuration.
+    """
+    for key, value in cli_args.items():
+        if value is not None:
+            parts = key.split(".")
+            target = base_config
+            for part in parts[:-1]:
+                target = target.setdefault(part, {})
+            target[parts[-1]] = value
+    return base_config
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Generate Report")
     parser.add_argument("--loader_type", type=str, default="nm_csv",
                         choices=["nm_csv", "h5"],
                         help="Which data loader to use: 'nm_csv' or 'h5'")
-    parser.add_argument("--data_dir", type=str, required=True,
+    parser.add_argument("--data_dir", type=str,
                         help="Path to the directory containing your files.")
 
     # New arguments
@@ -58,56 +80,42 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # Set up logging
-    setup_logger(log_file="reports/logs/data_loading.log", level=logging.DEBUG)
+    setup_logger("data_loader")
     logger = logging.getLogger("data_loader")
 
-    # ------------------------------------------------------------------------
-    # LOGICAL CHECKS FOR ARGUMENTS
-    # ------------------------------------------------------------------------
-    if args.upload_drive:
-        # Must have --filepath to save local PNGs before upload
-        if not args.filepath:
-            logger.error("You must provide --filepath if you want to use --upload_drive.")
-            sys.exit(1)
-        # Must also have --drive_folder_id
-        if not args.drive_folder_id:
-            logger.error("You must provide --drive_folder_id if you want to upload to Google Drive.")
-            sys.exit(1)
+    # 1. Load base config
+    base_config = load_config("config/data_report_config.yaml")
 
+    # 2. loader_config
+    loader_config = load_config("config/loader_config.yaml")
+
+    # 3. database_config
+    database_config = load_config("config/database_config.yaml")
+
+    # Merge CLI arguments into config
+    if args.data_dir:
+        base_config["data"]["directory"] = args.data_dir
+    if args.filepath:
+        base_config["plotting"]["filepath"] = args.filepath
     if args.notion:
-        # If we want to insert record with real plot links in Notion, we need local plots -> Drive -> URL
-        # That implies we need --filepath, --upload_drive, and --drive_folder_id
-        if not args.filepath:
-            logger.error("You must provide --filepath if you want to use --notion (for plot images).")
-            sys.exit(1)
-        if not args.upload_drive:
-            logger.error("You must provide --upload_drive if you want to use --notion (for actual plot images).")
-            sys.exit(1)
-        if not args.drive_folder_id:
-            logger.error("You must provide --drive_folder_id if you want to upload images for Notion.")
-            sys.exit(1)
+        base_config["notion"]["enabled"] = args.notion
+    if args.upload_drive:
+        base_config["google_drive"]["upload_drive"] = args.upload_drive
 
     # ------------------------------------------------------------------------
     # PICK LOADER AND LOAD DATA
     # ------------------------------------------------------------------------
-    if args.loader_type == "h5":
-        LoaderClass = H5DataLoader
-        loader_config = {
-            "folder_path": args.data_dir,
-            "h5_file": args.h5_file,
-            "parse_data_directories": args.parse_data_directories
-        }
-    else:
-        LoaderClass = NMCsvDataLoader
-        loader_config = {
-            "folder_path": args.data_dir
-            # Possibly other config for CSV...
-        }
+    # Determine loader
+    loader_key = base_config["data"]["loader_config_key"]
+    loader_class_path = loader_config[loader_key]["loader_class"]
+    module_name, class_name = loader_class_path.rsplit(".", 1)
+    loader_module = __import__(module_name, fromlist=[class_name])
+    LoaderClass = getattr(loader_module, class_name)
 
-    loader = LoaderClass(loader_config)
+    # Initialize loader
+    loader = LoaderClass(config=base_config["data"])
     logger.info("Loading data...")
-    data = loader.load_data()  # shape (N, 8)
-
+    data = loader.load_data()
     if data.size == 0:
         logger.error("No data loaded. Exiting.")
         sys.exit(1)
@@ -115,42 +123,55 @@ if __name__ == "__main__":
     # Columns:
     # 0: initial_ke
     # 1: initial_elevation
-    # 2: x_tof
-    # 3: y_tof
-    # 4: mid1_ratio
-    # 5: mid2_ratio
-    # 6: retardation
-    # 7: tof_values
+    # 2: mid1_ratio
+    # 3: mid2_ratio
+    # 4: retardation
+    # 5: tof_values
+    # 6: x_tof
+    # 7: y_tof
 
     # APPLY FILTERS
     logger.info("Applying Data Filters...")
-    mid1_range = get_range_or_full(data[:, 4], args.mid1_ratio)
-    mid2_range = get_range_or_full(data[:, 5], args.mid2_ratio)
-    retard_range = get_range_or_full(data[:, 6], args.retardation)
-
-    data = data[(data[:, 4] >= mid1_range[0]) & (data[:, 4] <= mid1_range[1])]
-    data = data[(data[:, 5] >= mid2_range[0]) & (data[:, 5] <= mid2_range[1])]
-    data = data[(data[:, 6] >= retard_range[0]) & (data[:, 6] <= retard_range[1])]
+    loader_params = base_config['data']['parameters']
+    mid1 = loader_params.get("mid1", None)
+    if mid1 is None:
+        mid1 = [float(np.min(data[:, 2])), float(np.max(data[:, 2]))]
+    mid2 = loader_params.get("mid2", None)
+    if mid2 is None:
+        mid2 = [float(np.min(data[:, 3])), float(np.max(data[:, 3]))]
+    retardation_range = loader_params.get("retardation_range", None)
+    if retardation_range is None:
+        retardation_range = [float(np.min(data[:, 4])), float(np.max(data[:, 4]))]
+    number_of_samples = loader_params.get("number_of_samples", None)
+    df_filtered = filter_data(
+        data,
+        retardation_range=None if retardation_range == "none" else retardation_range,
+        mid1=None if mid1 == "none" else mid1,
+        mid2=None if mid2 == "none" else mid2,
+        number_of_samples=number_of_samples if number_of_samples else None,
+        random_state=42
+    )
 
     if data.size == 0:
         logger.warning("After filtering, no data remains.")
         sys.exit(0)
 
-    if args.n_samples is not None and args.n_samples < len(data):
-        indices = np.random.choice(len(data), args.n_samples, replace=False)
+    n_samples = loader_params['number_of_samples']
+    if n_samples is not None and n_samples < len(data):
+        indices = np.random.choice(len(data), n_samples, replace=False)
         data = data[indices, :]
 
     # Decide which energy to plot
-    if args.pass_energy:
-        energy_to_plot = data[:, 0] + data[:, 6]  # initial_ke + retardation
+    if base_config['plotting']['pass_energy']:
+        energy_to_plot = data[:, 0] + data[:, 4]  # initial_ke + retardation
         energy_label = "Pass Energy"
     else:
         energy_to_plot = data[:, 0]  # initial_ke
         energy_label = "Initial Kinetic Energy"
 
-    tof = data[:, 7]
-    retardation_vals = data[:, 6]
-    x_tof = data[:, 2]
+    tof = data[:, 5]
+    retardation_vals = data[:, 4]
+    x_tof = data[:, 6]
 
     # ------------------------------------------------------
     # PLOT 1: Before masking (x_tof > 406 not removed)
@@ -165,9 +186,9 @@ if __name__ == "__main__":
     cbar = plt.colorbar(scatter)
     cbar.set_label('Retardation')
 
-    if args.filepath:
-        os.makedirs(args.filepath, exist_ok=True)
-        plot1_path = os.path.join(args.filepath, "ke_vs_tof_before_masking.png")
+    if base_config['plotting']['filepath']:
+        os.makedirs(base_config['plotting']['filepath'], exist_ok=True)
+        plot1_path = os.path.join(base_config['plotting']['filepath'], "ke_vs_tof_before_masking.png")
         plt.savefig(plot1_path)
         plt.close()
     else:
@@ -177,12 +198,12 @@ if __name__ == "__main__":
     # ------------------------------------------------------
     # PLOT 2: After masking x_tof >= 406
     # ------------------------------------------------------
-    masked_data = data[data[:, 2] >= 406]
+    masked_data = data[data[:, 6] >= 406]
     if masked_data.size > 0:
-        tof_masked = masked_data[:,  7]
-        ret_masked = masked_data[:, 6]
+        tof_masked = masked_data[:, 5]
+        ret_masked = masked_data[:, 4]
         if args.pass_energy:
-            energy_masked = masked_data[:, 0] + masked_data[:, 6]
+            energy_masked = masked_data[:, 0] + masked_data[:, 4]
         else:
             energy_masked = masked_data[:, 0]
 
@@ -196,8 +217,8 @@ if __name__ == "__main__":
         cbar = plt.colorbar(scatter)
         cbar.set_label('Retardation')
 
-        if args.filepath:
-            plot2_path = os.path.join(args.filepath, "ke_vs_tof_after_masking.png")
+        if base_config['plotting']['filepath']:
+            plot2_path = os.path.join(base_config['plotting']['filepath'], "ke_vs_tof_after_masking.png")
             plt.savefig(plot2_path)
             plt.close()
         else:
@@ -214,13 +235,8 @@ if __name__ == "__main__":
     # ------------------------------------------------------
     plot1_url = None
     plot2_url = None
-    if args.upload_drive:
-        from database.drive_utils import (
-            upload_file_to_drive,
-            make_file_public,
-            get_public_link
-        )
-        folder_id = args.drive_folder_id
+    if base_config['google_drive']['upload_drive']:
+        folder_id = database_config['google_drive']['folder_id']
 
         # Attempt uploading first plot
         if plot1_path:
@@ -238,104 +254,107 @@ if __name__ == "__main__":
 
     else:
         # If not uploading, provide local file paths or placeholders
-        if plot1_path:
-            plot1_url = f"file://{os.path.abspath(plot1_path)}"
-        else:
-            plot1_url = "https://example.com/no_plot1.png"
-
-        if plot2_path:
-            plot2_url = f"file://{os.path.abspath(plot2_path)}"
-        else:
-            plot2_url = "https://example.com/no_plot2.png"
+        logger.warning("No files were uploaded to google drive")
 
     # ------------------------------------------------------
     # NOTION INTEGRATION
     # ------------------------------------------------------
-    if args.notion:
-        notion_token = "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"
-        database_id = "160d57b3c56d808986eed4a41b7e5512"
+    if base_config['notion']['enabled']:
+        notion_section = database_config.get("notion", {})
+        token_file = notion_section.get("token_file", "notion_token.json")
+        notion_db_id = notion_section.get("database_id")
 
-        current_date = datetime.date.today().isoformat()
+        if not os.path.exists(token_file):
+            raise FileNotFoundError(f"Notion token file not found: {token_file}")
+
+        with open(token_file, "r") as f:
+            data = json.load(f)
+        notion_token = data.get("token")
+        if not notion_token:
+            raise ValueError("No 'token' found in notion_token.json.")
+
+        notion_client = Client(auth=notion_token)
+
+        current_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         try:
             commit_id = subprocess.check_output(['git', 'rev-parse', 'HEAD']).strip().decode()
         except Exception:
             commit_id = "unknown_commit"
 
-        fpath = args.filepath
-        file_type = "h5" if args.loader_type == "h5" else "csv"
+        fpath = base_config['plotting']['filepath']
+        file_type = loader_config[loader_key]['loader_type']
         loader_name = LoaderClass.__name__
 
-        # Compute midpoints for storing
-        mid1_val = midpoint_of_range(mid1_range)
-        mid2_val = midpoint_of_range(mid2_range)
-        retard_val = midpoint_of_range(retard_range)
-
-        headers = {
-            "Authorization": f"Bearer {notion_token}",
-            "Notion-Version": NOTION_VERSION,
-            "Content-Type": "application/json"
-        }
-
         payload = {
-            "parent": {"database_id": database_id},
-            "properties": {
+            "date": {
                 "date": {
-                    "date": {"start": current_date}
-                },
-                "git commit ID": {
-                    "rich_text": [{
-                        "text": {"content": commit_id}
-                    }]
-                },
-                "file path": {
-                    "title": [{
-                        "text": {"content": fpath}
-                    }]
-                },
-                "file type": {
-                    "rich_text": [{
-                        "text": {"content": file_type}
-                    }]
-                },
-                "loader": {
-                    "rich_text": [{
-                        "text": {"content": loader_name}
-                    }]
-                },
-                "mid1_ratio": {
-                    "number": mid1_val
-                },
-                "mid2_ratio": {
-                    "number": mid2_val
-                },
-                "retardation": {
-                    "number": retard_val
-                },
-                "plot1": {
-                    "files": [{
+                    "start": current_date  # Ensure ISO 8601 format
+                }
+            },
+            "git commit ID": {
+                "rich_text": [
+                    {
+                        "text": {"content": str(commit_id)}
+                    }
+                ]
+            },
+            "file path": {
+                "title": [
+                    {
+                        "text": {"content": str(fpath)}
+                    }
+                ]
+            },
+            "file type": {
+                "rich_text": [
+                    {
+                        "text": {"content": str(file_type)}
+                    }
+                ]
+            },
+            "loader": {
+                "rich_text": [
+                    {
+                        "text": {"content": str(loader_name)}
+                    }
+                ]
+            },
+            "mid1 ratio": {
+                "multi_select": [{"name": str(value)} for value in mid1]
+            },
+            "mid2 ratio": {
+                "multi_select": [{"name": str(value)} for value in mid2]
+            },
+            "retardation": {
+                "multi_select": [{"name": str(value)} for value in retardation_range]
+            },
+            "plot1": {
+                "files": [
+                    {
                         "type": "external",
                         "name": "plot1",
-                        "external": {
-                            "url": plot1_url
-                        }
-                    }]
-                },
-                "plot2": {
-                    "files": [{
+                        "external": {"url": str(plot1_url)}
+                    }
+                ]
+            },
+            "plot2": {
+                "files": [
+                    {
                         "type": "external",
                         "name": "plot2",
-                        "external": {
-                            "url": plot2_url
-                        }
-                    }]
-                }
+                        "external": {"url": str(plot2_url)}
+                    }
+                ]
             }
         }
 
-        response = requests.post(NOTION_API_URL, headers=headers, json=payload)
-        if response.status_code in (200, 201):
-            logger.info("Record successfully inserted into Notion database.")
-        else:
-            logger.error(
-                f"Failed to insert record into Notion. Status: {response.status_code}, Response: {response.text}"
+        # Step 4: Create page in Notion
+        try:
+            new_page = notion_client.pages.create(
+                parent={"database_id": notion_db_id},
+                properties=payload
             )
+            logger.info(f"Created new Notion page: {new_page['id']}")
+        except APIResponseError as e:
+            logger.error(f"Failed to create new page: {e}")
+            raise
