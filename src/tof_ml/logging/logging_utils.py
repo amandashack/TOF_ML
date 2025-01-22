@@ -6,7 +6,7 @@ import yaml
 import logging.config
 
 
-def setup_logger(name: str, config_path: str = "config/logging.yaml") -> logging.Logger:
+def setup_logger(config_path: str = "config/logging.yaml") -> logging.Logger:
     """
     Sets up logging from a YAML config and returns a named logger.
     """
@@ -20,5 +20,5 @@ def setup_logger(name: str, config_path: str = "config/logging.yaml") -> logging
     logging.config.dictConfig(log_config)
 
     # Return the logger with the specified name (e.g. "trainer")
-    return logging.getLogger(name)
+    return logging.getLogger(__name__)
 

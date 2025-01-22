@@ -23,21 +23,35 @@ data:
     mid1: none                     # Example metadata param for loader
     mid2: none                     # Example metadata param for loader
     retardation_range: none     # Example range
-    number_of_samples: 10000       # Example data size or sampling specification
+    number_of_samples: 100000       # Example data size or sampling specification
+
+# ------------------------------------------------------------------------
+# 2. DATA SPLITTING CONFIGURATION
+#    - Which approach to use for splitting (e.g. UniformSplitter, SubsetSplitter)
+#    - Parameters relevant to each approach
+# ------------------------------------------------------------------------
+data_splitting:
+  type: SubsetSplitter
+  subset_column: initial_ke
+  subset_values: [1, 10, 100, 500]
+  train_fraction_for_subset: 0.6
+  val_fraction: 0.2
+  test_fraction: 0.2
+  random_state: 42
 
 # ------------------------------------------------------------------------------
-# 2. FEATURE CONFIGURATION
+# 3. FEATURE CONFIGURATION
 #    - Which columns are used as features (inputs)
 #    - Which column is the target (output)
 #    - Whether we generate interaction terms
 # ------------------------------------------------------------------------------
 features:
-  input_columns: ['tof', 'retardation']
+  input_columns: ['tof', 'mid1', 'mid2', 'retardation']
   output_column: initial_ke
   generate_interactions: true
 
 # ------------------------------------------------------------------------------
-# 3. SCALING CONFIGURATION
+# 4. SCALING CONFIGURATION
 #    - If you want to apply a scaler, specify which kind
 #    - Options might include "StandardScaler", "MinMaxScaler", "None"
 # ------------------------------------------------------------------------------
@@ -45,7 +59,7 @@ scaler:
   type: MinMaxScaler
 
 # ------------------------------------------------------------------------------
-# 4. TRAINING PARAMETERS
+# 5. TRAINING PARAMETERS
 #    - General training settings (split size, random seed, etc.)
 # ------------------------------------------------------------------------------
 training:
@@ -53,21 +67,21 @@ training:
   random_state: 42
 
 # ------------------------------------------------------------------------------
-# 5. MODEL CONFIGURATION
+# 6. MODEL CONFIGURATION
 #    - Which model to use (e.g., "MLPRegressor", "RandomForestRegressor")
 #    - Hyperparameters for that model
 # ------------------------------------------------------------------------------
 model:
   type: "MLPRegressor"  # or "RandomForestRegressor" in the future
   params:
-    hidden_layers: [5, 10, 5]   # Example: 3 layers with 32->64->32
-    activations: ['leaky_relu', 'leaky_relu', 'leaky_relu']  # corresponding activation per layer
-    learning_rate: 0.1
+    hidden_layers: [16, 16, 16, 16, 16]   # Example: 3 layers with 32->64->32
+    activations: ['relu', 'relu', 'relu', 'relu', 'relu']  # corresponding activation per layer
+    learning_rate: 0.05
     epochs: 100
-    batch_size: 16
+    batch_size: 32
 
 # ------------------------------------------------------------------------------
-# 5. MODEL OUTPUT DIRECTORY
+# 7. MODEL OUTPUT DIRECTORY
 #    - Where would you like to save the model??
 # ------------------------------------------------------------------------------
 model_output_dir: /sdf/scratch/users/a/ajshack/hp_database

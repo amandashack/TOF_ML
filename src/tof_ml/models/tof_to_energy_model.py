@@ -21,7 +21,7 @@ class MLPKerasRegressor:
             optimizer_name="Adam",
             epochs=50,
             batch_size=32,
-            regularization=0.0,
+            regularization=0.01,
             dropout=0.2,
             **kwargs
     ):
@@ -36,7 +36,6 @@ class MLPKerasRegressor:
         self.batch_size = batch_size
         self.regularization = regularization
         self.dropout = dropout
-
         self.model = None
         self._build_model()
 
@@ -84,8 +83,7 @@ class MLPKerasRegressor:
         self.model = model
 
     def fit(self,
-            X,
-            y,
+            train_gen,
             validation_data=None,
             callbacks=None,
             verbose=1
@@ -101,8 +99,7 @@ class MLPKerasRegressor:
             callbacks = []
 
         history = self.model.fit(
-            X,
-            y,
+            train_gen,
             epochs=self.epochs,
             batch_size=self.batch_size,
             validation_data=validation_data,

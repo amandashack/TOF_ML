@@ -1,7 +1,6 @@
 from abc import ABC, abstractmethod
-from typing import Tuple, Any
 import numpy as np
-import pandas as pd
+from src.tof_ml.data.column_mapping import COLUMN_MAPPING
 
 class BaseDataLoader(ABC):
     """
@@ -22,6 +21,7 @@ class BaseDataLoader(ABC):
           - parameters for data splits
         """
         self.config = config
+        self.column_mapping = COLUMN_MAPPING
 
     @abstractmethod
     def load_data(self) -> np.ndarray:
@@ -29,14 +29,6 @@ class BaseDataLoader(ABC):
         Load the data from the source and return a shape (N, 8) numpy array.
         The columns must be:
         [initial_ke, initial_elevation, x_tof, y_tof, mid1_ratio, mid2_ratio, retardation, tof_values]
-        """
-        pass
-
-    @abstractmethod
-    def split_data(self, data: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-        """
-        Splits the data into train/test (and optionally validation) sets.
-        Returns a tuple: (X_train, X_test, y_train, y_test), or another format as needed.
         """
         pass
 

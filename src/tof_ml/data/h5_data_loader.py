@@ -5,8 +5,9 @@ import numpy as np
 import h5py
 from typing import Tuple
 from src.tof_ml.data.base_data_loader import BaseDataLoader
+from src.tof_ml.data.preprocessor import DataPreprocessor
 
-logger = logging.getLogger("trainer")
+logger = logging.getLogger(__name__)
 
 
 class H5DataLoader(BaseDataLoader):
@@ -20,6 +21,53 @@ class H5DataLoader(BaseDataLoader):
         r"^sim_(neg|pos)_R(\d+)_(neg|pos)_(\d+(?:\.\d+)?)_(neg|pos)_(\d+(?:\.\d+)?)_(\d+)\.h5$"
     )
     retardation_pattern = re.compile(r"sim_(neg|pos)_R(-?\d+)_")
+
+    def __init__(self, config):
+        super().__init__(config)
+        # Optionally create the preprocessor if your config says to do so:
+        preprocess_config = config.get("preprocessing", {})
+        self.preprocessor = DataPreprocessor(preprocess_config) if preprocess_config else None
+
+    def load_data(self) -> np.ndarray:
+        """
+        Same as before, but you may want to do:
+         - read .h5
+         - create (N,8) array
+         - separate X,y columns
+         - call self.preprocessor.fit_transform or transform
+         - return final X,y or combined array
+        """
+        raw_data = self._collect_h5_data()
+
+        feature_cols = self.config["features"]["input_columns"]
+        output_col = self.config["features"]["output_column"]
+
+        # 1) Convert feature names -> indices
+        # e.g. if feature_cols=["retardation","tof"], then indices=[4,5]
+        feature_indices = [self.column_mapping[f] for f in feature_cols]
+
+        # 2) Convert output col -> index
+        output_idx = self.column_mapping[output_col]
+        X = raw_data[:, feature_indices]
+        y = raw_data[:, output_idx].reshape(-1, 1)
+
+        local_col_mapping = {}
+        for idx, col_name in enumerate(feature_cols):
+            local_col_mapping[col_name] = idx
+        local_col_mapping[output_col] = X.shape[1]  # last column index
+        logger.info('Global column mapping: ', self.column_mapping)
+        self.column_mapping = local_col_mapping
+        logger.info('New column mapping: ', self.column_mapping)
+
+        if self.preprocessor:
+            X_trans, y_trans = self.preprocessor.fit_transform(X, y)
+
+            # Optionally stack back up
+            data_processed = np.column_stack([X_trans, y_trans])
+
+            return data_processed
+        else:
+            return np.column_stack([X, y])
 
     def _parse_ratios_from_filename(self, filename: str) -> Tuple[float, float]:
         """
@@ -93,7 +141,7 @@ class H5DataLoader(BaseDataLoader):
         ])
         return data_array
 
-    def load_data(self) -> np.ndarray:
+    def _collect_h5_data(self) -> np.ndarray:
         """
         1) If config["h5_file"] is provided (full path), load only that file.
         2) Else if config["parse_data_directories"] == True, treat folder_path as
@@ -102,12 +150,13 @@ class H5DataLoader(BaseDataLoader):
         Also skip any file whose filename doesn’t match our required regex pattern.
         Returns a stacked (N,8) array.
         """
-        folder_path = self.config.get('directory')
+        data_configs = self.config.get('data')
+        folder_path = data_configs.get('directory')
         if not folder_path:
             raise ValueError("H5DataLoader requires 'folder_path' in config.")
 
         # 1) If single H5 file is specified, load it only.
-        h5_file = self.config.get("h5_file", None)
+        h5_file = data_configs.get("h5_file", None)
         if h5_file:
             if not os.path.isfile(h5_file):
                 logger.error(f"Specified h5_file {h5_file} does not exist.")
@@ -117,7 +166,7 @@ class H5DataLoader(BaseDataLoader):
             return single_arr
 
         # 2) If parse_data_directories is True, look for subfolders matching R(\d+).
-        parse_dirs = self.config.get("parse_data_directories", True)
+        parse_dirs = data_configs.get("parse_data_directories", True)
         all_arrays = []
 
         if parse_dirs:
@@ -170,10 +219,4 @@ class H5DataLoader(BaseDataLoader):
             return np.array([])
         print("Returning Array.")
         return np.vstack(all_arrays)  # (N,8)
-
-    def split_data(self, data: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-        from sklearn.model_selection import train_test_split
-        X = data[:, [0, 1, 2, 3, 4, 6, 7]]  # some subset of columns as features
-        y = data[:, 5]
-        return train_test_split(X, y, test_size=0.2, random_state=42)
 
