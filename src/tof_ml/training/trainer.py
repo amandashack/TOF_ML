@@ -58,7 +58,7 @@ class Trainer:
                                       min_lr=1e-6, verbose=1)
 
         batch_size = self.model_config.get("batch_size", 32)  # or read from training_config
-        train_gen = DataGenerator(self.X_train, self.y_train,
+        """train_gen = DataGenerator(self.X_train, self.y_train,
                                     batch_size=batch_size, shuffle=True)
         val_gen = DataGenerator(self.X_val, self.y_val,
                                   batch_size=batch_size, shuffle=False)
@@ -73,16 +73,16 @@ class Trainer:
                 tf.TensorSpec(shape=(None, 4), dtype=tf.float32),
                 tf.TensorSpec(shape=(None, 1), dtype=tf.float32)  # mask as the target
             )
-        ).take(len(self.X_val)).cache().repeat().prefetch(tf.data.experimental.AUTOTUNE)
-        #train_gen = tf.data.Dataset.from_tensor_slices((self.X_train, self.y_train))
-        #train_gen = train_gen.shuffle(10000).batch(32).prefetch(tf.data.AUTOTUNE)
-        #val_gen = tf.data.Dataset.from_tensor_slices((self.X_val, self.y_val))
-        #val_gen = val_gen.shuffle(10000).batch(32).prefetch(tf.data.AUTOTUNE)
+        ).take(len(self.X_val)).cache().repeat().prefetch(tf.data.experimental.AUTOTUNE)"""
+        train_gen = tf.data.Dataset.from_tensor_slices((self.X_train, self.y_train))
+        train_gen = train_gen.shuffle(10000).batch(batch_size).prefetch(tf.data.AUTOTUNE)
+        val_gen = tf.data.Dataset.from_tensor_slices((self.X_val, self.y_val))
+        val_gen = val_gen.shuffle(10000).batch(batch_size).prefetch(tf.data.AUTOTUNE)
         # Fit
         logger.info("Starting training with Keras model...")
         history = self.model.fit(
-            train_dataset,
-            validation_data=val_dataset,
+            train_gen,
+            validation_data=val_gen,
             callbacks=[ckpt, early_stop, reduce_lr]
         )
 

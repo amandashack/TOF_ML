@@ -4,7 +4,7 @@ import numpy as np
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
 import sys
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger('trainer')
 
 class DataPreprocessor:
     """
@@ -33,13 +33,16 @@ class DataPreprocessor:
         Also apply log transform to y, create interactions, etc.
         """
         # 1) Possibly log-transform y
-        print()
         logger.info("Take the log of both inputs and outputs.. ")
+        logger.info("Here are the first 5 inputs and outputs BEFORE log: ",
+                    X[:5, :].tolist(), y[:5, :].tolist())
         if self.config.get("apply_log", False) and (y is not None):
             # e.g. y = log2(y) if that’s desired
             y = np.log2(np.clip(y, 1e-9, None))
             X = np.log2(np.clip(X, 1e-9, None))
 
+        logger.info("Here are the first 5 inputs and outputs AFTER log: ",
+                    X[:5, :].tolist(), y[:5, :].tolist())
         # 2) Possibly create interactions for X
         logger.info("Generate interactions.. ")
         if self.config.get("generate_interactions", False):

@@ -25,6 +25,10 @@ class UniformSplitter(BaseDataSplitter):
     """
     Simple uniform random split for train/val/test using sklearn's train_test_split.
     """
+    def __init__(self, config: dict, local_col_mapping: dict):
+        super().__init__(config)
+        self.local_col_mapping = local_col_mapping
+
     def split(self, data: np.ndarray):
         """
         Expects 'data' to be shape (N, D+1) => first D columns are features,
@@ -36,8 +40,8 @@ class UniformSplitter(BaseDataSplitter):
         output_col = features_config["output_column"]
 
         # Map the feature names to indices
-        feature_indices = [COLUMN_MAPPING[col] for col in input_cols]
-        output_index = COLUMN_MAPPING[output_col]
+        feature_indices = [self.local_col_mapping[col] for col in input_cols]
+        output_index = self.local_col_mapping[output_col]
 
         # If 'data' is already [X, y], you can skip. But let's assume data has all columns and we extract:
         X = data[:, feature_indices]

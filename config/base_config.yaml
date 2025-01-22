@@ -23,7 +23,7 @@ data:
     mid1: none                     # Example metadata param for loader
     mid2: none                     # Example metadata param for loader
     retardation_range: none     # Example range
-    number_of_samples: 100000       # Example data size or sampling specification
+    number_of_samples: 10000000       # Example data size or sampling specification
 
 # ------------------------------------------------------------------------
 # 2. DATA SPLITTING CONFIGURATION
@@ -31,7 +31,7 @@ data:
 #    - Parameters relevant to each approach
 # ------------------------------------------------------------------------
 data_splitting:
-  type: SubsetSplitter
+  type: UniformSplitter
   subset_column: initial_ke
   subset_values: [1, 10, 100, 500]
   train_fraction_for_subset: 0.6
