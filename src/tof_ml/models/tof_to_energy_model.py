@@ -3,7 +3,7 @@
 import tensorflow as tf
 from tensorflow.keras import layers
 from tensorflow.keras.models import Sequential
-from tensorflow.keras.regularizers import l2
+from tensorflow.keras.regularizers import l1
 from tensorflow.keras.optimizers import Adam, SGD, RMSprop
 
 
@@ -52,15 +52,17 @@ class MLPKerasRegressor:
             # If first layer:
             if i == 0:
                 # We'll just define input_dim in fit() or let Keras infer
-                model.add(layers.Dense(units, kernel_regularizer=l2(self.regularization)))
+                model.add(layers.Dense(units))
             else:
-                model.add(layers.Dense(units, kernel_regularizer=l2(self.regularization)))
+                model.add(layers.Dense(units))
 
             # Activation
             if act.lower() == "leaky_relu":
                 model.add(layers.LeakyReLU(alpha=0.02))
             else:
                 model.add(layers.Activation(act))
+
+            model.add(layers.BatchNormalization())
 
             # Optional: dropout
             if self.dropout > 0:

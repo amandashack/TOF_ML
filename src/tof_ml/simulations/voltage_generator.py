@@ -91,7 +91,8 @@ def voltageArrayGeneratorWrapperNM(voltageFront, voltageBack, midOneVoltage, mid
     return voltageArray, resistor_values
 
 
-def calculateVoltage_NelderMeade(retardation_value, mid1_ratio=0.11248, mid2_ratio=0.1354, voltage_front=None):
+def calculateVoltage_NelderMeade(retardation_value, mid1_ratio=0.11248,
+                                 mid2_ratio=0.1354, voltage_front=None):
     # setup fast adjust voltages
     if not voltage_front:
         voltage_front = 0

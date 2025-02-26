@@ -87,7 +87,7 @@ if __name__ == "__main__":
     base_config = load_config("config/data_report_config.yaml")
 
     # 2. loader_config
-    loader_config = load_config("config/loader_config.yaml")
+    loader_config = load_config("config/class_mapping_config.yaml")
 
     # 3. database_config
     database_config = load_config("config/database_config.yaml")
