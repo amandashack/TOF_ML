@@ -11,7 +11,6 @@ class BaseDataLoader(ABC):
     def __init__(
             self,
             directory: Optional[str] = None,
-            plot_live: bool = False,
             mid1_range: Optional[List] = None,
             mid2_range: Optional[List] = None,
             retardation: Optional[List] = None,
@@ -20,7 +19,6 @@ class BaseDataLoader(ABC):
             column_mapping: Optional[Dict] = None,
             feature_columns: Optional[List] = None,
             output_columns: Optional[List] = None,
-            meta_data: Optional[Dict] = None,
             config: Optional[Dict] = None,
             **kwargs
     ):
@@ -31,7 +29,6 @@ class BaseDataLoader(ABC):
 
         # 1) Set some defaults (safe initial values).
         self.directory = None
-        self.plot_live = False
         self.mid1_range = None
         self.mid2_range = None
         self.retardation = None
@@ -40,7 +37,6 @@ class BaseDataLoader(ABC):
         self.column_mapping = {}
         self.feature_columns = []
         self.output_columns = []
-        self.meta_data = {}
         self.pass_energy = False
 
         # 2) If a config is provided, load from config.
@@ -52,8 +48,6 @@ class BaseDataLoader(ABC):
         #    (i.e., direct parameters take precedence over config).
         if directory is not None:
             self.directory = directory
-        if plot_live is not None:
-            self.plot_live = plot_live
         if mid1_range is not None:
             self.mid1_range = mid1_range
         if mid2_range is not None:
@@ -70,8 +64,6 @@ class BaseDataLoader(ABC):
             self.feature_columns = feature_columns
         if output_columns is not None:
             self.output_columns = output_columns
-        if meta_data is not None:
-            self.meta_data = meta_data
         if 'pass_energy' in kwargs:
             self.pass_energy = kwargs['pass_energy']
 
@@ -84,20 +76,14 @@ class BaseDataLoader(ABC):
         # Or read directly from top-level if your config is flat.
 
         self.directory = config.get("directory", self.directory)
-        self.plot_live = config.get("plot_live", self.plot_live)
-
         self.mid1_range = config.get("mid1_range", self.mid1_range)
         self.mid2_range = config.get("mid2_range", self.mid2_range)
         self.retardation = config.get("retardation_range", self.retardation)
-
         self.n_samples = config.get("n_samples", self.n_samples)
         self.mask_col = config.get("mask_data", self.mask_col)
-
         self.column_mapping = config.get("column_mapping", self.column_mapping)
         self.feature_columns = config.get("feature_columns", self.feature_columns)
         self.output_columns = config.get("output_columns", self.output_columns)
-
-        self.meta_data = config.get("meta_data", self.meta_data)
         self.pass_energy = config.get("pass_energy", self.pass_energy)
 
     @abstractmethod

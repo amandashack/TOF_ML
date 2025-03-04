@@ -4,25 +4,58 @@ import logging
 import numpy as np
 import h5py
 from copy import deepcopy
-from typing import Tuple, Optional, Dict, List
-from src.tof_ml.data.base_data_loader import BaseDataLoader
+from typing import Tuple, Optional, Dict, List, Any
+from src.tof_ml.data.base_data import BaseDataLoader
 from src.tof_ml.data.column_mapping import COLUMN_MAPPING
+from src.tof_ml.data.h5_file_writer import H5FileWriter
+from dataclasses import dataclass, field
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.DEBUG)
 
-class H5DataLoader(BaseDataLoader):
-    # The patterns for parsing
-    ratio_pattern = re.compile(
-        r"^sim_(neg|pos)_R(\d+)_(neg|pos)_(\d+(?:\.\d+)?)_(neg|pos)_(\d+(?:\.\d+)?)_(\d+(?:\.\d+)?)\.h5$"
 
-    )
-    retardation_pattern = re.compile(r"sim_(neg|pos)_R(-?\d+)_")
+class H5MetadataReader:
+    def __init__(self, filepath):
+        self.filepath = filepath
+        self.file = None
 
+    def __enter__(self):
+         self.file = h5py.File(self.filepath, 'r')
+         return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if self.file:
+            self.file.close()
+
+    def get_metadata(self, group_path='/'):
+        """
+        Recursively retrieves metadata from the HDF5 file.
+
+        Args:
+            group_path (str): Path to the group to read metadata from.
+
+        Returns:
+            dict: A dictionary containing the metadata.
+        """
+        metadata = {}
+        group = self.file[group_path]
+        for key, value in group.attrs.items():
+            metadata[key] = value
+        for key, item in group.items():
+            if isinstance(item, h5py.Group):
+                metadata[key] = self.get_metadata(group_path + key + '/')
+            elif isinstance(item, h5py.Dataset):
+                metadata[key] = item.attrs.items()
+        return metadata
+
+
+@dataclass
+class DataBased:
+    # class for data provenance
     def __init__(
         self,
+        raw_data: np.ndarray[Any, Any] = field(default_factory=lambda: np.array([])),
         directory: Optional[str] = None,
-        plot_live: bool = False,
         mid1_range: Optional[List] = None,
         mid2_range: Optional[List] = None,
         retardation: Optional[List] = None,
@@ -31,49 +64,24 @@ class H5DataLoader(BaseDataLoader):
         column_mapping: Optional[Dict] = None,
         feature_columns: Optional[List] = None,
         output_columns: Optional[List] = None,
-        meta_data: Optional[Dict] = None,
         config: Optional[Dict] = None,
         **kwargs
     ):
-        super().__init__(
-            directory=directory,
-            plot_live=plot_live,
-            mid1_range=mid1_range,
-            mid2_range=mid2_range,
-            retardation=retardation,
-            n_samples=n_samples,
-            mask_col=mask_col,
-            column_mapping=column_mapping,
-            feature_columns=feature_columns,
-            output_columns=output_columns,
-            meta_data=meta_data,
-            config=config,
-            **kwargs
-        )
-
-        self.parse_dirs = True
-
-    def load_data(self) -> np.ndarray:
-        """
-        Same as before, but you may want to do:
-         - read .h5
-         - create (N,8) array
-         - separate X,y columns
-         - call self.preprocessor.fit_transform or transform
-         - return final X,y or combined array
-        """
-        self.raw_data = self._collect_h5_data()
-        self.organized_data = self._organize_data()
-        # Apply pass energy conversion if requested.
-        if self.pass_energy:
-            self._apply_pass_energy(self.raw_data, COLUMN_MAPPING)
-            self._apply_pass_energy(self.organized_data, self.column_mapping)
-            self.column_mapping["pass_energy"] = self.column_mapping.pop("kinetic_energy")
-        return self.organized_data
-
+        self.raw_data = raw_data
+        self.directory = directory
+        self.mid1_range = mid1_range
+        self.mid2_range = mid2_range
+        self.retardation = retardation
+        self.n_samples = n_samples
+        self.mask_col = mask_col
+        self.column_mapping = column_mapping
+        self.feature_columns = feature_columns
+        self.output_columns = output_columns
+        self.config = config
 
     @staticmethod
     def _apply_pass_energy(data, mapping):
+        # move back to loader
         ke_idx = mapping.get("kinetic_energy")
         ret_idx = mapping.get("retardation")
 
@@ -87,6 +95,7 @@ class H5DataLoader(BaseDataLoader):
         return data
 
     def _organize_data(self):
+        # move back to loader
         data = deepcopy(self.raw_data)
         logger.info(f"Size of the dataset before masking: {data.shape}")
         if self.mask_col:
@@ -116,6 +125,57 @@ class H5DataLoader(BaseDataLoader):
             logger.info(f'New column mapping: {self.column_mapping}')
 
         return data
+
+
+class H5DataLoader(BaseDataLoader):
+    # The patterns for parsing
+    ratio_pattern = re.compile(
+        r"^sim_(neg|pos)_R(\d+)_(neg|pos)_(\d+(?:\.\d+)?)_(neg|pos)_(\d+(?:\.\d+)?)_(\d+(?:\.\d+)?)\.h5$"
+
+    )
+    retardation_pattern = re.compile(r"sim_(neg|pos)_R(-?\d+)_")
+
+    def __init__(
+        self,
+        directory: Optional[str] = None,
+        mid1_range: Optional[List] = None,
+        mid2_range: Optional[List] = None,
+        retardation: Optional[List] = None,
+        column_mapping: Optional[Dict] = None,  # right now I am not doing anything with this
+        config: Optional[Dict] = None,
+        **kwargs
+    ):
+        super().__init__(
+            directory=directory,
+            mid1_range=mid1_range,
+            mid2_range=mid2_range,
+            retardation=retardation,
+            column_mapping=column_mapping,
+            config=config,
+            **kwargs
+        )
+
+        self.parse_dirs = True
+        if "parse_dirs" in kwargs:
+            self.parse_dirs = kwargs.get("parse_dirs", True)
+        self.subdir_pattern = re.compile(r"^R(\d+)$")
+        if "subdir_pattern" in kwargs:
+            pattern = kwargs.get("subdir_pattern", r"^R(\d+)$")
+            self.subdir_pattern = re.compile(pattern)
+        self.data_group = "data1"
+        if "data_group" in kwargs:
+            self.data_group = kwargs.get("data_group", "data1")
+
+    def load_data(self):
+        """
+        Same as before, but you may want to do:
+         - read .h5
+         - create (N,8) array
+         - separate X,y columns
+         - call self.preprocessor.fit_transform or transform
+         - return final X,y or combined array
+        """
+        self.raw_data = self._collect_h5_data()
 
     def _parse_ratios_from_filename(self, filename: str) -> Tuple[float, float]:
         """
@@ -188,11 +248,11 @@ class H5DataLoader(BaseDataLoader):
 
         # If we get here, we *do* want to load the file
         with h5py.File(filepath, 'r') as f:
-            initial_ke = f['data1']['initial_ke'][:]
-            initial_elev = f['data1']['initial_elevation'][:]
-            x_tof = f['data1']['x'][:]
-            y_tof = f['data1']['y'][:]
-            tof_values = f['data1']['tof'][:]
+            initial_ke = f[self.data_group]['initial_ke'][:]
+            initial_elev = f[self.data_group]['initial_elevation'][:]
+            x_tof = f[self.data_group]['x'][:]
+            y_tof = f[self.data_group]['y'][:]
+            tof_values = f[self.data_group]['tof'][:]
 
         N = len(initial_ke)
         mid1_arr = np.full((N,), mid1_ratio)
@@ -209,6 +269,11 @@ class H5DataLoader(BaseDataLoader):
             x_tof,
             y_tof,
         ])
+
+        with H5MetadataReader(filepath) as reader:
+            metadata = reader.get_metadata()
+            print(metadata)
+
         return data_array
 
     def _collect_h5_data(self) -> np.ndarray:
@@ -218,15 +283,13 @@ class H5DataLoader(BaseDataLoader):
         all_arrays = []
         if self.parse_dirs:
             # Recurse subdirs
-            subdir_pattern = re.compile(r"^R(\d+)$")
             for entry in os.listdir(self.directory):
                 entry_path = os.path.join(self.directory, entry)
-                if os.path.isdir(entry_path) and subdir_pattern.match(entry):
-                    match = subdir_pattern.match(entry)
+                if os.path.isdir(entry_path) and self.subdir_pattern.match(entry):
+                    match = self.subdir_pattern.match(entry)
                     if match:
                         subdir_ret = int(match.group(1))
-
-                        # Check if subdir_ret is in self.retardation range
+                        # Check if subdir_ret is in self.retardation range and skip if not
                         if self.retardation is not None:
                             low, high = self.retardation
                             # If it's out of range, skip this entire subdirectory
@@ -271,24 +334,6 @@ class H5DataLoader(BaseDataLoader):
         print("Returning Array.")
         return np.vstack(all_arrays)  # (N,8)
 
-    def _update_metadata(self):
-        """
-        Gathers any relevant information about how the data was loaded/processed
-        and stores it in self.meta_data for downstream usage (logging, DB, etc.).
-        """
-
-        self.meta_data["raw_data_size"] = self.raw_data.shape
-        self.meta_data["directory"] = self.directory
-        self.meta_data["mid1_range"] = self.mid1_range
-        self.meta_data["mid2_range"] = self.mid2_range
-        self.meta_data["retardation_range"] = self.retardation
-        self.meta_data["mask_col"] = self.mask_col
-        self.meta_data["samples_after_mask"] = self.organized_data.shape[0]
-        self.meta_data["feature_columns"] = self.feature_columns
-        self.meta_data["output_columns"] = self.output_columns
-        self.meta_data["column_mapping"] = dict(self.column_mapping)
-        self.meta_data["n_samples"] = self.n_samples
-
     def set_parse_dirs(self, parse_dirs: bool):
         self.parse_dirs = parse_dirs
 
@@ -305,9 +350,10 @@ if __name__ == "__main__":
 
     base_config = load_config("config/base_config.yaml")
     data_config = base_config.get("data", {})
+    database = DataBased(config=data_config, column_mapping=COLUMN_MAPPING)
     data_loader = H5DataLoader(config=data_config, column_mapping=COLUMN_MAPPING)
     # Load data
-    df = data_loader.load_data()
+    data_loader.load_data()
 
     data_filtered = filter_data(
         df,
