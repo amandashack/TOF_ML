@@ -37,7 +37,6 @@ class BaseDataLoader(ABC):
         self.column_mapping = {}
         self.feature_columns = []
         self.output_columns = []
-        self.pass_energy = False
 
         # 2) If a config is provided, load from config.
         #    (Child classes can override `_init_from_config` if needed.)
@@ -64,8 +63,6 @@ class BaseDataLoader(ABC):
             self.feature_columns = feature_columns
         if output_columns is not None:
             self.output_columns = output_columns
-        if 'pass_energy' in kwargs:
-            self.pass_energy = kwargs['pass_energy']
 
     def _init_from_config(self, config: Dict, **kwargs):
         """
@@ -84,7 +81,6 @@ class BaseDataLoader(ABC):
         self.column_mapping = config.get("column_mapping", self.column_mapping)
         self.feature_columns = config.get("feature_columns", self.feature_columns)
         self.output_columns = config.get("output_columns", self.output_columns)
-        self.pass_energy = config.get("pass_energy", self.pass_energy)
 
     @abstractmethod
     def load_data(self) -> np.ndarray:

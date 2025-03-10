@@ -7,9 +7,9 @@ import pandas as pd
 from src.tof_ml.database.api import DBApi
 from src.tof_ml.logging.logging_utils import setup_logger
 from src.tof_ml.training.trainer import Trainer
-from src.tof_ml.database.report_generator import ReportGenerator
+from tof_ml.utils.plot_factory import ReportGenerator
 from src.tof_ml.utils.config_utils import load_config
-from src.tof_ml.data.preprocessor import DataPreprocessor
+from src.tof_ml.data.data_preprocessor import DataPreprocessor
 from src.tof_ml.data.column_mapping import COLUMN_MAPPING
 from src.tof_ml.data.data_filtering import filter_data
 

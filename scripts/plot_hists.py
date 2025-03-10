@@ -1,10 +1,9 @@
 import random
 from src.tof_ml.data.h5_data_loader import H5DataLoader
 from src.tof_ml.data.column_mapping import COLUMN_MAPPING, REDUCED_COLUMN_MAPPING
-from src.tof_ml.database.report_generator import PlotFactory
-from src.tof_ml.utils.plotting_tools import plot_histogram, plot_layered_histogram
-import matplotlib.pyplot as plt
-import matplotlib.gridspec as gridspec
+from tof_ml.utils.plot_factory import PlotFactory
+from src.tof_ml.utils.plotting_tools import plot_layered_histogram
+
 
 def group_builder():
     sign = None # Set this
