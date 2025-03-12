@@ -1,6 +1,6 @@
 notion:
   token_file: notion_token.json
-  database_id: 173d57b3c56d80d0924ef2f2d14e5d04
+  database_id: 18ad57b3c56d80739759f4570daa9937
 
 google_drive:
   folder_id: 1s6n7YgoUoo8DHeYJqyaSR-l_TQlNeTLd

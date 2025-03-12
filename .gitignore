@@ -1,7 +1,8 @@
 # personal
-
+reports/logs/
 token.json
 notion_token.json
+/output
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

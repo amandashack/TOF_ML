@@ -2,6 +2,8 @@
 
 import numpy as np
 from sklearn.utils import shuffle
+import matplotlib.pyplot as plt
+from collections import defaultdict
 
 def filter_data(
     data: np.ndarray,
@@ -54,3 +56,5 @@ def filter_data(
         data = data[:number_of_samples]
 
     return data
+
+

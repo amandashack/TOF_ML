@@ -25,164 +25,6 @@ def get_cmap(n, name='seismic'):
     return plt.cm.get_cmap(name, n)
 
 
-# src/utils/evaluation.py
-
-import os
-import numpy as np
-import pandas as pd
-import seaborn as sns
-import matplotlib.pyplot as plt
-
-from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
-from scipy.stats import norm, kurtosis, skew
-
-
-# src/utils/evaluation.py
-
-import os
-import numpy as np
-import matplotlib.pyplot as plt
-import seaborn as sns
-import pandas as pd
-
-from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
-from sklearn.utils import shuffle
-from scipy.stats import norm, kurtosis, skew
-from mpl_toolkits.axes_grid1.inset_locator import inset_axes
-
-def evaluate_and_plot_test(
-    model,
-    X_test: np.ndarray,
-    y_test: np.ndarray,
-    scaler_y=None,
-    output_dir: str = "./test_plots",
-    prefix: str = "test"
-):
-    """
-    Evaluates the trained model on the test set, generates three plots:
-      1. True vs. Predicted (inset: MAE, MSE, RMSE, R^2)
-      2. Residuals vs. Predicted (inset: MAE, MSE, RMSE)
-      3. Histogram of Residuals (inset: kurtosis, skewness, center, FWHM)
-
-    Returns:
-      (test_mse, plot_paths)
-        test_mse: float
-        plot_paths: dict of { "true_vs_pred": "...", "residuals": "...", "histogram_residuals": "..." }
-    """
-    os.makedirs(output_dir, exist_ok=True)
-
-    # 1. Predict
-    y_pred_scaled = model.predict(X_test).flatten()
-    if scaler_y:
-        y_pred = scaler_y.inverse_transform(y_pred_scaled.reshape(-1, 1)).flatten()
-        y_true = scaler_y.inverse_transform(y_test.reshape(-1, 1)).flatten()
-    else:
-        y_pred = y_pred_scaled
-        y_true = y_test
-
-    # 2. Residuals
-    residuals = y_true - y_pred
-
-    # 3. Compute metrics
-    mae = mean_absolute_error(y_true, y_pred)
-    mse = mean_squared_error(y_true, y_pred)
-    rmse = np.sqrt(mse)
-    r2_val = r2_score(y_true, y_pred)
-
-    # Create a DataFrame for plotting
-    df = pd.DataFrame({
-        "y_true": y_true,
-        "y_pred": y_pred,
-        "residuals": residuals
-    })
-
-    # --------------------------------------------------------------------------
-    # Plot 1: True vs. Predicted
-    # --------------------------------------------------------------------------
-    true_vs_pred_path = os.path.join(output_dir, f"{prefix}_true_vs_pred.png")
-    fig, ax = plt.subplots(figsize=(8, 6))
-    sns.scatterplot(x="y_true", y="y_pred", data=df, alpha=0.7, edgecolor='k', linewidth=0.5)
-    min_val = min(y_true.min(), y_pred.min())
-    max_val = max(y_true.max(), y_pred.max())
-    ax.plot([min_val, max_val], [min_val, max_val], 'r--', label='Ideal 1:1')
-    ax.legend()
-    ax.set_xlabel("True Values")
-    ax.set_ylabel("Predicted Values")
-    ax.set_title("Test: True vs. Predicted")
-
-    # Inset for metrics
-    axins = inset_axes(ax, width="35%", height="30%", loc='lower right')
-    axins.axis('off')
-    axins.text(0.1, 0.7, f"MAE  = {mae:.3f}")
-    axins.text(0.1, 0.5, f"MSE  = {mse:.3f}")
-    axins.text(0.1, 0.3, f"RMSE = {rmse:.3f}")
-    axins.text(0.1, 0.1, f"R^2  = {r2_val:.3f}")
-
-    plt.savefig(true_vs_pred_path, dpi=150)
-    plt.close(fig)
-
-    # --------------------------------------------------------------------------
-    # Plot 2: Residuals vs. Predicted
-    # --------------------------------------------------------------------------
-    residuals_path = os.path.join(output_dir, f"{prefix}_residuals.png")
-    fig, ax = plt.subplots(figsize=(8, 6))
-    sns.scatterplot(x="y_pred", y="residuals", data=df, alpha=0.7, edgecolor='k', linewidth=0.5)
-    ax.axhline(0, color='red', linestyle='--')
-    ax.set_xlabel("Predicted Values")
-    ax.set_ylabel("Residuals (True - Pred)")
-    ax.set_title("Test: Residuals vs. Predicted")
-
-    axins2 = inset_axes(ax, width="35%", height="30%", loc='lower right')
-    axins2.axis('off')
-    axins2.text(0.1, 0.7, f"MAE  = {mae:.3f}")
-    axins2.text(0.1, 0.5, f"MSE  = {mse:.3f}")
-    axins2.text(0.1, 0.3, f"RMSE = {rmse:.3f}")
-
-    plt.savefig(residuals_path, dpi=150)
-    plt.close(fig)
-
-    # --------------------------------------------------------------------------
-    # Plot 3: Histogram of Residuals
-    # --------------------------------------------------------------------------
-    hist_path = os.path.join(output_dir, f"{prefix}_hist_residuals.png")
-    res_kurt = kurtosis(residuals)
-    res_skew = skew(residuals)
-    mu, std = norm.fit(residuals)
-    fwhm = 2 * np.sqrt(2 * np.log(2)) * std
-
-    fig, ax = plt.subplots(figsize=(8, 6))
-    sns.histplot(residuals, bins=30, kde=False, color='skyblue', edgecolor='k', linewidth=0.5)
-    ax.set_title("Histogram of Residuals (Test)")
-    ax.set_xlabel("Residuals")
-    ax.set_ylabel("Frequency")
-
-    x_vals = np.linspace(residuals.min(), residuals.max(), 100)
-    pdf_vals = norm.pdf(x_vals, mu, std)
-    bin_width = (residuals.max() - residuals.min()) / 30
-    scaled_pdf = pdf_vals * len(residuals) * bin_width
-    ax.plot(x_vals, scaled_pdf, 'r-', lw=2, label="Fitted Normal PDF")
-    ax.legend()
-
-    axins3 = inset_axes(ax, width="40%", height="40%", loc='upper left')
-    axins3.axis('off')
-    axins3.text(0.1, 0.7,  f"Kurtosis = {res_kurt:.2f}")
-    axins3.text(0.1, 0.5,  f"Skewness = {res_skew:.2f}")
-    axins3.text(0.1, 0.3,  f"Center   = {mu:.2f}")
-    axins3.text(0.1, 0.1,  f"FWHM     = {fwhm:.2f}")
-
-    plt.savefig(hist_path, dpi=150)
-    plt.close(fig)
-
-    plot_paths = {
-        "true_vs_pred": true_vs_pred_path,
-        "residuals": residuals_path,
-        "histogram_residuals": hist_path
-    }
-
-    return mse, plot_paths
-
-
-
 
 class PlotWindow(QtWidgets.QWidget):
     def __init__(self, plot_func, *args, **kwargs):
@@ -743,4 +585,96 @@ def plot_energy_resolution(gradients, retardation, mid1_range, mid2_range):
 
     plt.tight_layout()
     plt.show()
+
+
+def plot_layered_histogram(ax, df, variable, x_label, title=None, nbins=50, group_by=None, alpha=0.5,
+                           add_legend=True, selected_groups=None):
+    """
+    Plots a layered histogram for a given variable from a DataFrame, optionally grouping by a column.
+
+    Parameters:
+      ax              : Matplotlib Axes on which to plot.
+      df              : pandas DataFrame containing the data.
+      variable        : Column name for which the histogram is plotted.
+      x_label         : Label for the x-axis.
+      title           : Optional title for the plot.
+      nbins           : Number of bins to use.
+      group_by        : Optional column name to group the data.
+      alpha           : Transparency for the histogram layers.
+      add_legend      : If True, draw the legend.
+      selected_groups : Either a list of group values (e.g. [-5, -1, 0, 1, 5]) to show, or an integer (e.g. 5)
+                        which will select that many groups based on a symlog sort. In the integer case,
+                        the minimum, maximum, and 0 (if available) are always included.
+    """
+    if group_by:
+        groups = df.groupby(group_by)
+        group_keys = list(groups.groups.keys())
+
+        # Apply a symlog transformation to sort the keys.
+        group_keys_sorted = sorted(group_keys, key=lambda x: np.sign(x) * np.log1p(abs(x)))
+
+        # Determine allowed keys if selection is requested.
+        if selected_groups is not None:
+            if isinstance(selected_groups, int):
+                desired_count = selected_groups
+                # Always include the min and max:
+                allowed = {group_keys_sorted[0], group_keys_sorted[-1]}
+                # Always include 0 if available.
+                if 0 in group_keys:
+                    allowed.add(0)
+                # If we still need more keys, choose them evenly from the sorted keys.
+                if len(allowed) < desired_count:
+                    # Get indices of keys not already in allowed.
+                    remaining = [k for k in group_keys_sorted if k not in allowed]
+                    # Calculate how many additional keys we need.
+                    additional_needed = desired_count - len(allowed)
+                    if remaining:
+                        # Evenly sample from the remaining keys.
+                        indices = np.linspace(0, len(remaining) - 1, additional_needed, dtype=int)
+                        for i in indices:
+                            allowed.add(remaining[i])
+                allowed_keys = sorted(list(allowed))
+            elif isinstance(selected_groups, list):
+                allowed_keys = selected_groups
+            else:
+                allowed_keys = None
+        else:
+            allowed_keys = None
+
+        # Use only the allowed groups if specified.
+        if allowed_keys is not None:
+            # Number of groups that will be plotted.
+            n_groups = len(allowed_keys)
+        else:
+            n_groups = groups.ngroups
+
+        cmap = plt.get_cmap('viridis', n_groups)
+        color_index = 0
+
+        for group_key, group_df in groups:
+            if allowed_keys is not None and group_key not in allowed_keys:
+                continue
+
+            ax.hist(group_df[variable], bins=nbins,
+                    color=cmap(color_index),
+                    edgecolor='black',
+                    alpha=alpha,
+                    label=f"{group_by} = {group_key}")
+            color_index += 1
+
+        if add_legend:
+            ax.legend(fontsize=8)
+    else:
+        ax.hist(df[variable], bins=nbins,
+                edgecolor='black',
+                alpha=alpha)
+    if title:
+        ax.set_title(title)
+    ax.set_xlabel(x_label)
+    ax.set_ylabel('Frequency')
+    ax.set_yscale('log')
+
+
+
+
 

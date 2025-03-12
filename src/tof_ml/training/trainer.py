@@ -1,43 +1,42 @@
 import os
 import logging
 import numpy as np
+import tensorflow as tf
+from typing import Optional, Dict
+from abc import ABC
+from src.tof_ml.models.model_factory import ModelFactory
 
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler, MinMaxScaler
 from tensorflow.keras.callbacks import ModelCheckpoint, EarlyStopping, ReduceLROnPlateau
 
-from src.tof_ml.models.model_factory import ModelFactory
-from src.tof_ml.utils.plotting_tools import evaluate_and_plot_test
-from src.tof_ml.data.column_mapping import COLUMN_MAPPING
+logger = logging.getLogger(__name__)
 
-logger = logging.getLogger('trainer')
-
-
-class Trainer:
-    def __init__(self,
-                 model_config: dict,
-                 training_config: dict,
-                 logger: logging.Logger,
-                 db_api,
-                 df,
-                 output_path: str = "./artifacts"):
+class Trainer(ABC):
+    def __init__(
+        self,
+        config: Optional[Dict] = None,
+        model_config: Optional[Dict] = None,
+        X_train: Optional[np.ndarray] = None,
+        y_train: Optional[np.ndarray] = None,
+        X_val: Optional[np.ndarray] = None,
+        y_val: Optional[np.ndarray] = None,
+        X_test: Optional[np.ndarray] = None,
+        y_test: Optional[np.ndarray] = None,
+        output_path: str = "./artifacts",
+        meta_data: Optional[Dict] = None,
+        **kwargs
+    ):
         """
-        :param model_config: Model hyperparameters & type from base_config
-        :param training_config: Training-related config (split sizes, scaling, etc.)
-        :param logger: Logger for info/warnings
-        :param db_api: Database API for recording runs
-        :param df: The filtered DataFrame from your pipeline
-        :param output_path: Where to save models/plots
+        If 'config' is provided, we'll load fields from it (e.g., model_config).
+        Then direct parameters override the config-based values.
+        We store relevant training/eval info in 'meta_data'.
         """
-        self.model_config = model_config
-        self.training_config = training_config
-        self.logger = logger
-        self.db_api = db_api
-        self.df = df
+        # 1) Default internal attributes
+        self.config = {}
+        self.model_config = {}
         self.output_path = output_path
         os.makedirs(self.output_path, exist_ok=True)
 
-        # These will be created in prepare_data()
+        # Data splits
         self.X_train = None
         self.y_train = None
         self.X_val = None
@@ -45,205 +44,174 @@ class Trainer:
         self.X_test = None
         self.y_test = None
 
-        self.scaler = None
         self.model = None
         self.best_val_mse = None
         self.test_mse = None
 
-    def prepare_data(self):
-        feature_cols = self.training_config["features"]["input_columns"]
-        output_col = self.training_config["features"]["output_column"]
+        # We'll store all relevant info here
+        self.meta_data = {} if meta_data is None else meta_data
 
-        # 1) Convert feature names -> indices
-        # e.g. if feature_cols=["retardation","tof"], then indices=[4,5]
-        feature_indices = [COLUMN_MAPPING[f] for f in feature_cols]
+        # 2) If a config is provided, load from config
+        if config is not None:
+            self._init_from_config(config, **kwargs)
 
-        # 2) Convert output col -> index
-        output_idx = COLUMN_MAPPING[output_col]
+        # 3) Override with direct parameters if they're not None
+        if model_config is not None:
+            self.model_config = model_config
 
-        # Suppose self.df is shape (N,8). We map each feature to its column index.
-        X = self.df[:, feature_indices]
-        y = np.log2(self.df[:, output_idx])
+        if X_train is not None:
+            self.X_train = X_train
+        if y_train is not None:
+            self.y_train = y_train
+        if X_val is not None:
+            self.X_val = X_val
+        if y_val is not None:
+            self.y_val = y_val
+        if X_test is not None:
+            self.X_test = X_test
+        if y_test is not None:
+            self.y_test = y_test
 
-        # Then do your train/val/test splits, scaling, etc.
-        test_ratio = self.training_config.get("test_size", 0.2)
-        random_state = self.training_config.get("random_state", 42)
-        X_temp, X_test, y_temp, y_test = train_test_split(X, y, test_size=test_ratio, random_state=random_state)
-
-        val_ratio = self.training_config.get("val_size", 0.2)
-        X_train, X_val, y_train, y_val = train_test_split(
-            X_temp, y_temp, test_size=val_ratio, random_state=random_state
-        )
-
-        # 4) Scale if needed
-        scaler_type = self.training_config.get("scaler", "None")
-        if scaler_type == "StandardScaler":
-            self.scaler = StandardScaler()
-        elif scaler_type == "MinMaxScaler":
-            self.scaler = MinMaxScaler()
-        else:
-            self.scaler = None
-
-        if self.scaler:
-            X_train = self.scaler.fit_transform(X_train)
-            X_val = self.scaler.transform(X_val)
-            X_test = self.scaler.transform(X_test)
-
-        # 5) Add interaction terms (or any custom transformations)
-        #    For example, if you want to do log2(X_train[:,0]) * X_train[:,1], etc.
-        #    We'll demonstrate a simple function call for each subset.
-        if self.training_config["features"].get("generate_interactions", False):
-            X_train = self._add_interactions(X_train, [0])
-            X_val = self._add_interactions(X_val, [0])
-            X_test = self._add_interactions(X_test, [0])
-
-        # Store them in class attributes
-        self.X_train, self.y_train = X_train, y_train
-        self.X_val, self.y_val = X_val, y_val
-        self.X_test, self.y_test = X_test, y_test
-
-        self.logger.info(f"Data prepared. Train shape: {X_train.shape}, Val shape: {X_val.shape}, Test shape: {X_test.shape}")
+    def _init_from_config(self, config: Dict, **kwargs):
+        """
+        A helper to read any relevant fields from the config.
+        e.g. config.get("model").
+        """
+        self.config = config
+        self.model_config = config.get("model", {})
 
     def run_training(self):
         """
-        Builds and trains the model using X_train/X_val from prepare_data().
-        Tracks best epoch MSE. Saves final model.
+        Core training routine:
+          - Build model from self.model_config
+          - Train with Keras
+          - Save final model
+          - Store best val MSE in meta_data
         """
         if self.X_train is None or self.y_train is None:
-            raise ValueError("Please call prepare_data() before run_training().")
+            raise ValueError("No training data provided to Trainer. Cannot run training.")
 
-        # Build the model
+        # 1) Build the model (assuming you have a ModelFactory utility)
         self.model = ModelFactory.create_model(self.model_config)
+        logger.info("Model created from model_config.")
 
-        # Keras callbacks
-        best_model_path = os.path.join(self.output_path, "best_model.h5")
-        ckpt = ModelCheckpoint(filepath=best_model_path, monitor="val_loss",
-                               save_best_only=True, verbose=1)
-        early_stop = EarlyStopping(monitor="val_loss", patience=5, restore_best_weights=True)
-        reduce_lr = ReduceLROnPlateau(monitor="val_loss", factor=0.2, patience=3,
-                                      min_lr=1e-6, verbose=1)
+        # 2) Retrieve hyperparams from self.model_config["params"]
+        params = self.model_config.get("params", {})
+        epochs = params.get("epochs", 100)
+        batch_size = params.get("batch_size", 32)
+        monitor_metric = params.get("monitor_metric", "val_loss")
 
-        # Fit the model
-        self.logger.info("Starting training with Keras model...")
-        history = self.model.fit(
-            self.X_train,
-            self.y_train,
-            validation_data=(self.X_val, self.y_val),
-            callbacks=[ckpt, early_stop, reduce_lr]
+        # EarlyStopping
+        early_stopping_patience = params.get("early_stopping_patience", 10)
+        early_stop = EarlyStopping(
+            monitor=monitor_metric,
+            patience=early_stopping_patience,
+            restore_best_weights=True
         )
 
-        self.logger.info("Training complete.")
+        # ReduceLROnPlateau
+        reduce_lr_factor = params.get("reduce_lr_factor", 0.2)
+        reduce_lr_patience = params.get("reduce_lr_patience", 20)
+        reduce_lr_min_lr = params.get("reduce_lr_min_lr", 1e-6)
+        reduce_lr = ReduceLROnPlateau(
+            monitor=monitor_metric,
+            factor=reduce_lr_factor,
+            patience=reduce_lr_patience,
+            min_lr=reduce_lr_min_lr,
+            verbose=1
+        )
 
-        # Best val MSE is min of val_loss
-        self.best_val_mse = float(min(history.history["val_loss"]))
-        self.logger.info(f"Best epoch val MSE: {self.best_val_mse:.4f}")
+        # ModelCheckpoint
+        best_model_path = os.path.join(self.output_path, "best_model.h5")
+        ckpt = ModelCheckpoint(
+            filepath=best_model_path,
+            monitor=monitor_metric,
+            save_best_only=True,
+            verbose=1
+        )
 
-        # Save final model (after best weights restored)
+        logger.info(f"Starting training with batch_size={batch_size}, epochs={epochs}...")
+
+        # 3) Convert arrays to tf.data.Dataset
+        train_ds = tf.data.Dataset.from_tensor_slices((self.X_train, self.y_train))
+        train_ds = train_ds.shuffle(10000).batch(batch_size).prefetch(tf.data.AUTOTUNE)
+
+        val_ds = tf.data.Dataset.from_tensor_slices((self.X_val, self.y_val))
+        val_ds = val_ds.shuffle(10000).batch(batch_size).prefetch(tf.data.AUTOTUNE)
+
+        # 4) Fit the model
+        history = self.model.fit(
+            train_ds,
+            validation_data=val_ds,
+            callbacks=[ckpt, early_stop, reduce_lr],
+        )
+
+        logger.info("Training complete.")
+
+        # 5) Best val MSE from history
+        if "val_loss" in history.history:
+            self.best_val_mse = float(min(history.history["val_loss"]))
+            logger.info(f"Best epoch val MSE: {self.best_val_mse:.4f}")
+        else:
+            self.best_val_mse = None
+
+        # 6) Save final model
         final_model_path = os.path.join(self.output_path, "final_model.h5")
         self.model.save(final_model_path)
-        self.logger.info(f"Final model saved to: {final_model_path}")
+        logger.info(f"Final model saved to: {final_model_path}")
+
+        # 7) Update trainer metadata
+        self._update_training_metadata(history, final_model_path, params)
 
     def evaluate_model(self):
         """
-        Evaluate on test set. Generate test plots.
+        Evaluate on test data, compute MSE, store it in self.test_mse.
+        Now also return predictions, true y, and residuals so we
+        can produce the new plots without calling evaluate again.
         """
         if self.model is None:
             raise ValueError("No model found. Did you run run_training()?")
 
-        # Basic MSE
-        y_test_pred = self.model.predict(self.X_test)
-        self.test_mse = float(np.mean((self.y_test - y_test_pred) ** 2))
-        self.logger.info(f"Test MSE: {self.test_mse:.4f}")
+        if self.X_test is None or self.y_test is None:
+            logger.warning("No test data provided to Trainer.")
+            return None, None, None
 
-        # If you want to also generate advanced plots:
-        test_plots_dir = os.path.join(self.output_path, "test_plots")
-        # e.g. evaluate_and_plot_test is your function from plotting_tools
-        test_mse, plot_paths = evaluate_and_plot_test(
-            model=self.model,
-            X_test=self.X_test,
-            y_test=self.y_test,
-            scaler_y=None,  # or self.y_scaler if you used one
-            output_dir=test_plots_dir,
-            prefix="test"
-        )
-        # Overwrite test_mse if you prefer the function's computed MSE
-        self.test_mse = test_mse
-        self.logger.info(f"Test MSE (via evaluate_and_plot_test): {self.test_mse:.4f}")
+        y_test_pred = self.model.predict(self.X_test).flatten()
+        y_test_true = self.y_test.flatten()
+        residuals = y_test_true - y_test_pred
 
-        # Optionally store plot_paths if you want to upload them in record_to_database
-        self.test_plot_paths = plot_paths
+        self.test_mse = float(np.mean(residuals ** 2))
+        logger.info(f"Test MSE: {self.test_mse:.4f}")
 
-    def record_to_database(self, base_config):
+        # Store predictions and residuals for reference if needed
+        self.y_test_pred = y_test_pred
+        self.residuals = residuals
+
+        # Update metadata
+        self._update_evaluation_metadata()
+
+        return y_test_pred, y_test_true, residuals
+
+    def _update_training_metadata(self, history, final_model_path: str, params: Dict):
         """
-        Uses db_api to record final results. We'll store:
-          - final_train_mse or best_val_mse
-          - test_mse
-          - entire base_config
-          - model path, etc.
+        Store training info in meta_data so we can review or log it elsewhere.
         """
-        if self.test_mse is None:
-            self.logger.warning("Test MSE is None. Did you call evaluate_model()?")
+        self.meta_data["trainer_class"] = self.__class__.__name__
+        self.meta_data["final_model_path"] = final_model_path
+        self.meta_data["best_val_mse"] = self.best_val_mse
 
-        # Construct training_results dict with relevant metrics
-        training_results = {
-            "val_mse":  self.best_val_mse,
-            "test_mse": self.test_mse
-        }
+        # Store all relevant hyperparameters
+        self.meta_data["training_params"] = dict(params)
 
-        model_path = os.path.join(self.output_path, "final_model.h5")
+        # Optionally store full training history
+        if hasattr(history, "history"):
+            self.meta_data["training_history"] = {
+                k: [float(val) for val in v] for k, v in history.history.items()
+            }
 
-        self.db_api.record_model_run(
-            config_dict=base_config,
-            training_results=training_results,
-            model_path=model_path,
-            plot_paths=self.test_plot_paths
-        )
-        self.logger.info("Recorded results to Notion DB.")
-
-    def _add_interactions(self, X: np.ndarray,
-                                log_transform_cols: list[int] = None,
-                                max_degree: int = 2) -> np.ndarray:
+    def _update_evaluation_metadata(self):
         """
-        Dynamically create interaction terms up to 'max_degree' for all columns in X.
-        - Optionally log-transform certain columns before generating interactions.
-        - If max_degree=2, we get original columns, squares, and cross-products.
-
-        :param X: shape (N, d)
-        :param log_transform_cols: list of column indices to log-transform
-                                   before generating interactions
-        :param max_degree: up to 2 for squares, cross terms;
-                           can be extended to 3 for cubes, etc.
-        :return: new_X (N, > d) with original & expanded columns.
+        Store test evaluation info in meta_data.
         """
-        if log_transform_cols is None:
-            log_transform_cols = []
-
-        # 1) Possibly log-transform certain columns
-        X_copy = X.copy()
-        for col_idx in log_transform_cols:
-            # avoid log(0)
-            X_copy[:, col_idx] = np.log2(np.clip(X_copy[:, col_idx], 1e-9, None))
-
-        # 2) Start with the original columns
-        features = [X_copy]
-
-        # 3) If max_degree >= 2, add squares & cross-terms
-        #    For each pair (i, j) with i <= j, create X[:,i] * X[:,j].
-        #    That includes squares (i == j).
-        if max_degree >= 2:
-            n_cols = X_copy.shape[1]
-            cross_terms = []
-            for i in range(n_cols):
-                for j in range(i, n_cols):
-                    product_ij = X_copy[:, i] * X_copy[:, j]
-                    cross_terms.append(product_ij.reshape(-1, 1))
-            cross_array = np.hstack(cross_terms) if cross_terms else None
-            if cross_array is not None:
-                features.append(cross_array)
-
-        # 4) If we wanted max_degree=3 for cubes or triple interactions, we could extend further.
-
-        # 5) Concatenate all
-        new_X = np.hstack(features)
-        return new_X
+        self.meta_data["test_mse"] = self.test_mse
 

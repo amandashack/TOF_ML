@@ -4,7 +4,7 @@ import glob
 import logging
 import numpy as np
 from typing import Tuple
-from src.tof_ml.data.base_data_loader import BaseDataLoader
+from src.tof_ml.data.base_data import BaseDataLoader
 
 logger = logging.getLogger(__name__)
 
