@@ -1,65 +1,58 @@
 # ==============================================================================
 # Base config for training pipeline
-# This file can be updated by the user or read from command line args.
 # ==============================================================================
 
 # ------------------------------------------------------------------------------
 # 1. DATA LOADING
-#    - The "directory" might determine which loader to use in your code
-#    - Example: If the directory contains "simion" data, it might use SimionDataLoader
 # ------------------------------------------------------------------------------
-# Vandana's continuous data
-# "/sdf/home/v/vkaushik/Sim_csv_files/0.5eV_resolution"
-# "vandana_continuous_nm"
-
-# old discrete data subset
-# C:\Users\proxi\Documents\coding\TOF_data
-# "old_discrete"
-
 data:
-  directory: C:\Users\proxi\Documents\coding\TOF_data      # Path or identifier to the raw data directory
-  loader_config_key: h5     # The key that indicates which loader block
+  directory: C:\Users\proxi\Documents\coding\TOF_data
+  loader_config_key: h5
   parse_data_directories: true
-  mid1: ~ #[0.11248, 0.11248]                     # Example metadata param for loader
-  mid2: ~ #[0.1354, 0.1354]                     # Example metadata param for loader
-  retardation_range: ~ #[-5, 0]        # Example range
-  n_samples: ~
-  mask_data: x
-  feature_columns: ['tof_values', 'mid1', 'mid2', 'retardation', 'elevation', 'y', 'x']
+  # Feature and output columns defined here for organization
+  feature_columns: ['tof_values', 'mid1', 'mid2', 'retardation', 'elevation', 'x', 'y']
   output_columns: ['kinetic_energy']
   pass_energy: true
   live_plot: false
 
-# ------------------------------------------------------------------------
-# 2. DATA SPLITTING CONFIGURATION
-#    - Which approach to use for splitting (e.g. UniformSplitter, SubsetSplitter)
-#    - Parameters relevant to each approach
-# ------------------------------------------------------------------------
-data_splitting:
-  type: UniformSplitter
-  subset_column: initial_ke
-  subset_values: [1, 10, 100, 500]
-  val_size: 0.2
-  test_size: 0.2
-  random_state: 42
+# ------------------------------------------------------------------------------
+# 2. DATA PREPROCESSING PIPELINE (in execution order)
+# ------------------------------------------------------------------------------
+preprocessing:
+  # Step 1: Masking
+  masking:
+    enabled: true
+    x_range: [406, 408]
+    y_range: [-16, 16]
 
-features:
-  interactions: false # or a list of tuples with column names
-  squared: false # or a list with column names
-  sine: false  # or a list with column names
+  # Step 2: Pass energy transformation
+  pass_energy:
+    enabled: true
+
+  # Step 3: Log transform
+  log_transform:
+    enabled: true
+    columns: ['tof_values']
+    base: 2.0
+
+  # Step 4: Scaling
+  scaling:
+    enabled: true
+    type: MinMaxScaler
+    feature_columns: ['tof_values', 'mid1', 'mid2', 'retardation', 'elevation', 'x', 'y']
+
+  # Step 5: Feature engineering
+  feature_engineering:
+    interactions:
+      enabled: true
+      columns: ['tof_values', 'mid1', 'mid2', 'retardation']
+    squared:
+      enabled: false
+    sine:
+      enabled: false
 
 # ------------------------------------------------------------------------------
-# 4. SCALING CONFIGURATION
-#    - If you want to apply a scaler, specify which kind
-#    - Options might include "StandardScaler", "MinMaxScaler", "None"
-# ------------------------------------------------------------------------------
-scaler:
-  log_transform: true
-  type: MinMaxScaler
-
-# ------------------------------------------------------------------------------
-# 5. TRAINING PARAMETERS
-#    - General training settings (split size, random seed, etc.)
+# 3. TRAINING PARAMETERS
 # ------------------------------------------------------------------------------
 training:
   val_size: 0.2
@@ -67,9 +60,7 @@ training:
   random_state: 42
 
 # ------------------------------------------------------------------------------
-# 6. MODEL CONFIGURATION
-#    - Which model to use (e.g., "MLPRegressor", "RandomForestRegressor")
-#    - Hyperparameters for that model
+# 4. MODEL CONFIGURATION
 # ------------------------------------------------------------------------------
 model:
   type: "MLPRegressor"
@@ -86,7 +77,6 @@ model:
     monitor_metric: "val_loss"
 
 # ------------------------------------------------------------------------------
-# 7. MODEL OUTPUT DIRECTORY
-#    - Where would you like to save the model??
+# 5. MODEL OUTPUT DIRECTORY
 # ------------------------------------------------------------------------------
 model_output_dir: /sdf/scratch/users/a/ajshack/hp_database

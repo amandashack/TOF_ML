@@ -475,3 +475,122 @@ class RandomSampler(BaseTransform):
 
         indices = rng.choice(data.shape[0], n_samples, replace=False)
         return data[indices]
+
+
+@register_transform
+class PassEnergyTransform(BaseTransform):
+    """
+    Transform kinetic_energy to pass_energy or vice versa.
+
+    For TOF analysis, pass energy is often a more useful metric than raw kinetic energy.
+    This transform facilitates this conversion.
+    """
+
+    def __init__(self,
+                 energy_column: str = 'kinetic_energy',
+                 output_column: str = 'pass_energy',
+                 name: str = None):
+        """
+        Initialize the transform.
+
+        Args:
+            energy_column: Column name for the input energy values
+            output_column: Column name for the output energy values
+            name: Optional name for the transform
+        """
+        super().__init__(name=name,
+                         energy_column=energy_column,
+                         output_column=output_column)
+        self.energy_col_idx = None
+        self.retardation_col_idx = None
+
+    def fit(self, data: np.ndarray, **kwargs) -> 'PassEnergyTransform':
+        """
+        Fit the transform to the data - identify column indices.
+
+        Args:
+            data: Input data array
+            **kwargs: Additional arguments, including column_mapping
+
+        Returns:
+            Self for chaining
+        """
+        column_mapping = kwargs.get('column_mapping', {})
+
+        if not column_mapping:
+            raise ValueError("column_mapping must be provided for PassEnergyTransform")
+
+        # Get column indices
+        energy_col = self.params['energy_column']
+        if energy_col in column_mapping:
+            self.energy_col_idx = column_mapping[energy_col]
+        else:
+            raise ValueError(f"Energy column '{energy_col}' not found in column_mapping")
+
+        # Retardation column is needed for the calculation
+        if 'retardation' in column_mapping:
+            self.retardation_col_idx = column_mapping['retardation']
+        else:
+            raise ValueError("'retardation' column required for PassEnergyTransform")
+
+        # Store metadata
+        self._metadata['energy_column'] = energy_col
+        self._metadata['output_column'] = self.params['output_column']
+
+        self._is_fitted = True
+        return self
+
+    def transform(self, data: np.ndarray) -> np.ndarray:
+        """
+        Apply the pass energy transformation.
+
+        For kinetic_energy to pass_energy: pass_energy = kinetic_energy - retardation
+        For pass_energy to kinetic_energy: kinetic_energy = pass_energy + retardation
+
+        Args:
+            data: Input data array
+
+        Returns:
+            Transformed data with pass_energy values
+        """
+        if not self._is_fitted:
+            raise ValueError("Transform not fitted. Call fit() first.")
+
+        result = data.copy()
+
+        # Get the energy and retardation values
+        energy_values = data[:, self.energy_col_idx]
+        retardation_values = data[:, self.retardation_col_idx]
+
+        # Calculate pass energy
+        if self.params['energy_column'] == 'kinetic_energy' and self.params['output_column'] == 'pass_energy':
+            # pass_energy = kinetic_energy - retardation
+            pass_energy = energy_values - retardation_values
+
+            # Replace the column with pass_energy
+            result[:, self.energy_col_idx] = pass_energy
+
+            # Log the change
+            self._metadata['transformation'] = 'kinetic_energy_to_pass_energy'
+
+        elif self.params['energy_column'] == 'pass_energy' and self.params['output_column'] == 'kinetic_energy':
+            # kinetic_energy = pass_energy + retardation
+            kinetic_energy = energy_values + retardation_values
+
+            # Replace the column with kinetic_energy
+            result[:, self.energy_col_idx] = kinetic_energy
+
+            # Log the change
+            self._metadata['transformation'] = 'pass_energy_to_kinetic_energy'
+
+        else:
+            # No transformation needed or unsupported conversion
+            self._metadata['transformation'] = 'no_transformation'
+
+        # Store some statistics
+        self._metadata['min_input_energy'] = float(np.min(energy_values))
+        self._metadata['max_input_energy'] = float(np.max(energy_values))
+        self._metadata['min_output_energy'] = float(np.min(result[:, self.energy_col_idx]))
+        self._metadata['max_output_energy'] = float(np.max(result[:, self.energy_col_idx]))
+
+        return result

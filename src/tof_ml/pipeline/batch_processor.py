@@ -232,6 +232,7 @@ class BatchDataProcessor:
 
         # Extract relevant config sections
         self.data_config = config.get('data', {})
+        self.preproc_config = config.get('preprocessing', {})
         self.loader_config_key = self.data_config.get('loader_config_key')
 
         # Set up paths
@@ -284,123 +285,158 @@ class BatchDataProcessor:
             raise ValueError(f"Unsupported loader key: {loader_key}")
 
     def _setup_transform_pipeline(self):
-        """Set up the transformation pipeline based on configuration"""
+        """Set up the transformation pipeline based on configuration to ensure correct order of operations"""
         # Create a pipeline
         self.pipeline = TransformPipeline(name=f"Pipeline_{self.config_hash}")
 
         # Get the column mapping from the loader for resolving column names
         column_mapping = self.loader.column_mapping
 
-        # Add column filtering if specified
+        # Get preprocessing configs
+        preproc_config = self.config.get('preprocessing', {})
+
+        # 1. First, extract relevant feature and output columns
         feature_cols = self.data_config.get('feature_columns', [])
         output_cols = self.data_config.get('output_columns', [])
 
         if feature_cols and output_cols:
             all_cols = feature_cols + output_cols
             # Ensure all columns exist in column_mapping
-            for col in all_cols:
-                if col not in column_mapping:
-                    logger.warning(
-                        f"Column '{col}' not found in column_mapping. Available columns: {list(column_mapping.keys())}")
-
-            # Filter to only include columns that exist in mapping
             valid_cols = [col for col in all_cols if col in column_mapping]
 
             if valid_cols:
                 self.pipeline.add_transform(
                     ColumnSelector(columns=valid_cols, name="ColumnSelector")
                 )
+                logger.info(f"Added column selection transform for columns: {valid_cols}")
 
-        # Apply filtering transforms based on config
-        mid1_range = self.data_config.get('mid1')
-        mid2_range = self.data_config.get('mid2')
-        retardation_range = self.data_config.get('retardation_range')
+        # 2. Apply data masking for x and y coordinates
+        masking_config = preproc_config.get('masking', {})
+        if masking_config.get('enabled', False):
+            x_range = masking_config.get('x_range', [406, 408])
+            y_range = masking_config.get('y_range', [-16, 16])
 
-        filter_config = {}
-        if mid1_range:
-            filter_config['mid1_ratio'] = mid1_range
-        if mid2_range:
-            filter_config['mid2_ratio'] = mid2_range
-        if retardation_range:
-            filter_config['retardation'] = retardation_range
+            x_col = 'x' if 'x' in column_mapping else 'x_tof'
+            y_col = 'y' if 'y' in column_mapping else 'y_tof'
 
-        if filter_config:
             self.pipeline.add_transform(
-                FilterRows(filters=filter_config, name="DataFiltering")
-            )
-
-        # Check for mask_data option
-        mask_data = self.data_config.get('mask_data')
-        if mask_data == 'x':
-            self.pipeline.add_transform(
-                FilterRows(filters={"x_tof": (406, float('inf'))}, name="X-TOF-Mask")
-            )
-
-        # Add scaling transforms based on config
-        scaler_config = self.config.get('scaler', {})
-        scaler_type = scaler_config.get('type', 'None')
-
-        # Apply log transform if specified
-        if scaler_config.get('log_transform') and 'tof_values' in column_mapping:
-            self.pipeline.add_transform(
-                LogTransform(columns=['tof_values'], base=2.0, name="LogTransform_TOF")
-            )
-
-        # Apply feature scaling
-        if feature_cols and scaler_type == 'StandardScaler':
-            # Only use feature columns that exist in column_mapping
-            valid_features = [col for col in feature_cols if col in column_mapping]
-            if valid_features:
-                self.pipeline.add_transform(
-                    StandardScaler(columns=valid_features, name="StandardScaler")
+                FilterRows(
+                    filters={x_col: (x_range[0], x_range[1])},
+                    name="X-Coordinate-Mask"
                 )
-        elif feature_cols and scaler_type == 'MinMaxScaler':
-            # Only use feature columns that exist in column_mapping
-            valid_features = [col for col in feature_cols if col in column_mapping]
-            if valid_features:
-                self.pipeline.add_transform(
-                    MinMaxScaler(columns=valid_features, name="MinMaxScaler")
+            )
+            logger.info(f"Added X coordinate mask: {x_range}")
+
+            self.pipeline.add_transform(
+                FilterRows(
+                    filters={y_col: (y_range[0], y_range[1])},
+                    name="Y-Coordinate-Mask"
                 )
+            )
+            logger.info(f"Added Y coordinate mask: {y_range}")
 
-        # Add feature engineering transforms based on config
-        features_config = self.config.get('features', {})
+        # 3. Apply pass energy transformation (You'll need to implement this transform)
+        # This would require a custom transform that's not shown in your provided code
+        pass_energy_config = preproc_config.get('pass_energy', {})
+        if pass_energy_config.get('enabled', False) or self.data_config.get('pass_energy', False):
+            # Add a placeholder for the pass energy transform
+            # You would need to implement a custom PassEnergyTransform class
+            logger.info("Pass energy transformation would be applied here (custom transform needed)")
+            # self.pipeline.add_transform(
+            #     PassEnergyTransform(name="PassEnergyTransform")
+            # )
 
-        # Add squared terms if specified
-        if features_config.get('squared'):
-            squared_cols = features_config['squared']
-            if squared_cols is True:
-                squared_cols = feature_cols
+        # 4. Apply log transform to tof_values
+        log_transform_config = preproc_config.get('log_transform', {})
+        if log_transform_config.get('enabled', True):
+            log_cols = log_transform_config.get('columns', ['tof_values'])
+            base = log_transform_config.get('base', 2.0)
 
-            # Only use feature columns that exist in column_mapping
-            valid_squared = [col for col in squared_cols if col in column_mapping]
-            if valid_squared:
+            # Ensure columns exist in column_mapping
+            valid_log_cols = [col for col in log_cols if col in column_mapping]
+
+            if valid_log_cols:
+                self.pipeline.add_transform(
+                    LogTransform(columns=valid_log_cols, base=base, name="LogTransform")
+                )
+                logger.info(f"Added log transform for columns: {valid_log_cols}")
+
+        # 5. Apply feature scaling
+        scaling_config = preproc_config.get('scaling', {})
+        if scaling_config.get('enabled', True):
+            scale_type = scaling_config.get('type', 'MinMaxScaler')
+            scale_cols = scaling_config.get('feature_columns', feature_cols)
+
+            # Ensure columns exist in column_mapping
+            valid_scale_cols = [col for col in scale_cols if col in column_mapping]
+
+            if valid_scale_cols:
+                if scale_type == 'StandardScaler':
+                    self.pipeline.add_transform(
+                        StandardScaler(columns=valid_scale_cols, name="StandardScaler")
+                    )
+                    logger.info(f"Added StandardScaler for columns: {valid_scale_cols}")
+                elif scale_type == 'MinMaxScaler':
+                    self.pipeline.add_transform(
+                        MinMaxScaler(columns=valid_scale_cols, name="MinMaxScaler")
+                    )
+                    logger.info(f"Added MinMaxScaler for columns: {valid_scale_cols}")
+
+        # 6. Add feature engineering transforms
+        feature_eng_config = preproc_config.get('feature_engineering', {})
+
+        # 6.1 Add interaction terms
+        interactions_config = feature_eng_config.get('interactions', {})
+        if interactions_config.get('enabled', False):
+            interaction_cols = interactions_config.get('columns', feature_cols)
+
+            # Ensure columns exist in column_mapping
+            valid_interaction_cols = [col for col in interaction_cols if col in column_mapping]
+
+            if valid_interaction_cols:
                 self.pipeline.add_transform(
                     PolynomialFeatures(
-                        columns=valid_squared, degree=2,
-                        interaction_only=False, name="SquaredFeatures"
+                        columns=valid_interaction_cols,
+                        degree=2,
+                        interaction_only=True,
+                        name="InteractionFeatures"
                     )
                 )
+                logger.info(f"Added interaction features for columns: {valid_interaction_cols}")
 
-        # Add interaction terms if specified
-        if features_config.get('interactions'):
-            # Only use feature columns that exist in column_mapping
-            valid_features = [col for col in feature_cols if col in column_mapping]
-            if valid_features:
+        # 6.2 Add squared terms
+        squared_config = feature_eng_config.get('squared', {})
+        if squared_config.get('enabled', False):
+            squared_cols = squared_config.get('columns', feature_cols)
+
+            # Ensure columns exist in column_mapping
+            valid_squared_cols = [col for col in squared_cols if col in column_mapping]
+
+            if valid_squared_cols:
                 self.pipeline.add_transform(
                     PolynomialFeatures(
-                        columns=valid_features, degree=2,
-                        interaction_only=True, name="InteractionFeatures"
+                        columns=valid_squared_cols,
+                        degree=2,
+                        interaction_only=False,
+                        name="SquaredFeatures"
                     )
                 )
+                logger.info(f"Added squared features for columns: {valid_squared_cols}")
 
-        # Limit number of samples if specified
+        # 7. Limit number of samples if specified
         n_samples = self.data_config.get('n_samples')
         if n_samples:
             self.pipeline.add_transform(
                 RandomSampler(n_samples=n_samples, name="RandomSampling")
             )
+            logger.info(f"Added random sampling transform: {n_samples} samples")
 
         logger.info(f"Transformation pipeline setup with {len(self.pipeline.transforms)} transforms")
+
+        # Display the order of transforms for debugging
+        logger.info("Transform order:")
+        for i, transform in enumerate(self.pipeline.transforms):
+            logger.info(f"  {i + 1}. {transform.name}")
 
     def process_in_batches(self, save_separate_groups: bool = True):
         """
