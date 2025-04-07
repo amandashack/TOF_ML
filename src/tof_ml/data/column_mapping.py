@@ -1,5 +1,11 @@
-# src/data/column_mapping.py
+# src/tof_ml/data/column_mapping.py
 
+"""
+Column mapping for ToF data.
+This module defines the mapping of column names to indices in the data.
+"""
+
+# Mapping of column names to indices
 COLUMN_MAPPING = {
     "initial_ke":       0,
     "kinetic_energy":   0,
@@ -20,8 +26,9 @@ COLUMN_MAPPING = {
     "y_pos":            7,
 }
 
+# Reduced column mapping with simpler names
 REDUCED_COLUMN_MAPPING = {
-    "pass_energy":   0,
+    "pass_energy":      0,
     "elevation":        1,
     "mid1":             2,
     "mid2":             3,

@@ -1,7 +1,7 @@
-# config/base_config.yaml
+# config/tof_model_config.yaml
 
 # Experiment metadata
-experiment_name: "tof_energy_calibration"
+experiment_name: "tof_energy_model"
 output_dir: "./output"
 provenance:
   enabled: true
@@ -12,30 +12,11 @@ class_mapping_path: "config/class_mapping_config.yaml"
 
 # Data configuration
 data:
-  loader_config_key: "H5Loader"
-  dataset_path: "./data/tof_simulation.h5"
-  n_samples: null  # Use all samples
+  dataset_path: "./output/tof_data_preprocessing_20250331_120000/data"  # Path to preprocessed data
   feature_columns: ["tof", "retardation", "amplitude"]
   target_columns: ["energy"]
   feature_names: ["Time of Flight", "Retardation Voltage", "Signal Amplitude"]
   target_names: ["Energy (eV)"]
-
-# Preprocessing configuration
-preprocessing:
-  transformers:
-    - type: "Normalizer"
-      columns: ["tof", "amplitude"]
-      method: "standard"
-    - type: "LogTransformer"
-      columns: ["tof"]
-      base: 10
-
-# Data splitting configuration
-data_splitting:
-  type: "RandomSplitter"
-  test_size: 0.2
-  val_size: 0.15
-  random_state: 42
 
 # Model configuration
 model:

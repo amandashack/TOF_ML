@@ -1,332 +1,573 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+"""
+Database API for the ML Provenance Tracker Framework.
+This module handles interactions with the experiment tracking database.
+"""
+
 import os
-import json
 import logging
-import subprocess
-from datetime import datetime
-from typing import Dict, Any
-
-from notion_client import Client
-from notion_client.errors import APIResponseError
-from src.tof_ml.database.drive_utils import (
-    upload_file_to_drive,
-    make_file_public,
-    get_public_link,
-)
+import datetime
+import json
+import sqlite3
 import yaml
+from typing import Dict, Any, Optional, List, Union, Tuple
 
-logger = logging.getLogger('trainer')
+logger = logging.getLogger(__name__)
+
 class DBApi:
-    def __init__(self, config_path: str = "config/database_config.yaml"):
+    """
+    API for interacting with the experiment tracking database.
+    
+    This class provides methods to:
+    - Record experiment runs
+    - Query experiment results
+    - Track model artifacts
+    - Compare experiment results
+    """
+    
+    def __init__(self, config_path: str):
+        """
+        Initialize the database API.
+        
+        Args:
+            config_path: Path to database configuration file
+        """
         self.config = self._load_config(config_path)
-
-        notion_section = self.config.get("notion", {})
-        token_file = notion_section.get("token_file", "notion_token.json")
-        self.notion_db_id = notion_section.get("database_id")
-
-        if not os.path.exists(token_file):
-            raise FileNotFoundError(f"Notion token file not found: {token_file}")
-
-        with open(token_file, "r") as f:
-            data = json.load(f)
-        notion_token = data.get("token")
-        if not notion_token:
-            raise ValueError("No 'token' found in notion_token.json.")
-
-        self.notion_client = Client(auth=notion_token)
-
-        drive_section = self.config.get("google_drive", {})
-        self.drive_folder_id = drive_section.get("folder_id")
-
-        # Fetch existing properties once during initialization
-        self.existing_properties = self._fetch_existing_properties()
-
-    def _fetch_existing_properties(self) -> Dict[str, Any]:
-        try:
-            db = self.notion_client.databases.retrieve(self.notion_db_id)
-            properties = db.get("properties", {})
-            return properties
-        except APIResponseError as e:
-            logger.error(f"Failed to retrieve database properties: {e}")
-            return {}
-
-    def _update_database_schema(self, new_properties: Dict[str, Any]):
-        try:
-            self.notion_client.databases.update(
-                self.notion_db_id,
-                properties=new_properties
+        self.db_type = self.config.get("type", "sqlite")
+        self.connection = None
+        
+        # Connect to the database
+        self._connect_to_database()
+        
+        # Initialize database schema if needed
+        self._initialize_database()
+        
+        logger.info(f"Database API initialized with {self.db_type} backend")
+    
+    def _load_config(self, config_path: str) -> Dict[str, Any]:
+        """Load database configuration from YAML file."""
+        if not os.path.exists(config_path):
+            logger.warning(f"Database config file not found: {config_path}")
+            return {"type": "sqlite", "path": ":memory:"}
+        
+        with open(config_path, 'r') as f:
+            config = yaml.safe_load(f)
+        
+        return config
+    
+    def _connect_to_database(self):
+        """Connect to the database based on configuration."""
+        if self.db_type == "sqlite":
+            db_path = self.config.get("path", ":memory:")
+            
+            # Create directory if it doesn't exist
+            if db_path != ":memory:":
+                os.makedirs(os.path.dirname(db_path), exist_ok=True)
+            
+            self.connection = sqlite3.connect(db_path)
+            self.connection.row_factory = sqlite3.Row
+        else:
+            raise ValueError(f"Unsupported database type: {self.db_type}")
+    
+    def _initialize_database(self):
+        """Initialize database schema if it doesn't exist."""
+        if self.db_type == "sqlite":
+            cursor = self.connection.cursor()
+            
+            # Create experiments table
+            cursor.execute('''
+            CREATE TABLE IF NOT EXISTS experiments (
+                id TEXT PRIMARY KEY,
+                name TEXT,
+                timestamp TEXT,
+                config TEXT,
+                metadata TEXT
             )
-            logger.info("Database schema updated with new properties.")
-            # Update the existing_properties cache
-            self.existing_properties.update(new_properties)
-        except APIResponseError as e:
-            logger.error(f"Failed to update database schema: {e}")
-
-    def _define_property(self, prop_name: str, prop_type: str):
+            ''')
+            
+            # Create models table
+            cursor.execute('''
+            CREATE TABLE IF NOT EXISTS models (
+                id TEXT PRIMARY KEY,
+                experiment_id TEXT,
+                path TEXT,
+                metadata TEXT,
+                FOREIGN KEY (experiment_id) REFERENCES experiments(id)
+            )
+            ''')
+            
+            # Create metrics table
+            cursor.execute('''
+            CREATE TABLE IF NOT EXISTS metrics (
+                id TEXT PRIMARY KEY,
+                experiment_id TEXT,
+                metric_name TEXT,
+                metric_value REAL,
+                metric_type TEXT,
+                FOREIGN KEY (experiment_id) REFERENCES experiments(id)
+            )
+            ''')
+            
+            # Create artifacts table
+            cursor.execute('''
+            CREATE TABLE IF NOT EXISTS artifacts (
+                id TEXT PRIMARY KEY,
+                experiment_id TEXT,
+                artifact_type TEXT,
+                path TEXT,
+                metadata TEXT,
+                FOREIGN KEY (experiment_id) REFERENCES experiments(id)
+            )
+            ''')
+            
+            self.connection.commit()
+    
+    def record_experiment(
+        self,
+        metadata: Dict[str, Any],
+        config: Dict[str, Any],
+        training_results: Optional[Dict[str, Any]] = None,
+        evaluation_results: Optional[Dict[str, Any]] = None,
+        model_path: Optional[str] = None,
+        report_paths: Optional[Dict[str, str]] = None
+    ) -> str:
         """
-        Define a Notion property based on the desired type.
-        Extend this method to handle more property types as needed.
+        Record an experiment run in the database.
+        
+        Args:
+            metadata: Experiment metadata
+            config: Experiment configuration
+            training_results: Optional training results
+            evaluation_results: Optional evaluation results
+            model_path: Optional path to saved model
+            report_paths: Optional paths to generated reports
+            
+        Returns:
+            Experiment ID
         """
-        type_mapping = {
-            "title": {
-                "title": {}
-            },
-            "date": {
-                "date": {}
-            },
-            "rich_text": {
-                "rich_text": {}
-            },
-            "number": {
-                "number": {
-                    "format": "number"
-                }
-            },
-            "multi_select": {
-                "multi_select": {
-                    "options": []  # Initially empty; can be updated if needed
-                }
-            },
-            "url": {
-                "url": {}
-            },
-            "files": {  # Added 'files' type
-                "files": {}
+        logger.info("Recording experiment in database")
+        
+        # Generate experiment ID if not provided
+        experiment_id = metadata.get("experiment_id", str(datetime.datetime.now().isoformat()))
+        
+        if self.db_type == "sqlite":
+            cursor = self.connection.cursor()
+            
+            # Insert experiment record
+            cursor.execute(
+                "INSERT INTO experiments (id, name, timestamp, config, metadata) VALUES (?, ?, ?, ?, ?)",
+                (
+                    experiment_id,
+                    metadata.get("experiment_name", "unnamed_experiment"),
+                    datetime.datetime.now().isoformat(),
+                    json.dumps(config),
+                    json.dumps(metadata)
+                )
+            )
+            
+            # Record metrics
+            self._record_metrics(cursor, experiment_id, training_results, evaluation_results)
+            
+            # Record model if available
+            if model_path:
+                self._record_model(cursor, experiment_id, model_path, metadata)
+            
+            # Record report artifacts if available
+            if report_paths:
+                self._record_artifacts(cursor, experiment_id, report_paths)
+            
+            self.connection.commit()
+        
+        logger.info(f"Experiment recorded with ID: {experiment_id}")
+        return experiment_id
+    
+    def _record_metrics(
+        self,
+        cursor,
+        experiment_id: str,
+        training_results: Optional[Dict[str, Any]],
+        evaluation_results: Optional[Dict[str, Any]]
+    ):
+        """Record metrics in the database."""
+        # Record training metrics
+        if training_results:
+            for key, value in training_results.items():
+                if isinstance(value, (int, float)) and not isinstance(value, bool):
+                    metric_id = f"{experiment_id}_{key}"
+                    cursor.execute(
+                        "INSERT INTO metrics (id, experiment_id, metric_name, metric_value, metric_type) VALUES (?, ?, ?, ?, ?)",
+                        (
+                            metric_id,
+                            experiment_id,
+                            key,
+                            float(value),
+                            "training"
+                        )
+                    )
+        
+        # Record evaluation metrics
+        if evaluation_results:
+            for key, value in evaluation_results.items():
+                if isinstance(value, (int, float)) and not isinstance(value, bool) and key not in ["y_true", "y_pred"]:
+                    metric_id = f"{experiment_id}_{key}"
+                    cursor.execute(
+                        "INSERT INTO metrics (id, experiment_id, metric_name, metric_value, metric_type) VALUES (?, ?, ?, ?, ?)",
+                        (
+                            metric_id,
+                            experiment_id,
+                            key,
+                            float(value),
+                            "evaluation"
+                        )
+                    )
+    
+    def _record_model(
+        self,
+        cursor,
+        experiment_id: str,
+        model_path: str,
+        metadata: Dict[str, Any]
+    ):
+        """Record model in the database."""
+        model_id = f"{experiment_id}_model"
+        cursor.execute(
+            "INSERT INTO models (id, experiment_id, path, metadata) VALUES (?, ?, ?, ?)",
+            (
+                model_id,
+                experiment_id,
+                model_path,
+                json.dumps(metadata)
+            )
+        )
+    
+    def _record_artifacts(
+        self,
+        cursor,
+        experiment_id: str,
+        artifact_paths: Dict[str, str]
+    ):
+        """Record artifacts in the database."""
+        for artifact_type, path in artifact_paths.items():
+            if path:
+                artifact_id = f"{experiment_id}_{artifact_type}"
+                cursor.execute(
+                    "INSERT INTO artifacts (id, experiment_id, artifact_type, path, metadata) VALUES (?, ?, ?, ?, ?)",
+                    (
+                        artifact_id,
+                        experiment_id,
+                        artifact_type,
+                        path,
+                        json.dumps({"timestamp": datetime.datetime.now().isoformat()})
+                    )
+                )
+    
+    def get_experiment(self, experiment_id: str) -> Dict[str, Any]:
+        """
+        Get experiment details from the database.
+        
+        Args:
+            experiment_id: ID of the experiment
+            
+        Returns:
+            Experiment details
+        """
+        if self.db_type == "sqlite":
+            cursor = self.connection.cursor()
+            
+            # Get experiment record
+            cursor.execute(
+                "SELECT * FROM experiments WHERE id = ?",
+                (experiment_id,)
+            )
+            experiment_row = cursor.fetchone()
+            
+            if not experiment_row:
+                logger.warning(f"Experiment not found: {experiment_id}")
+                return {}
+            
+            # Convert row to dictionary
+            experiment = dict(experiment_row)
+            
+            # Parse JSON fields
+            experiment["config"] = json.loads(experiment["config"])
+            experiment["metadata"] = json.loads(experiment["metadata"])
+            
+            # Get metrics
+            cursor.execute(
+                "SELECT * FROM metrics WHERE experiment_id = ?",
+                (experiment_id,)
+            )
+            metrics_rows = cursor.fetchall()
+            
+            experiment["metrics"] = {row["metric_name"]: row["metric_value"] for row in metrics_rows}
+            
+            # Get model information
+            cursor.execute(
+                "SELECT * FROM models WHERE experiment_id = ?",
+                (experiment_id,)
+            )
+            model_row = cursor.fetchone()
+            
+            if model_row:
+                experiment["model"] = dict(model_row)
+                experiment["model"]["metadata"] = json.loads(experiment["model"]["metadata"])
+            
+            # Get artifacts
+            cursor.execute(
+                "SELECT * FROM artifacts WHERE experiment_id = ?",
+                (experiment_id,)
+            )
+            artifact_rows = cursor.fetchall()
+            
+            experiment["artifacts"] = {row["artifact_type"]: row["path"] for row in artifact_rows}
+            
+            return experiment
+        
+        return {}
+    
+    def query_experiments(
+        self,
+        filters: Optional[Dict[str, Any]] = None,
+        sort_by: Optional[str] = None,
+        limit: int = 10
+    ) -> List[Dict[str, Any]]:
+        """
+        Query experiments from the database.
+        
+        Args:
+            filters: Optional filters to apply
+            sort_by: Optional metric to sort by
+            limit: Maximum number of results to return
+            
+        Returns:
+            List of matching experiments
+        """
+        if self.db_type == "sqlite":
+            cursor = self.connection.cursor()
+            
+            # Base query
+            query = "SELECT id, name, timestamp FROM experiments"
+            params = []
+            
+            # Apply filters if provided
+            if filters:
+                filter_clauses = []
+                
+                # Filter by name
+                if "name" in filters:
+                    filter_clauses.append("name LIKE ?")
+                    params.append(f"%{filters['name']}%")
+                
+                # Filter by timestamp
+                if "timestamp_start" in filters:
+                    filter_clauses.append("timestamp >= ?")
+                    params.append(filters["timestamp_start"])
+                
+                if "timestamp_end" in filters:
+                    filter_clauses.append("timestamp <= ?")
+                    params.append(filters["timestamp_end"])
+                
+                # Add WHERE clause if there are filters
+                if filter_clauses:
+                    query += " WHERE " + " AND ".join(filter_clauses)
+            
+            # Apply sorting if provided
+            if sort_by:
+                # Join with metrics table if sorting by a metric
+                query = f"""
+                SELECT e.id, e.name, e.timestamp, m.metric_value
+                FROM experiments e
+                JOIN metrics m ON e.id = m.experiment_id
+                WHERE m.metric_name = ?
+                """
+                params.append(sort_by)
+                
+                if filters:
+                    filter_clauses = []
+                    
+                    # Filter by name
+                    if "name" in filters:
+                        filter_clauses.append("e.name LIKE ?")
+                        params.append(f"%{filters['name']}%")
+                    
+                    # Filter by timestamp
+                    if "timestamp_start" in filters:
+                        filter_clauses.append("e.timestamp >= ?")
+                        params.append(filters["timestamp_start"])
+                    
+                    if "timestamp_end" in filters:
+                        filter_clauses.append("e.timestamp <= ?")
+                        params.append(filters["timestamp_end"])
+                    
+                    # Add additional WHERE clauses if there are filters
+                    if filter_clauses:
+                        query += " AND " + " AND ".join(filter_clauses)
+                
+                # Sort by the metric
+                query += " ORDER BY m.metric_value ASC"
+            else:
+                # Sort by timestamp by default
+                query += " ORDER BY timestamp DESC"
+            
+            # Apply limit
+            query += " LIMIT ?"
+            params.append(limit)
+            
+            # Execute query
+            cursor.execute(query, params)
+            rows = cursor.fetchall()
+            
+            # Convert rows to dictionaries
+            experiments = [dict(row) for row in rows]
+            
+            return experiments
+        
+        return []
+    
+    def compare_experiments(self, experiment_ids: List[str]) -> Dict[str, Any]:
+        """
+        Compare multiple experiments.
+        
+        Args:
+            experiment_ids: List of experiment IDs to compare
+            
+        Returns:
+            Comparison results
+        """
+        if self.db_type == "sqlite":
+            cursor = self.connection.cursor()
+            
+            # Get basic experiment information
+            experiments = []
+            for exp_id in experiment_ids:
+                cursor.execute(
+                    "SELECT id, name, timestamp FROM experiments WHERE id = ?",
+                    (exp_id,)
+                )
+                row = cursor.fetchone()
+                
+                if row:
+                    experiments.append(dict(row))
+            
+            # Get metrics for all experiments
+            metrics_comparison = {}
+            for exp_id in experiment_ids:
+                cursor.execute(
+                    "SELECT metric_name, metric_value, metric_type FROM metrics WHERE experiment_id = ?",
+                    (exp_id,)
+                )
+                rows = cursor.fetchall()
+                
+                exp_metrics = {}
+                for row in rows:
+                    metric_name = row["metric_name"]
+                    metric_value = row["metric_value"]
+                    metric_type = row["metric_type"]
+                    
+                    if metric_name not in metrics_comparison:
+                        metrics_comparison[metric_name] = {"type": metric_type, "values": {}}
+                    
+                    metrics_comparison[metric_name]["values"][exp_id] = metric_value
+            
+            return {
+                "experiments": experiments,
+                "metrics": metrics_comparison
             }
-            # Add more mappings as needed
-        }
-        return type_mapping.get(prop_type, {"rich_text": {}})
-
-    def _ensure_properties_exist(self, desired_properties: Dict[str, str]):
+        
+        return {}
+    
+    def get_best_model(self, metric_name: str, is_higher_better: bool = False) -> Dict[str, Any]:
         """
-        Ensure that all desired properties exist in the Notion database.
-        :param desired_properties: Dict where key is property name and value is property type.
+        Get the best model based on a specific metric.
+        
+        Args:
+            metric_name: Metric to use for comparison
+            is_higher_better: Whether higher values are better
+            
+        Returns:
+            Best model information
         """
-        missing_properties = {}
-        for prop_name, prop_type in desired_properties.items():
-            if prop_name not in self.existing_properties:
-                missing_properties[prop_name] = self._define_property(prop_name, prop_type)
-
-        if missing_properties:
-            self._update_database_schema(missing_properties)
-
+        if self.db_type == "sqlite":
+            cursor = self.connection.cursor()
+            
+            # Order by metric value (ascending or descending)
+            order = "DESC" if is_higher_better else "ASC"
+            
+            # Get experiment with the best metric
+            query = f"""
+            SELECT e.id, e.name, e.timestamp, m.metric_value
+            FROM experiments e
+            JOIN metrics m ON e.id = m.experiment_id
+            WHERE m.metric_name = ?
+            ORDER BY m.metric_value {order}
+            LIMIT 1
+            """
+            
+            cursor.execute(query, (metric_name,))
+            exp_row = cursor.fetchone()
+            
+            if not exp_row:
+                logger.warning(f"No experiments found with metric: {metric_name}")
+                return {}
+            
+            # Get the model for this experiment
+            exp_id = exp_row["id"]
+            cursor.execute(
+                "SELECT * FROM models WHERE experiment_id = ?",
+                (exp_id,)
+            )
+            model_row = cursor.fetchone()
+            
+            if not model_row:
+                logger.warning(f"No model found for best experiment: {exp_id}")
+                return {"experiment": dict(exp_row), "model": None}
+            
+            return {
+                "experiment": dict(exp_row),
+                "model": dict(model_row)
+            }
+        
+        return {}
+    
     def record_model_run(
         self,
         config_dict: Dict[str, Any],
         training_results: Dict[str, Any],
         model_path: str,
         plot_paths: Dict[str, str]
-    ):
+    ) -> None:
         """
-        Records a training run to Notion:
-          - config_dict: e.g. entire base config
-          - training_results: e.g. {"val_mse": ..., "test_mse": ...}
-          - model_path: path to the final model
-          - plot_paths: e.g. { "true_vs_pred": "...", "residuals": "...", ... }
-
-        Steps:
-          1. Ensure all necessary properties exist in the database.
-          2. Upload each plot to Drive
-          3. Create a new row in Notion with separate columns for each config key
-             and each training result key.
+        Record a model training run.
+        
+        This method is a convenience wrapper for record_experiment.
+        
+        Args:
+            config_dict: Configuration dictionary
+            training_results: Training results
+            model_path: Path to saved model
+            plot_paths: Paths to generated plots
         """
-        # Step 1: Define desired properties based on config_dict and training_results
-        desired_properties = self._gather_desired_properties(config_dict, training_results, plot_paths)
-
-        # Ensure properties exist
-        self._ensure_properties_exist(desired_properties)
-
-        run_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        git_commit = self._get_git_commit()
-
-        # Step 2: Upload plots
-        drive_links = {}
-        for plot_name, file_path in plot_paths.items():
-            if os.path.exists(file_path):
-                file_id = upload_file_to_drive(file_path, self.drive_folder_id)
-                if file_id:
-                    made_public = make_file_public(file_id)
-                    if made_public:
-                        public_url = get_public_link(file_id)  # Should return direct image URL
-                        drive_links[plot_name] = public_url
-                        logger.debug(f"Direct image URL for {plot_name}: {public_url}")
-            else:
-                logger.warning(f"Plot file not found: {file_path}")
-
-        # Step 3: Build properties with separate columns
-        page_properties = self._build_page_properties_separate_columns(
-            run_date=run_date,
-            git_commit=git_commit,
-            config_dict=config_dict,
+        # Create metadata from config and results
+        metadata = {
+            "experiment_name": config_dict.get("experiment_name", "unnamed_run"),
+            "timestamp": datetime.datetime.now().isoformat(),
+            "training_results": {k: v for k, v in training_results.items() if isinstance(v, (int, float))}
+        }
+        
+        # Record as an experiment
+        self.record_experiment(
+            metadata=metadata,
+            config=config_dict,
             training_results=training_results,
             model_path=model_path,
-            drive_links=drive_links
+            report_paths=plot_paths
         )
-
-        # Step 4: Create page in Notion
-        try:
-            new_page = self.notion_client.pages.create(
-                parent={"database_id": self.notion_db_id},
-                properties=page_properties
-            )
-            logger.info(f"Created new Notion page: {new_page['id']}")
-            return new_page
-        except APIResponseError as e:
-            logger.error(f"Failed to create new page: {e}")
-            raise
-
-    def _gather_desired_properties(self, config_dict: Dict[str, Any],
-                                   training_results: Dict[str, Any],
-                                   plot_paths: Dict[str, Any]) -> Dict[str, str]:
-        """
-        Gathers all desired properties with their types based on config and training results.
-        :return: Dict where key is property name and value is property type.
-        """
-        desired = {}
-
-        # Base properties
-        desired["Date"] = "date"
-        desired["Git Commit"] = "multi_select"
-        desired["Model Path"] = "multi_select"
-
-        # Config properties
-        flat_config = self._flatten_config(config_dict)
-        for key, val in flat_config.items():
-            if isinstance(val, list):
-                prop_name_size = f"{key} size"
-                desired[prop_name_size] = "number"
-                prop_name = f"{key}"
-                desired[prop_name] = "multi_select"
-            else:
-                prop_name = f"{key}"
-                desired[prop_name] = "rich_text"
-
-        # Training results
-        for metric, value in training_results.items():
-            prop_name = f"{metric}"
-            desired[prop_name] = "number" if isinstance(value, (int, float)) else "rich_text"
-
-        # Plot links
-        for plot_name in plot_paths.keys():
-            prop_name = f"Plot: {plot_name}"
-            desired[prop_name] = "files"  # Changed from 'url' to 'files'
-
-        return desired
-
-    def _flatten_config(self, config: Dict[str, Any], parent_key: str = '', sep: str = ' ') -> Dict[str, Any]:
-        """
-        Flattens a nested configuration dictionary.
-        :param config: Nested config dictionary.
-        :param parent_key: Base key string.
-        :param sep: Separator between keys.
-        :return: Flattened dictionary.
-        """
-        items = {}
-        for k, v in config.items():
-            new_key = f"{parent_key}{sep}{k}" if parent_key else k
-            if isinstance(v, dict):
-                items.update(self._flatten_config(v, new_key, sep=sep))
-            else:
-                items[new_key] = v
-        return items
-
-    def _build_page_properties_separate_columns(
-        self,
-        run_date: str,
-        git_commit: str,
-        config_dict: Dict[str, Any],
-        training_results: Dict[str, Any],
-        model_path: str,
-        drive_links: Dict[str, str]
-    ) -> Dict[str, Any]:
-        """
-        Creates a properties dict where each config key -> property name,
-        each training_results key -> metric.
-        Also includes run date, git commit, model path, etc.
-        """
-        props = {
-            "Date": {
-                "date": {
-                    "start": run_date
-                }
-            },
-            "Git Commit": {
-                "multi_select": [
-                    {"name": git_commit}
-                ]
-            },
-            "Model Path": {
-                "multi_select": [
-                    {"name": model_path}
-                ]
-            }
-        }
-
-        # Flatten the config_dict
-        flat_config = self._flatten_config(config_dict)
-
-        # 1) For each config key
-        for key, val in flat_config.items():
-            if isinstance(val, list):
-                # Define size property
-                prop_name_size = f"{key} size"
-                props[prop_name_size] = {
-                    "number": len(val)
-                }
-                # Define multi-select property
-                props[key] = {
-                    "multi_select": [{"name": str(item)} for item in val]
-                }
-            else:
-                # Define rich_text property
-                prop_name = f"{key}"
-                props[prop_name] = {
-                    "rich_text": [
-                        {"text": {"content": str(val)}}
-                    ]
-                }
-
-        # 2) For each training result
-        for metric, value in training_results.items():
-            prop_name = f"{metric}"
-            if isinstance(value, (int, float)):
-                props[prop_name] = { "number": value }
-            else:
-                props[prop_name] = {
-                    "rich_text": [
-                        {"text": {"content": str(value)}}
-                    ]
-                }
-
-        # 3) Plot links
-        for plot_name, url in drive_links.items():
-            # e.g. "Plot: true_vs_pred"
-            prop_name = f"Plot: {plot_name}"
-            props[prop_name] = {
-                "files": [{
-                    "type": "external",
-                    "name": plot_name,
-                    "external": {
-                        "url": url
-                    }
-                }]
-            }
-
-        return props
-
-    def _get_git_commit(self) -> str:
-        try:
-            commit_hash = subprocess.check_output(["git", "rev-parse", "HEAD"]).decode().strip()
-            return commit_hash
-        except Exception as e:
-            logger.warning(f"Could not get git commit: {e}")
-            return "N/A"
-
-    def _load_config(self, path: str):
-        if not os.path.exists(path):
-            raise FileNotFoundError(f"Config file not found: {path}")
-        with open(path, 'r') as f:
-            return yaml.safe_load(f)
-
-
-
-
+        
+        logger.info("Model run recorded successfully")
+    
+    def __del__(self):
+        """Clean up database connection on object destruction."""
+        if self.connection:
+            self.connection.close()

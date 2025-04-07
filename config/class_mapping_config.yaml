@@ -1,21 +1,35 @@
+# config/class_mapping_config.yaml
 
-# class_mapping_config.yaml
-# ==============================================================================
-# Contains configurations for each possible data loader in the project
-# ==============================================================================
+# Data Loaders
 Loader:
-  vandana_continuous_nm:
-    loader_class: src.tof_ml.data.nm_csv_data_loader.NMCsvDataLoader
-    loader_type: csv
+  CSVLoader: "src.tof_ml.data.loaders.csv_loader.CSVLoader"
+  H5Loader: "src.tof_ml.data.loaders.h5_loader.H5Loader"
+  EnhancedH5Loader: "src.tof_ml.data.loaders.enhanced_h5_loader.EnhancedH5Loader"
+  SimulationLoader: "src.tof_ml.data.loaders.simulation_loader.SimulationLoader"
 
-  old_discrete:
-    loader_class: src.tof_ml.data.h5_data_loader.H5DataLoader
-    loader_type: h5
+# Data Transformers
+Transformer:
+  Normalizer: "src.tof_ml.data.transformers.normalizer.Normalizer"
+  LogTransformer: "src.tof_ml.data.transformers.log_transformer.LogTransformer"
+  FeatureEngineer: "src.tof_ml.data.transformers.feature_engineer.FeatureEngineer"
+  Outlier: "src.tof_ml.data.transformers.outlier_detector.OutlierDetector"
 
-  OtherData:
-    loader_class: src.data.other_data_loader.OtherDataLoader
-    loader_type: otherloadertype
-
+# Data Splitters
 Splitter:
-  UniformSplitter: src.tof_ml.data.data_splitting.UniformSplitter
-  SubsetSplitter: src.tof_ml.data.data_splitting.SubsetSplitter
+  RandomSplitter: "src.tof_ml.data.splitters.random_splitter.RandomSplitter"
+  StratifiedSplitter: "src.tof_ml.data.splitters.stratified_splitter.StratifiedSplitter"
+  TimeSplitter: "src.tof_ml.data.splitters.time_splitter.TimeSplitter"
+
+# Models
+Model:
+  MLPKerasRegressor: "src.tof_ml.models.tof_to_energy_model.MLPKerasRegressor"
+  LinearModel: "src.tof_ml.models.linear_model.LinearModel"
+  RandomForestModel: "src.tof_ml.models.random_forest_model.RandomForestModel"
+  XGBoostModel: "src.tof_ml.models.xgboost_model.XGBoostModel"
+
+# Callbacks
+Callback:
+  EarlyStopping: "tensorflow.keras.callbacks.EarlyStopping"
+  ModelCheckpoint: "tensorflow.keras.callbacks.ModelCheckpoint"
+  ReduceLROnPlateau: "tensorflow.keras.callbacks.ReduceLROnPlateau"
+  TensorBoard: "tensorflow.keras.callbacks.TensorBoard"
