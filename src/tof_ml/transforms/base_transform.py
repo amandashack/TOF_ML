@@ -1,8 +1,7 @@
 # src/tof_ml/transforms/base_transform.py
 from abc import ABC, abstractmethod
 import numpy as np
-import json
-from typing import Dict, Any, List, Optional, Tuple
+from typing import Dict, Any
 
 
 class BaseTransform(ABC):
@@ -62,16 +61,15 @@ class BaseTransform(ABC):
 
 
 # src/tof_ml/transforms/transform_pipeline.py
-from typing import List, Dict, Any, Optional, Union, Tuple
+from typing import List, Dict, Any, Optional, Tuple
 import numpy as np
 import json
 import h5py
-import os
 import uuid
 from datetime import datetime
 
 from src.tof_ml.transforms.base_transform import BaseTransform
-from src.tof_ml.data.column_mapping import COLUMN_MAPPING
+from plugins import COLUMN_MAPPING
 
 
 class TransformPipeline:

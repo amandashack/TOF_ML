@@ -1,186 +1,204 @@
-# ML Provenance Tracker Framework
+# ML Provenance Pipeline with Plugin Architecture
 
-A generalized, plugin-based machine learning framework with comprehensive provenance tracking.
+This project implements a modular machine learning pipeline with comprehensive provenance tracking. The pipeline is designed using a plugin architecture that allows easy swapping of components (data loaders, models, report generators) for different machine learning tasks.
 
-## Overview
+## Architecture Overview
 
-This framework provides a flexible, modular approach to building and tracking machine learning workflows. It enables:
+The ML Provenance Pipeline uses a plugin-based architecture organized as follows:
 
-- Tracking data lineage and transformations
-- Using custom data loaders for different data formats
-- Defining reproducible preprocessing pipelines
-- Training models with customizable hyperparameters
-- Automatic reporting and visualization
-- Integration with database for experiment tracking
+1. **Plugin Interfaces**: Abstract base classes defining the contract for each plugin type
+2. **Plugin Registry**: Central registry for managing and retrieving plugin implementations
+3. **Plugin Implementations**: Concrete implementations for specific tasks (e.g., MNIST)
+4. **Pipeline Orchestrator**: Coordinates the execution of the pipeline using the appropriate plugins
 
-The system is designed with pluggable components that can be configured via YAML files or command-line options, making it adaptable to various data sources and model types.
+## Plugin Types
 
-## Key Features
+The pipeline supports the following plugin types:
 
-- **Plugin Architecture**: Easily extend with custom data loaders, transformers, splitters, and models
-- **Provenance Tracking**: Complete lineage tracking of data from source to final model
-- **Configuration-Driven**: Control workflow with YAML configuration files
-- **Command-Line Interface**: Run workflows from the command line with parameter overrides
-- **Comprehensive Reporting**: Automated reports for data, training, and evaluation
-- **Database Integration**: Track experiments and compare results
-- **Visualization Tools**: Visualize data distributions, model performance, and data lineage
+- **Data Loaders**: Handle loading and preprocessing data from various sources
+- **Models**: Provide model implementations for training and inference
+- **Report Generators**: Generate reports and visualizations for model performance
 
-## Getting Started
+## Directory Structure
 
-### Installation
-
-```bash
-# Clone the repository
-git clone https://github.com/yourusername/ml-provenance-tracker.git
-cd ml-provenance-tracker
-
-# Install dependencies
-pip install -e .
+```
+ml_provenance/
+├── config/                   # Configuration files
+│   ├── class_mapping_config.yaml   # Maps plugin names to implementation classes
+│   ├── mnist_config.yaml           # MNIST-specific configuration
+│   └── ...                   
+├── plugins/                  # Plugin implementations
+│   ├── loaders/              # Data loader plugins
+│   │   ├── mnist_loader.py   # MNIST data loader
+│   │   └── ...
+│   ├── models/               # Model plugins
+│   │   ├── mnist_keras_model.py   # MNIST Keras model
+│   │   └── ...
+│   └── report_generators/    # Report generator plugins
+│       ├── MNIST_report.py   # MNIST-specific reporter
+│       └── ...
+├── src/                      # Core framework code
+│   └── tof_ml/
+│       ├── data/             # Data management
+│       ├── models/           # Model management
+│       ├── pipeline/         # Pipeline components
+│       │   ├── plugins/      # Plugin system
+│       │   │   ├── interfaces.py   # Plugin interfaces
+│       │   │   ├── registry.py     # Plugin registry
+│       │   │   └── ...
+│       │   └── orchestrator.py     # Pipeline orchestrator
+│       ├── reporting/        # Reporting utilities
+│       └── ...
+└── main.py                   # Main entry point
 ```
 
-### Basic Usage
+## Using the Pipeline
 
-1. Configure your pipeline in `config/base_config.yaml`
-2. Run the pipeline:
+### 1. Configure the Pipeline
 
-```bash
-python -m tof_ml.cli --config config/base_config.yaml
-```
-
-### Command-Line Options
-
-Override configuration settings via the command line:
-
-```bash
-python -m tof_ml.cli --config config/base_config.yaml \
-    --mode train \
-    --data-loader H5Loader \
-    --dataset-path data/my_dataset.h5 \
-    --model-type MLPKerasRegressor \
-    --epochs 100 \
-    --batch-size 64
-```
-
-## Configuration
-
-The framework uses YAML configuration files:
-
-- `base_config.yaml`: Main configuration file
-- `class_mapping_config.yaml`: Maps component types to Python classes
-- `database_config.yaml`: Database connection settings
-
-Example configuration:
+Create a configuration file for your specific task:
 
 ```yaml
-experiment_name: "my_experiment"
+# config/your_task_config.yaml
+
+# Experiment configuration
+experiment_name: "your_task_name"
 output_dir: "./output"
 
-data:
-  loader_config_key: "H5Loader"
-  dataset_path: "./data/dataset.h5"
-  feature_columns: ["tof", "retardation", "amplitude"]
-  target_columns: ["energy"]
+# Plugin configuration
+plugins:
+  data_loader: "YourDataLoader"
+  model: "YourModel"
+  report_generator: "YourReportGenerator"
 
-preprocessing:
-  transformers:
-    - type: "Normalizer"
-      columns: ["tof", "amplitude"]
-      method: "standard"
-
+# Loader-specific configuration
+data_loader:
+  # Your data loader parameters here
+  
+# Model-specific configuration
 model:
-  type: "MLPKerasRegressor"
-  hidden_layers: [64, 128, 64]
-  activations: ["relu", "relu", "relu"]
-  epochs: 100
-  batch_size: 32
+  # Your model parameters here
+  
+# Report configuration
+reporting:
+  # Your reporting parameters here
+```
+
+### 2. Register Your Plugins
+
+Update the class mapping configuration to include your plugins:
+
+```yaml
+# config/class_mapping_config.yaml
+
+# Data Loaders
+Loader:
+  YourDataLoader: "plugins.loaders.your_data_loader.YourDataLoader"
+  
+# Models
+Model:
+  YourModel: "plugins.models.your_model.YourModel"
+  
+# Report Generators
+ReportGenerator:
+  YourReportGenerator: "plugins.report_generators.your_report.YourReportGenerator"
+```
+
+### 3. Run the Pipeline
+
+Run the pipeline using the main script:
+
+```bash
+python main.py --config config/your_task_config.yaml
+```
+
+## Creating Custom Plugins
+
+### Data Loader Plugin
+
+```python
+from src.tof_ml.data.base_data_loader import BaseDataLoader
+from src.tof_ml.pipeline.plugins.interfaces import DataLoaderPlugin
+
+class YourDataLoader(BaseDataLoader, DataLoaderPlugin):
+    def __init__(self, config=None, **kwargs):
+        super().__init__(config, **kwargs)
+        # Your initialization here
+        
+    def load_data(self):
+        # Implement data loading logic
+        
+    def extract_features_and_targets(self, data=None):
+        # Implement feature/target extraction
+```
+
+### Model Plugin
+
+```python
+from src.tof_ml.pipeline.plugins.interfaces import ModelPlugin
+
+class YourModel(ModelPlugin):
+    def __init__(self, **kwargs):
+        # Your initialization here
+        
+    def fit(self, X, y, **kwargs):
+        # Implement training logic
+        
+    def predict(self, X):
+        # Implement prediction logic
+        
+    def evaluate(self, X, y, **kwargs):
+        # Implement evaluation logic
+        
+    def save(self, path):
+        # Implement model saving
+        
+    def custom_metrics(self, y_true, y_pred):
+        # Implement custom metrics calculation
+```
+
+### Report Generator Plugin
+
+```python
+from src.tof_ml.reporting.report_generator import BaseReportGenerator
+from src.tof_ml.pipeline.plugins.interfaces import ReportGeneratorPlugin
+
+class YourReportGenerator(BaseReportGenerator, ReportGeneratorPlugin):
+    def __init__(self, config, **kwargs):
+        super().__init__(config, **kwargs)
+        # Your initialization here
+        
+    def generate_data_report(self):
+        # Implement data report generation
+        
+    def generate_training_report(self):
+        # Implement training report generation
+        
+    def generate_evaluation_report(self):
+        # Implement evaluation report generation
+```
+
+## Example: MNIST Plugin
+
+The project includes an MNIST plugin implementation as an example:
+
+1. **MNISTLoader**: Loads the MNIST dataset from TensorFlow
+2. **MNISTKerasModel**: Simple neural network for MNIST classification
+3. **MNISTReportGenerator**: Generates MNIST-specific reports and visualizations
+
+Run the MNIST example:
+
+```bash
+python main.py --config config/mnist_config.yaml
 ```
 
 ## Extending the Framework
 
-### Adding a Custom Data Loader
+To add support for new ML tasks:
 
-1. Create a new loader class:
+1. Create task-specific plugin implementations in the `plugins/` directory
+2. Register them in the class mapping configuration
+3. Create a task-specific configuration file
+4. Run the pipeline with your configuration
 
-```python
-# src/tof_ml/data/loaders/my_custom_loader.py
-class MyCustomLoader:
-    def __init__(self, config, **kwargs):
-        self.config = config
-        # Initialize your loader
-        
-    def load_data(self):
-        # Implement your loading logic
-        return loaded_data
-```
-
-2. Add it to the class mapping in `config/class_mapping_config.yaml`:
-
-```yaml
-Loader:
-  MyCustomLoader: "tof_ml.data.loaders.my_custom_loader.MyCustomLoader"
-```
-
-3. Use it in your configuration:
-
-```yaml
-data:
-  loader_config_key: "MyCustomLoader"
-  # Custom loader parameters
-```
-
-### Adding a Custom Model
-
-1. Create a new model class:
-
-```python
-# src/tof_ml/models/my_custom_model.py
-class MyCustomModel:
-    def __init__(self, **kwargs):
-        # Initialize your model
-        
-    def fit(self, X, y, **kwargs):
-        # Train your model
-        return history
-    
-    def predict(self, X):
-        # Make predictions
-        return predictions
-```
-
-2. Add it to the class mapping:
-
-```yaml
-Model:
-  MyCustomModel: "tof_ml.models.my_custom_model.MyCustomModel"
-```
-
-3. Use it in your configuration:
-
-```yaml
-model:
-  type: "MyCustomModel"
-  # Custom model parameters
-```
-
-## Provenance Tracking
-
-The framework automatically tracks data provenance:
-
-- Data sources and their metadata
-- Transformations applied to data
-- Data splits
-- Model training inputs and parameters
-- Evaluation results
-
-View the provenance graph:
-
-```python
-from tof_ml.data.data_provenance import ProvenanceTracker
-
-tracker = ProvenanceTracker(config)
-tracker.visualize_provenance_graph("provenance_graph.svg")
-```
-
-## License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
+The plugin architecture makes it easy to add new components while reusing the core pipeline infrastructure.

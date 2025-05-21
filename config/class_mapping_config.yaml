@@ -2,34 +2,33 @@
 
 # Data Loaders
 Loader:
-  CSVLoader: "src.tof_ml.data.loaders.csv_loader.CSVLoader"
-  H5Loader: "src.tof_ml.data.loaders.h5_loader.H5Loader"
-  EnhancedH5Loader: "src.tof_ml.data.loaders.enhanced_h5_loader.EnhancedH5Loader"
-  SimulationLoader: "src.tof_ml.data.loaders.simulation_loader.SimulationLoader"
+  EnhancedH5Loader: "plugins.loaders.enhanced_h5_loader.EnhancedH5Loader"
+  MNISTLoader: "plugins.loaders.mnist_loader.MNISTLoader"
+  MNISTConvLoader: "plugins.loaders.mnist_loader.MNISTConvLoader"
 
 # Data Transformers
 Transformer:
   Normalizer: "src.tof_ml.data.transformers.normalizer.Normalizer"
-  LogTransformer: "src.tof_ml.data.transformers.log_transformer.LogTransformer"
-  FeatureEngineer: "src.tof_ml.data.transformers.feature_engineer.FeatureEngineer"
-  Outlier: "src.tof_ml.data.transformers.outlier_detector.OutlierDetector"
+  StandardScaler: "src.tof_ml.data.transformers.scaler.StandardScaler"
 
 # Data Splitters
 Splitter:
-  RandomSplitter: "src.tof_ml.data.splitters.random_splitter.RandomSplitter"
-  StratifiedSplitter: "src.tof_ml.data.splitters.stratified_splitter.StratifiedSplitter"
-  TimeSplitter: "src.tof_ml.data.splitters.time_splitter.TimeSplitter"
+  RandomSplitter: "src.tof_ml.data.splitters.RandomSplitter"
+  TimeSeriesSplitter: "src.tof_ml.data.splitters.time_series_splitter.TimeSeriesSplitter"
 
 # Models
 Model:
-  MLPKerasRegressor: "src.tof_ml.models.tof_to_energy_model.MLPKerasRegressor"
-  LinearModel: "src.tof_ml.models.linear_model.LinearModel"
-  RandomForestModel: "src.tof_ml.models.random_forest_model.RandomForestModel"
-  XGBoostModel: "src.tof_ml.models.xgboost_model.XGBoostModel"
+  MLPKerasClassifier: "src.tof_ml.models.keras_classifier.MLPKerasClassifier"
+  MNISTKerasModel: "plugins.models.mnist_keras_model.MNISTKerasModel"
+  MNISTConvModel: "plugins.models.mnist_keras_model.MNISTConvModel"
 
-# Callbacks
-Callback:
-  EarlyStopping: "tensorflow.keras.callbacks.EarlyStopping"
-  ModelCheckpoint: "tensorflow.keras.callbacks.ModelCheckpoint"
-  ReduceLROnPlateau: "tensorflow.keras.callbacks.ReduceLROnPlateau"
-  TensorBoard: "tensorflow.keras.callbacks.TensorBoard"
+# Report Generators
+ReportGenerator:
+  ClassificationReportGenerator: "src.tof_ml.reporting.report_generator.ClassificationReportGenerator"
+  RegressionReportGenerator: "src.tof_ml.reporting.report_generator.RegressionReportGenerator"
+  MNISTReportGenerator: "plugins.report_generators.MNIST_report.MNISTReportGenerator"
+
+# Database Adapters
+Database:
+  SQLiteDB: "plugins.database.sqlite_db.SQLiteDB"
+  PostgresDB: "plugins.database.postgres_db.PostgresDB"

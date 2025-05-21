@@ -6,14 +6,13 @@ import numpy as np
 import matplotlib.pyplot as plt
 from datetime import datetime
 import subprocess
-import requests
 import sys
 import yaml
 import json
 from notion_client import Client
 from notion_client.errors import APIResponseError
 from src.tof_ml.logging.logging_utils import setup_logger
-from src.tof_ml.data.data_filtering import filter_data
+from plugins.data_filtering import filter_data
 from src.tof_ml.database.drive_utils import upload_file_to_drive, make_file_public, get_public_link
 
 NOTION_API_URL = "https://api.notion.com/v1/pages"

@@ -9,8 +9,7 @@ This script demonstrates how to:
 2. Apply preprocessing transformations
 3. Split data into train/validation/test sets
 4. Save preprocessed data
-5. Train a model (optional)
-6. Track provenance throughout the process
+5. Track provenance throughout the process
 
 Usage:
     python examples/process_tof_data.py --config config/tof_data_config.yaml
@@ -33,7 +32,7 @@ from src.tof_ml.models.model_factory import ModelFactory
 from src.tof_ml.training.trainer import Trainer
 from src.tof_ml.reporting.report_generator import ReportGenerator
 from src.tof_ml.database.api import DBApi
-from src.tof_ml.data.column_mapping import COLUMN_MAPPING, REDUCED_COLUMN_MAPPING
+from plugins import COLUMN_MAPPING, REDUCED_COLUMN_MAPPING
 from src.tof_ml.visualization.pipeline_visualizer import visualize_provenance_graph
 
 def parse_args():
@@ -127,7 +126,8 @@ def main():
     config = load_config(args.config)
     
     # Update configuration with command-line arguments
-    # config = update_config_from_args(config, args)
+    if args.data_path or args.n_samples or args.batch_size or args.mid1 or args.mid2 or args.output_dir or args.skip_db:
+        config = update_config_from_args(config, args)
     
     # Set up output directory
     output_dir = config.get("output_dir", "./output")
@@ -144,8 +144,16 @@ def main():
     
     # Initialize data manager
     data_config = config.get("data", {})
-    mid1 = data_config.get("mid1", [0.0, 1])
-    mid2 = data_config.get("mid2", [0.0, 1])
+    
+    # Add column mappings to data configuration if not already present
+    if "column_mapping" not in data_config:
+        data_config["column_mapping"] = COLUMN_MAPPING
+    if "reduced_column_mapping" not in data_config:
+        data_config["reduced_column_mapping"] = REDUCED_COLUMN_MAPPING
+    
+    # Log the column mapping configuration
+    logging.info(f"Using feature columns: {data_config.get('feature_columns', [])}")
+    logging.info(f"Using target columns: {data_config.get('target_columns', [])}")
     
     data_manager = DataManager(
         config=config,
@@ -153,20 +161,8 @@ def main():
         provenance_tracker=provenance_tracker
     )
     
-    # Load data with column mapping
-    logging.info("Loading ToF data...")
-    data_loader_params = {
-        "mid1": mid1,
-        "mid2": mid2,
-        "column_mapping": COLUMN_MAPPING,
-        "reduced_column_mapping": REDUCED_COLUMN_MAPPING
-    }
-    
-    # Inject loader parameters into config
-    for key, value in data_loader_params.items():
-        data_config[key] = value
-    
     # Load data
+    logging.info("Loading ToF data...")
     data_manager.load_data()
     
     # Preprocess data
@@ -250,8 +246,8 @@ def main():
             "dataset_name": os.path.basename(config["data"]["dataset_path"]),
             "preprocessing_steps": [t["type"] for t in config["preprocessing"]["transformers"]],
             "total_samples": data_manager.get_metadata().get("total_samples", 0),
-            "mid1": mid1,
-            "mid2": mid2
+            "feature_columns": config["data"].get("feature_columns", []),
+            "target_columns": config["data"].get("target_columns", [])
         }
         
         if training_results:
@@ -273,6 +269,7 @@ def main():
         
         logging.info(f"Experiment recorded in database with ID: {experiment_id}")
     
+    # Print summary
     logging.info(f"Processing completed. Results saved to {experiment_dir}")
     logging.info(f"Saved datasets: {list(saved_paths.keys())}")
     logging.info(f"Provenance graph: {provenance_path}")

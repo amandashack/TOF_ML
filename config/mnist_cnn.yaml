@@ -1,0 +1,56 @@
+# config/mnist_cnn_config.yaml
+
+# Experiment configuration
+experiment_name: "mnist_cnn_classification"
+output_dir: "./output"
+use_database: true
+
+# Data configuration
+data:
+  dataset_name: "MNIST"
+  dataset_path: "mnist"  # Dummy path for validation
+  split_ratio: [0.7, 0.15, 0.15]  # [train, val, test]
+  force_reload: false  # Set to true to force reloading data
+
+# Plugin configuration
+plugins:
+  data_loader: "MNISTConvLoader"
+  model: "MNISTConvModel"
+  report_generator: "MNISTReportGenerator"
+
+# Loader-specific configuration
+data_loader:
+  dataset_path: "mnist"  # Dummy path for the BaseDataLoader validation
+  normalize: true
+  one_hot: false
+
+# Model-specific configuration
+model:
+  type: "MNISTConvModel"
+  conv_filters: [32, 64]
+  kernel_sizes: [3, 3]
+  pool_sizes: [2, 2]
+  dense_layers: [128]
+  dropout_rate: 0.3
+  activations: ["relu", "relu", "relu"]  # First conv, second conv, dense layer
+  output_activation: "softmax"
+  output_units: 10
+  learning_rate: 0.001
+  optimizer_name: "Adam"
+  loss: "sparse_categorical_crossentropy"
+  metrics: ["accuracy"]
+  epochs: 10
+  batch_size: 64
+  early_stopping:
+    enabled: true
+    monitor: "val_loss"
+    patience: 5
+  checkpoint:
+    enabled: true
+    monitor: "val_loss"
+    save_best_only: true
+
+# Report configuration
+reporting:
+  enabled_reports: ["data", "training", "evaluation", "summary"]
+  style: "tableau-colorblind10"

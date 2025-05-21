@@ -1,0 +1,54 @@
+# config/mnist_config.yaml
+
+# Experiment configuration
+experiment_name: "mnist_classification"
+output_dir: "./output"
+use_database: true
+
+# Data configuration
+data:
+  dataset_name: "MNIST"
+  dataset_path: "mnist"  # Dummy path for validation
+  split_ratio: [0.7, 0.15, 0.15]  # [train, val, test]
+  force_reload: false  # Set to true to force reloading data
+  # source_run_id: "run_20250512_123456"  # Uncomment to use data from a specific run
+
+# Plugin configuration
+plugins:
+  data_loader: "MNISTLoader"
+  model: "MNISTKerasModel"
+  report_generator: "MNISTReportGenerator"
+
+# Loader-specific configuration
+data_loader:
+  dataset_path: "mnist"  # Dummy path for the BaseDataLoader validation
+  flatten: true
+  normalize: true
+  one_hot: false
+
+# Model-specific configuration
+model:
+  type: "MNISTKerasModel"
+  hidden_layers: [128, 64]
+  activations: ["relu", "relu"]
+  output_activation: "softmax"
+  output_units: 10
+  learning_rate: 0.001
+  optimizer_name: "Adam"
+  loss: "sparse_categorical_crossentropy"
+  metrics: ["accuracy"]
+  epochs: 10
+  batch_size: 64
+  early_stopping:
+    enabled: true
+    monitor: "val_loss"
+    patience: 5
+  checkpoint:
+    enabled: true
+    monitor: "val_loss"
+    save_best_only: true
+
+# Report configuration
+reporting:
+  enabled_reports: ["data", "training", "evaluation", "summary"]
+  style: "tableau-colorblind10"

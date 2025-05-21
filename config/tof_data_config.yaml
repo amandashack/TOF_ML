@@ -5,7 +5,6 @@ experiment_name: "tof_data_processing"
 output_dir: "./output"
 provenance:
   enabled: true
-  db_path: "./provenance"
 
 # Class mapping configuration
 class_mapping_path: "config/class_mapping_config.yaml"
@@ -14,8 +13,8 @@ class_mapping_path: "config/class_mapping_config.yaml"
 data:
   loader_config_key: "EnhancedH5Loader"
   dataset_path: "C:/Users/proxi/Documents/coding/TOF_data"
-  n_samples: null  # Use all samples
-  batch_size: 10000  # Load data in batches of 10000 samples
+  n_samples: ~  # Use all samples
+  batch_size: ~  # Load data in batches of N samples
   feature_columns: ["initial_ke", "retardation", "elevation", "mid1", "mid2"]
   target_columns: ["tof", "y"]
   feature_names: ["Initial Kinetic Energy", "Retardation Voltage", "Elevation", "Blade 22 Voltage Ratio", "Blade 25 Voltage Ratio"]
@@ -27,6 +26,12 @@ data:
 # Preprocessing configuration
 preprocessing:
   transformers:
+    - type: "PositionFilter"
+      x_column: "x"  # Column name for x position
+      y_column: "y"  # Column name for y position
+      x_min: 406.4   # Minimum x value (inclusive)
+      y_min: -16.6   # Minimum y value (inclusive)
+      y_max: 16.6    # Maximum y value (exclusive)
     - type: "Normalizer"
       columns: ["tof", "x", "y"]
       method: "standard"
@@ -44,6 +49,8 @@ data_splitting:
   test_size: 0.2
   val_size: 0.2
   random_state: 42
+  feature_columns: ["initial_ke", "retardation", "elevation", "mid1", "mid2"]
+  output_columns: ["tof", "y"]
 
 # Model configuration
 model:

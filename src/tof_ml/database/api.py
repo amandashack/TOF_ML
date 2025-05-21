@@ -262,168 +262,160 @@ class DBApi:
                         json.dumps({"timestamp": datetime.datetime.now().isoformat()})
                     )
                 )
-    
+
     def get_experiment(self, experiment_id: str) -> Dict[str, Any]:
         """
         Get experiment details from the database.
-        
+
         Args:
             experiment_id: ID of the experiment
-            
+
         Returns:
             Experiment details
         """
         if self.db_type == "sqlite":
             cursor = self.connection.cursor()
-            
+
             # Get experiment record
             cursor.execute(
                 "SELECT * FROM experiments WHERE id = ?",
                 (experiment_id,)
             )
             experiment_row = cursor.fetchone()
-            
+
             if not experiment_row:
                 logger.warning(f"Experiment not found: {experiment_id}")
                 return {}
-            
+
             # Convert row to dictionary
             experiment = dict(experiment_row)
-            
+
             # Parse JSON fields
             experiment["config"] = json.loads(experiment["config"])
             experiment["metadata"] = json.loads(experiment["metadata"])
-            
+
             # Get metrics
             cursor.execute(
-                "SELECT * FROM metrics WHERE experiment_id = ?",
+                "SELECT metric_name, metric_value, metric_type FROM metrics WHERE experiment_id = ?",
                 (experiment_id,)
             )
             metrics_rows = cursor.fetchall()
-            
+
             experiment["metrics"] = {row["metric_name"]: row["metric_value"] for row in metrics_rows}
-            
+
             # Get model information
             cursor.execute(
                 "SELECT * FROM models WHERE experiment_id = ?",
                 (experiment_id,)
             )
             model_row = cursor.fetchone()
-            
+
             if model_row:
                 experiment["model"] = dict(model_row)
                 experiment["model"]["metadata"] = json.loads(experiment["model"]["metadata"])
-            
+
             # Get artifacts
             cursor.execute(
-                "SELECT * FROM artifacts WHERE experiment_id = ?",
+                "SELECT artifact_type, path FROM artifacts WHERE experiment_id = ?",
                 (experiment_id,)
             )
             artifact_rows = cursor.fetchall()
-            
+
             experiment["artifacts"] = {row["artifact_type"]: row["path"] for row in artifact_rows}
-            
+
             return experiment
-        
+
         return {}
-    
+
     def query_experiments(
-        self,
-        filters: Optional[Dict[str, Any]] = None,
-        sort_by: Optional[str] = None,
-        limit: int = 10
+            self,
+            filters: Optional[Dict[str, Any]] = None,
+            sort_by: Optional[str] = None,
+            limit: int = 10
     ) -> List[Dict[str, Any]]:
         """
         Query experiments from the database.
-        
+
         Args:
             filters: Optional filters to apply
             sort_by: Optional metric to sort by
             limit: Maximum number of results to return
-            
+
         Returns:
             List of matching experiments
         """
         if self.db_type == "sqlite":
             cursor = self.connection.cursor()
-            
+
             # Base query
             query = "SELECT id, name, timestamp FROM experiments"
             params = []
-            
+
             # Apply filters if provided
             if filters:
                 filter_clauses = []
-                
+
                 # Filter by name
                 if "name" in filters:
                     filter_clauses.append("name LIKE ?")
                     params.append(f"%{filters['name']}%")
-                
+
                 # Filter by timestamp
                 if "timestamp_start" in filters:
                     filter_clauses.append("timestamp >= ?")
                     params.append(filters["timestamp_start"])
-                
+
                 if "timestamp_end" in filters:
                     filter_clauses.append("timestamp <= ?")
                     params.append(filters["timestamp_end"])
-                
+
+                # Filter by model type or other metadata fields
+                if "model_type" in filters:
+                    filter_clauses.append("json_extract(metadata, '$.model_type') = ?")
+                    params.append(filters["model_type"])
+
                 # Add WHERE clause if there are filters
                 if filter_clauses:
                     query += " WHERE " + " AND ".join(filter_clauses)
-            
+
             # Apply sorting if provided
             if sort_by:
-                # Join with metrics table if sorting by a metric
-                query = f"""
-                SELECT e.id, e.name, e.timestamp, m.metric_value
-                FROM experiments e
-                JOIN metrics m ON e.id = m.experiment_id
-                WHERE m.metric_name = ?
-                """
-                params.append(sort_by)
-                
-                if filters:
-                    filter_clauses = []
-                    
-                    # Filter by name
-                    if "name" in filters:
-                        filter_clauses.append("e.name LIKE ?")
-                        params.append(f"%{filters['name']}%")
-                    
-                    # Filter by timestamp
-                    if "timestamp_start" in filters:
-                        filter_clauses.append("e.timestamp >= ?")
-                        params.append(filters["timestamp_start"])
-                    
-                    if "timestamp_end" in filters:
-                        filter_clauses.append("e.timestamp <= ?")
-                        params.append(filters["timestamp_end"])
-                    
-                    # Add additional WHERE clauses if there are filters
-                    if filter_clauses:
-                        query += " AND " + " AND ".join(filter_clauses)
-                
-                # Sort by the metric
-                query += " ORDER BY m.metric_value ASC"
-            else:
                 # Sort by timestamp by default
+                if sort_by == "timestamp":
+                    query += " ORDER BY timestamp DESC"
+                # Sort by a metric if specified
+                else:
+                    # Join with metrics table to sort by a specific metric
+                    query = f"""
+                    SELECT e.id, e.name, e.timestamp, m.metric_value
+                    FROM experiments e
+                    LEFT JOIN metrics m ON e.id = m.experiment_id AND m.metric_name = ?
+                    """
+                    params.insert(0, sort_by)
+
+                    # Re-apply filters if any
+                    if filters and len(filter_clauses) > 0:
+                        query += " WHERE " + " AND ".join(filter_clauses)
+
+                    # Add sorting direction
+                    query += " ORDER BY m.metric_value ASC"
+            else:
+                # Default sorting by timestamp
                 query += " ORDER BY timestamp DESC"
-            
+
             # Apply limit
             query += " LIMIT ?"
             params.append(limit)
-            
+
             # Execute query
             cursor.execute(query, params)
             rows = cursor.fetchall()
-            
+
             # Convert rows to dictionaries
             experiments = [dict(row) for row in rows]
-            
+
             return experiments
-        
+
         return []
     
     def compare_experiments(self, experiment_ids: List[str]) -> Dict[str, Any]:
@@ -476,6 +468,64 @@ class DBApi:
                 "metrics": metrics_comparison
             }
         
+        return {}
+
+    def get_metrics(self, experiment_id: str) -> Dict[str, float]:
+        """
+        Get all metrics for an experiment.
+
+        Args:
+            experiment_id: ID of the experiment
+
+        Returns:
+            Dictionary of metrics
+        """
+        if self.db_type == "sqlite":
+            cursor = self.connection.cursor()
+
+            cursor.execute(
+                "SELECT metric_name, metric_value FROM metrics WHERE experiment_id = ?",
+                (experiment_id,)
+            )
+            rows = cursor.fetchall()
+
+            return {row["metric_name"]: row["metric_value"] for row in rows}
+
+        return {}
+
+    def get_best_experiment(self, metric_name: str, higher_is_better: bool = False) -> Dict[str, Any]:
+        """
+        Get the experiment with the best metric value.
+
+        Args:
+            metric_name: Name of the metric to compare
+            higher_is_better: Whether higher values are better
+
+        Returns:
+            Best experiment details
+        """
+        if self.db_type == "sqlite":
+            cursor = self.connection.cursor()
+
+            # Order by metric value (ascending or descending)
+            order = "DESC" if higher_is_better else "ASC"
+
+            # Get experiment with the best metric
+            query = f"""
+            SELECT e.id
+            FROM experiments e
+            JOIN metrics m ON e.id = m.experiment_id
+            WHERE m.metric_name = ?
+            ORDER BY m.metric_value {order}
+            LIMIT 1
+            """
+
+            cursor.execute(query, (metric_name,))
+            row = cursor.fetchone()
+
+            if row:
+                return self.get_experiment(row["id"])
+
         return {}
     
     def get_best_model(self, metric_name: str, is_higher_better: bool = False) -> Dict[str, Any]:
@@ -566,6 +616,39 @@ class DBApi:
         )
         
         logger.info("Model run recorded successfully")
+
+    def delete_experiment(self, experiment_id: str) -> bool:
+        """
+        Delete an experiment and all associated data from the database.
+
+        Args:
+            experiment_id: ID of the experiment to delete
+
+        Returns:
+            True if successful, False otherwise
+        """
+        if self.db_type == "sqlite":
+            try:
+                cursor = self.connection.cursor()
+
+                # Delete related records first
+                cursor.execute("DELETE FROM metrics WHERE experiment_id = ?", (experiment_id,))
+                cursor.execute("DELETE FROM models WHERE experiment_id = ?", (experiment_id,))
+                cursor.execute("DELETE FROM artifacts WHERE experiment_id = ?", (experiment_id,))
+
+                # Delete the experiment record
+                cursor.execute("DELETE FROM experiments WHERE id = ?", (experiment_id,))
+
+                # Commit changes
+                self.connection.commit()
+
+                return True
+            except Exception as e:
+                logger.error(f"Error deleting experiment: {e}")
+                self.connection.rollback()
+                return False
+
+        return False
     
     def __del__(self):
         """Clean up database connection on object destruction."""
