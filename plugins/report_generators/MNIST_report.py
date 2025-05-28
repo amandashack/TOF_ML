@@ -6,6 +6,8 @@ import os
 import logging
 import numpy as np
 from typing import Dict, Any, List, Optional
+import seaborn as sns
+import pandas as pd
 
 from src.tof_ml.reporting.report_generator import ClassificationReportGenerator
 from src.tof_ml.pipeline.plugins.interfaces import ReportGeneratorPlugin
@@ -139,7 +141,7 @@ class MNISTReportGenerator(ClassificationReportGenerator, ReportGeneratorPlugin)
             return ""
 
         # Create figure for evaluation visualizations
-        fig = plt.figure(figsize=(15, 12))
+        fig, axes = plt.subplots(2, 1, figsize=(12, 16))
         fig.suptitle("MNIST Evaluation Results", fontsize=16)
 
         try:
@@ -149,16 +151,16 @@ class MNISTReportGenerator(ClassificationReportGenerator, ReportGeneratorPlugin)
             
             # Get confusion matrix if available
             confusion_matrix = np.array(self.evaluation_results.get("confusion_matrix", []))
-            
+            print(confusion_matrix, type(confusion_matrix), type(confusion_matrix[0]), type(confusion_matrix[0][0]))
+
             # Plot confusion matrix
             if confusion_matrix.size > 0:
-                ax1 = fig.add_subplot(2, 1, 1)
-                self._plot_confusion_matrix(ax1, confusion_matrix)
+                self._plot_confusion_matrix(axes[0], confusion_matrix)
             
-            # Plot misclassified examples
+            """# Plot misclassified examples
             ax2 = fig.add_subplot(2, 1, 2)
             X_test, _ = self.data_manager.get_test_data()
-            self._plot_misclassified_digits(ax2, X_test, y_true, y_pred)
+            self._plot_misclassified_digits(axes[1], X_test, y_true, y_pred)"""
             
         except Exception as e:
             logger.error(f"Error generating MNIST evaluation visualizations: {e}")
@@ -204,33 +206,42 @@ class MNISTReportGenerator(ClassificationReportGenerator, ReportGeneratorPlugin)
             ax.axis('off')
 
     def _plot_confusion_matrix(self, ax, confusion_matrix):
-        """Plot confusion matrix for MNIST classification."""
-        im = ax.imshow(confusion_matrix, interpolation='nearest', cmap=plt.cm.Blues)
-        ax.figure.colorbar(im, ax=ax)
-        
-        # Show all ticks
-        n_classes = confusion_matrix.shape[0]
-        ax.set_xticks(np.arange(n_classes))
-        ax.set_yticks(np.arange(n_classes))
-        
-        # Label with class indices
-        ax.set_xticklabels(np.arange(n_classes))
-        ax.set_yticklabels(np.arange(n_classes))
-        
-        # Set axis labels
-        ax.set_ylabel('True Label')
-        ax.set_xlabel('Predicted Label')
-        ax.set_title('Confusion Matrix')
-        
-        # Loop over data dimensions and create text annotations
-        max_val = confusion_matrix.max()
-        thresh = max_val / 2. if max_val > 0 else 0
-        for i in range(n_classes):
-            for j in range(n_classes):
-                cell_val = int(confusion_matrix[i, j])
-                ax.text(j, i, str(cell_val),
-                        ha="center", va="center",
-                        color="white" if cell_val > thresh else "black")
+        """Plot confusion matrix for MNIST classification using seaborn."""
+        # Ensure the confusion matrix is a proper numpy array
+        confusion_matrix = np.asarray(confusion_matrix)
+
+        # Create DataFrame for seaborn heatmap
+        # For MNIST, we have digits 0-9 as class labels
+        class_labels = [str(i) for i in range(confusion_matrix.shape[0])]
+
+        df_cm = pd.DataFrame(
+            confusion_matrix,
+            index=class_labels,
+            columns=class_labels
+        )
+
+        # Create the heatmap
+        sns.heatmap(
+            df_cm,
+            annot=True,  # Show numbers in cells
+            fmt='d',  # Format as integers
+            cmap='Blues',  # Use blue color scheme
+            ax=ax,  # Use the provided axis
+            square=True,  # Make cells square
+            linewidths=0.5,  # Add lines between cells
+            annot_kws={'size': 8},  # Smaller font size for better fit
+            cbar_kws={'shrink': 0.8}  # Shrink colorbar to fit better
+        )
+
+        # Set labels and title
+        ax.set_xlabel('Predicted Label', fontsize=12)
+        ax.set_ylabel('True Label', fontsize=12)
+        ax.set_title('Confusion Matrix', fontsize=14, pad=10)
+
+        # Ensure labels are readable
+        ax.set_xticklabels(ax.get_xticklabels(), rotation=0, fontsize=10)
+        ax.set_yticklabels(ax.get_yticklabels(), rotation=0, fontsize=10)
+
 
     def _plot_misclassified_digits(self, ax, X_test, y_true, y_pred):
         """Plot examples of misclassified digits."""

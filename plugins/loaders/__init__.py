@@ -2,6 +2,4 @@
 
 from plugins.loaders.mnist_loader import MNISTLoader, MNISTConvLoader
 
-
-
 __all__ = ['MNISTLoader']

@@ -182,15 +182,12 @@ class MNISTKerasModel(ModelPlugin):
         return model
 
     def fit(self, X, y, **kwargs):
-        """Train the model."""
         return self.model.fit(X, y, **kwargs)
 
     def predict(self, X):
-        """Make predictions."""
         return self.model.predict(X)
 
     def save(self, path):
-        """Save the model."""
         self.model.save(path)
 
     def evaluate(self, X, y, **kwargs):

@@ -5,6 +5,12 @@ experiment_name: "mnist_classification"
 output_dir: "./output"
 use_database: true
 
+# Plugin configuration
+plugins:
+  data_loader: "MNISTLoader"
+  model: "MNISTKerasModel"
+  report_generator: "MNISTReportGenerator"
+
 # Data configuration
 data:
   dataset_name: "MNIST"
@@ -12,12 +18,6 @@ data:
   split_ratio: [0.7, 0.15, 0.15]  # [train, val, test]
   force_reload: false  # Set to true to force reloading data
   # source_run_id: "run_20250512_123456"  # Uncomment to use data from a specific run
-
-# Plugin configuration
-plugins:
-  data_loader: "MNISTLoader"
-  model: "MNISTKerasModel"
-  report_generator: "MNISTReportGenerator"
 
 # Loader-specific configuration
 data_loader:
