@@ -10,11 +10,9 @@ import logging
 import importlib
 from typing import Dict, Any, Type, List, Optional
 
-from src.tof_ml.pipeline.plugins.interfaces import (
-    DataLoaderPlugin,
-    ModelPlugin,
-    ReportGeneratorPlugin
-)
+from src.tof_ml.models.base_model import BaseModelPlugin
+from src.tof_ml.data.base_data_loader import BaseDataLoaderPlugin
+from src.tof_ml.reporting.report_generator import ReportGeneratorPlugin
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +33,7 @@ class PluginRegistry:
         
         logger.info("PluginRegistry initialized")
     
-    def register_data_loader(self, name: str, loader_class: Type[DataLoaderPlugin]):
+    def register_data_loader(self, name: str, loader_class: Type[BaseDataLoaderPlugin]):
         """
         Register a data loader plugin.
         
@@ -46,7 +44,7 @@ class PluginRegistry:
         self.data_loaders[name] = loader_class
         logger.info(f"Registered data loader plugin: {name}")
     
-    def register_model(self, name: str, model_class: Type[ModelPlugin]):
+    def register_model(self, name: str, model_class: Type[BaseModelPlugin]):
         """
         Register a model plugin.
         
@@ -68,7 +66,7 @@ class PluginRegistry:
         self.report_generators[name] = generator_class
         logger.info(f"Registered report generator plugin: {name}")
     
-    def get_data_loader(self, name: str, config: Optional[Dict[str, Any]] = None, **kwargs) -> DataLoaderPlugin:
+    def get_data_loader(self, name: str, config: Optional[Dict[str, Any]] = None, **kwargs) -> BaseDataLoaderPlugin:
         """
         Get an instance of a data loader plugin.
         
@@ -89,7 +87,7 @@ class PluginRegistry:
         loader_class = self.data_loaders[name]
         return loader_class(config, **kwargs)
     
-    def get_model(self, name: str, **kwargs) -> ModelPlugin:
+    def get_model(self, name: str, **kwargs) -> BaseModelPlugin:
         """
         Get an instance of a model plugin.
         
@@ -141,45 +139,45 @@ class PluginRegistry:
     def list_report_generators(self) -> List[str]:
         """List all registered report generator plugins."""
         return list(self.report_generators.keys())
-    
+
     def register_plugins_from_config(self, class_mapping: Dict[str, Dict[str, str]]):
-        """
-        Register plugins from a class mapping configuration.
-        
-        Args:
-            class_mapping: Dictionary mapping plugin types and names to class paths
-        """
+        """Register plugins from a class mapping configuration."""
+
         # Register data loaders
         for name, class_path in class_mapping.get("Loader", {}).items():
             try:
-                module_name, class_name = class_path.rsplit('.', 1)
-                module = importlib.import_module(module_name)
-                loader_class = getattr(module, class_name)
+                loader_class = self._import_class(class_path)
+                if not issubclass(loader_class, BaseDataLoaderPlugin):
+                    raise TypeError(f"{loader_class} must inherit from BaseDataLoader")
                 self.register_data_loader(name, loader_class)
-            except (ImportError, AttributeError) as e:
+            except Exception as e:
                 logger.error(f"Failed to register data loader {name}: {e}")
-        
+
         # Register models
         for name, class_path in class_mapping.get("Model", {}).items():
             try:
-                module_name, class_name = class_path.rsplit('.', 1)
-                module = importlib.import_module(module_name)
-                model_class = getattr(module, class_name)
+                model_class = self._import_class(class_path)
+                if not issubclass(model_class, BaseModelPlugin):
+                    raise TypeError(f"{model_class} must inherit from BaseModel")
                 self.register_model(name, model_class)
-            except (ImportError, AttributeError) as e:
+            except Exception as e:
                 logger.error(f"Failed to register model {name}: {e}")
-        
+
         # Register report generators
         for name, class_path in class_mapping.get("ReportGenerator", {}).items():
             try:
-                module_name, class_name = class_path.rsplit('.', 1)
-                module = importlib.import_module(module_name)
-                generator_class = getattr(module, class_name)
+                generator_class = self._import_class(class_path)
+                if not issubclass(generator_class, ReportGeneratorPlugin):
+                    raise TypeError(f"{generator_class} must inherit from BaseReportGenerator")
                 self.register_report_generator(name, generator_class)
-            except (ImportError, AttributeError) as e:
+            except Exception as e:
                 logger.error(f"Failed to register report generator {name}: {e}")
-        
-        logger.info("Registered plugins from config")
+
+    def _import_class(self, class_path: str):
+        """Import a class from a module path."""
+        module_name, class_name = class_path.rsplit('.', 1)
+        module = importlib.import_module(module_name)
+        return getattr(module, class_name)
 
 
 # Singleton instance of the plugin registry

@@ -2,7 +2,6 @@
 
 # Data Loaders
 Loader:
-  EnhancedH5Loader: "plugins.loaders.enhanced_h5_loader.EnhancedH5Loader"
   MNISTLoader: "plugins.loaders.mnist_loader.MNISTLoader"
   MNISTConvLoader: "plugins.loaders.mnist_loader.MNISTConvLoader"
 
@@ -14,19 +13,16 @@ Transformer:
 # Data Splitters
 Splitter:
   RandomSplitter: "src.tof_ml.data.splitters.RandomSplitter"
-  TimeSeriesSplitter: "src.tof_ml.data.splitters.time_series_splitter.TimeSeriesSplitter"
 
 # Models
 Model:
-  MLPKerasClassifier: "src.tof_ml.models.keras_classifier.MLPKerasClassifier"
   MNISTKerasModel: "plugins.models.mnist_keras_model.MNISTKerasModel"
   MNISTConvModel: "plugins.models.mnist_keras_model.MNISTConvModel"
 
 # Report Generators
 ReportGenerator:
-  ClassificationReportGenerator: "src.tof_ml.reporting.report_generator.ClassificationReportGenerator"
-  RegressionReportGenerator: "src.tof_ml.reporting.report_generator.RegressionReportGenerator"
   MNISTReportGenerator: "plugins.report_generators.MNIST_report.MNISTReportGenerator"
+  MNISTConvReportGenerator: "plugins.report_generators.MNIST_report.MNISTConvReportGenerator"
 
 # Database Adapters
 Database:

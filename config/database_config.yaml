@@ -1,17 +1,33 @@
-# config/database_config.yaml
 
-# Database type (only sqlite supported for now)
+# Database configuration for ML Provenance Framework
+
+# Database type (currently only sqlite is supported)
 type: "sqlite"
 
-# Path to database file (use :memory: for in-memory database)
-path: "./output/experiments.db"
+# Database path
+path: "./data/ml_provenance.db"
 
-# Connection options
-options:
+# Connection settings
+connection:
   timeout: 30
-  isolation_level: "DEFERRED"
-
-# Logging options
-logging:
-  enabled: true
-  level: "INFO"
+  
+# Performance settings
+performance:
+  enable_wal_mode: true
+  cache_size: 10000
+  
+# Backup settings (optional)
+backup:
+  enabled: false
+  interval_hours: 24
+  backup_dir: "./data/backups"
+  
+# Cleanup settings (optional)
+cleanup:
+  enabled: false
+  retain_days: 30
+  
+# Additional settings
+settings:
+  foreign_keys: true
+  journal_mode: "WAL"

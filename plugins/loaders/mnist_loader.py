@@ -1,94 +1,143 @@
-#!/usr/bin/env python3
-"""MNIST Data Loader Plugin for the ML Provenance Tracker Framework."""
+# !/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+"""
+MNIST Data Loader Plugin for the ML Provenance Tracker Framework.
+"""
 
 import numpy as np
-import logging
-from typing import Dict, Any, Optional, Tuple
 import tensorflow as tf
-
-from src.tof_ml.data.base_data_loader import BaseDataLoader
-from src.tof_ml.pipeline.plugins.interfaces import DataLoaderPlugin
+from typing import Dict, Any, Optional, Tuple
+from src.tof_ml.data.base_data_loader import BaseDataLoaderPlugin
+import logging
 
 logger = logging.getLogger(__name__)
 
 
-class MNISTConvLoader(BaseDataLoader, DataLoaderPlugin):
-    """Data loader plugin for MNIST dataset for CNN using TensorFlow."""
+class MNISTConvLoader(BaseDataLoaderPlugin):
+    """
+    Data loader for MNIST dataset optimized for convolutional neural networks.
+    Inherits from DataLoaderPlugin which inherits from BaseDataLoader.
+    """
 
-    def __init__(self, config: Optional[Dict[str, Any]] = None, **kwargs):
+    def __init__(self, config: Dict[str, Any], **kwargs):
+        """
+        Initialize the MNIST loader.
+
+        Args:
+            config: Configuration dictionary
+            **kwargs: Additional parameters
+        """
+        # Call parent __init__ first
         super().__init__(config, **kwargs)
-        self.flatten = False  # We don't want to flatten for CNN
-        self.normalize = kwargs.get('normalize', True)
-        self.one_hot = kwargs.get('one_hot', False)
-        logger.info("MNISTConvLoader initialized")
 
-    def load_data(self) -> np.ndarray:
-        """Load MNIST data from TensorFlow datasets."""
-        logger.info("Loading MNIST dataset for CNN")
+        # MNIST-specific parameters
+        self.normalize = kwargs.get("normalize", True)
+        self.one_hot = kwargs.get("one_hot", False)
+        self.flatten = kwargs.get("flatten", False)
 
-        # Load from TensorFlow
-        (x_train, y_train), (x_test, y_test) = tf.keras.datasets.mnist.load_data()
+        # Update metadata with MNIST-specific info
+        self.metadata.update({
+            "normalize": self.normalize,
+            "one_hot": self.one_hot,
+            "flatten": self.flatten,
+            "dataset_type": "MNIST"
+        })
 
-        # Combine train and test data
-        x_data = np.concatenate([x_train, x_test], axis=0)
-        y_data = np.concatenate([y_train, y_test], axis=0)
+    def _validate_config(self) -> None:
+        """
+        Validate MNIST-specific configuration.
+        """
+        # For MNIST, we don't need a dataset path since it's downloaded
+        # Override the parent validation
+        pass
 
-        # Process features - reshape to include channel dimension
-        x_data = x_data.reshape(x_data.shape[0], 28, 28, 1)
+    def load_data(self) -> Tuple[np.ndarray, np.ndarray]:
+        """
+        Load MNIST data from TensorFlow datasets.
 
-        if self.normalize:
-            x_data = x_data.astype('float32') / 255.0
+        Returns:
+            Tuple of (features, targets) combined from train and test sets
+        """
+        # Load MNIST data
+        (X_train, y_train), (X_test, y_test) = tf.keras.datasets.mnist.load_data()
 
-        # Process targets
-        if self.one_hot:
-            y_data = tf.keras.utils.to_categorical(y_data, 10)
+        # Combine train and test for splitting by the framework
+        X = np.concatenate([X_train, X_test], axis=0)
+        y = np.concatenate([y_train, y_test], axis=0)
+
+        # Add channel dimension for CNN (samples, 28, 28) -> (samples, 28, 28, 1)
+        if not self.flatten:
+            X = np.expand_dims(X, axis=-1)
         else:
-            y_data = y_data.reshape(-1, 1)
+            # Flatten for non-CNN models
+            X = X.reshape(X.shape[0], -1)
 
-        # Store processed data for later feature extraction
-        self._features_cache = x_data
-        self._targets_cache = y_data
+        # Normalize pixel values to [0, 1]
+        if self.normalize:
+            X = X.astype('float32') / 255.0
+
+        # One-hot encode labels if requested
+        if self.one_hot:
+            y = tf.keras.utils.to_categorical(y, num_classes=10)
+
+        # Store in cache (from BaseDataLoader)
+        self._data_cache = (X, y)
         self._data_loaded = True
 
         # Update metadata
         self.metadata.update({
-            "dataset_type": "MNIST",
-            "sample_count": len(x_data),
-            "feature_shape": (28, 28, 1),
-            "target_count": 10 if self.one_hot else 1
+            "total_samples": X.shape[0],
+            "train_samples": X_train.shape[0],
+            "test_samples": X_test.shape[0],
+            "input_shape": X.shape[1:],
+            "num_classes": 10,
+            "data_type": "image",
+            "image_shape": (28, 28, 1) if not self.flatten else (784,)
         })
 
-        # Create a special "combined" representation for the data manager
-        # that will be unpacked correctly by extract_features_and_targets
-        combined_data = {
-            "_x_data": x_data,
-            "_y_data": y_data,
-            "_is_cnn_data": True
-        }
+        return (X, y)
 
-        logger.info(f"MNIST data loaded for CNN with features shape: {x_data.shape} and targets shape: {y_data.shape}")
-        return combined_data
+    def extract_features_and_targets(self, data: Optional[Tuple[np.ndarray, np.ndarray]] = None) -> Tuple[
+        np.ndarray, np.ndarray]:
+        """
+        Extract feature and target arrays from data.
 
-    def extract_features_and_targets(self, data: Optional[np.ndarray] = None) -> Tuple[np.ndarray, np.ndarray]:
-        """Extract features and targets from MNIST data."""
+        For MNISTConvLoader, the data is already in (X, y) tuple format,
+        so we just need to return it as-is.
+
+        Args:
+            data: Optional data tuple. If None, uses loaded data.
+
+        Returns:
+            Tuple of (features, targets)
+        """
         if data is None:
-            if self._data_loaded and hasattr(self, '_features_cache') and hasattr(self, '_targets_cache'):
-                return self._features_cache, self._targets_cache
-            data = self.load_data()
+            if self._data_cache is None:
+                self._data_cache = self.load_data()
+                self._data_loaded = True
+            data = self._data_cache
 
-        # Check if this is our special combined format
-        if isinstance(data, dict) and "_is_cnn_data" in data:
-            return data["_x_data"], data["_y_data"]
+        # Handle tuple data (already split) - this is the expected case for MNISTConvLoader
+        if isinstance(data, tuple) and len(data) == 2:
+            X, y = data
+            return X, y
 
-        # Fallback for other formats
-        logger.warning("Data format not recognized in extract_features_and_targets")
-        if self._data_loaded and hasattr(self, '_features_cache') and hasattr(self, '_targets_cache'):
-            return self._features_cache, self._targets_cache
+        # Handle array data (needs splitting) - fallback case
+        if isinstance(data, np.ndarray):
+            # This shouldn't happen with MNISTConvLoader, but provide fallback
+            if len(data.shape) == 2:  # Flattened format
+                # Assume all columns except last are features
+                features = data[:, :-1]
+                targets = data[:, -1]
+                return features, targets
+            else:
+                raise ValueError(f"Unexpected data format for CNN loader: {data.shape}")
 
-        # Last resort: reload data
-        return self.load_data()["_x_data"], self.load_data()["_y_data"]
+        raise ValueError(f"Data must be ndarray or tuple, got {type(data)}")
 
-class MNISTLoader(BaseDataLoader, DataLoaderPlugin):
+
+class MNISTLoader(BaseDataLoaderPlugin):
     """Data loader plugin for MNIST dataset using TensorFlow."""
 
     def __init__(self, config: Optional[Dict[str, Any]] = None, **kwargs):

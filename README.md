@@ -23,33 +23,31 @@ The pipeline supports the following plugin types:
 
 ```
 ml_provenance/
-├── config/                   # Configuration files
-│   ├── class_mapping_config.yaml   # Maps plugin names to implementation classes
-│   ├── mnist_config.yaml           # MNIST-specific configuration
-│   └── ...                   
-├── plugins/                  # Plugin implementations
-│   ├── loaders/              # Data loader plugins
-│   │   ├── mnist_loader.py   # MNIST data loader
-│   │   └── ...
-│   ├── models/               # Model plugins
-│   │   ├── mnist_keras_model.py   # MNIST Keras model
-│   │   └── ...
-│   └── report_generators/    # Report generator plugins
-│       ├── MNIST_report.py   # MNIST-specific reporter
-│       └── ...
-├── src/                      # Core framework code
+├── src/
 │   └── tof_ml/
-│       ├── data/             # Data management
-│       ├── models/           # Model management
-│       ├── pipeline/         # Pipeline components
-│       │   ├── plugins/      # Plugin system
-│       │   │   ├── interfaces.py   # Plugin interfaces
-│       │   │   ├── registry.py     # Plugin registry
-│       │   │   └── ...
-│       │   └── orchestrator.py     # Pipeline orchestrator
-│       ├── reporting/        # Reporting utilities
-│       └── ...
-└── main.py                   # Main entry point
+│       ├── data/
+│       │   ├── loaders/
+│       │   │   └── base_loader.py      # BaseDataLoader + mixins
+│       │   ├── data_manager.py         # Handles data operations
+│       │   └── data_provenance.py      # Tracks data lineage
+│       ├── models/
+│       │   └── base_model.py           # BaseModel + mixins
+│       ├── training/
+│       │   └── trainer.py              # Model training logic
+│       ├── reporting/
+│       │   └── base_report_generator.py # BaseReportGenerator + mixins
+│       ├── database/
+│       │   └── api.py                  # Database operations
+│       └── pipeline/
+│           ├── orchestrator.py         # Coordinates pipeline execution
+│           └── plugins/
+│               └── registry.py         # Plugin registration
+├── examples/
+│   └── mnist_hyperparam/              # Example MNIST implementation
+├── config/
+│   ├── class_mapping_config.yaml     # Plugin class mappings
+│   └── database_config.yaml          # Database configuration
+└── main.py                    # CLI entry point
 ```
 
 ## Using the Pipeline
@@ -117,10 +115,10 @@ python main.py --config config/your_task_config.yaml
 ### Data Loader Plugin
 
 ```python
-from src.tof_ml.data.base_data_loader import BaseDataLoader
+from src.tof_ml.data.base_data_loader import BaseDataLoaderPlugin
 from src.tof_ml.pipeline.plugins.interfaces import DataLoaderPlugin
 
-class YourDataLoader(BaseDataLoader, DataLoaderPlugin):
+class YourDataLoader(BaseDataLoaderPlugin, DataLoaderPlugin):
     def __init__(self, config=None, **kwargs):
         super().__init__(config, **kwargs)
         # Your initialization here
@@ -135,9 +133,9 @@ class YourDataLoader(BaseDataLoader, DataLoaderPlugin):
 ### Model Plugin
 
 ```python
-from src.tof_ml.pipeline.plugins.interfaces import ModelPlugin
+from src.tof_ml.models.base_model import BaseModelPlugin
 
-class YourModel(ModelPlugin):
+class YourModel(BaseModelPlugin):
     def __init__(self, **kwargs):
         # Your initialization here
         
@@ -160,10 +158,9 @@ class YourModel(ModelPlugin):
 ### Report Generator Plugin
 
 ```python
-from src.tof_ml.reporting.report_generator import BaseReportGenerator
-from src.tof_ml.pipeline.plugins.interfaces import ReportGeneratorPlugin
+from src.tof_ml.reporting.report_generator import ReportGeneratorPlugin
 
-class YourReportGenerator(BaseReportGenerator, ReportGeneratorPlugin):
+class YourReportGenerator(ReportGeneratorPlugin):
     def __init__(self, config, **kwargs):
         super().__init__(config, **kwargs)
         # Your initialization here

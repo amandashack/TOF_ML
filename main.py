@@ -1,5 +1,6 @@
+#!/usr/bin/env python3
 """
-Command-line interface for the ML Provenance Framework.
+Enhanced Command-line interface for the ML Provenance Framework.
 """
 
 import os
@@ -14,26 +15,19 @@ logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.StreamHandler(),  # Output to console
-        logging.FileHandler('ml_pipeline.log')  # Output to file
+        logging.StreamHandler(),
+        logging.FileHandler('ml_pipeline.log')
     ]
 )
 
+logger = logging.getLogger(__name__)
+
 from src.tof_ml.pipeline.orchestrator import PipelineOrchestrator
-from src.tof_ml.data.data_provenance import ProvenanceTracker
 from src.tof_ml.database.api import DBApi
 
 
 def load_config(config_path: str) -> Dict[str, Any]:
-    """
-    Load the pipeline configuration from a YAML file.
-
-    Args:
-        config_path: Path to the configuration file
-
-    Returns:
-        Configuration dictionary
-    """
+    """Load the pipeline configuration from a YAML file."""
     if not os.path.exists(config_path):
         raise FileNotFoundError(f"Configuration file not found: {config_path}")
 
@@ -44,42 +38,48 @@ def load_config(config_path: str) -> Dict[str, Any]:
     if "class_mapping_path" not in config:
         config["class_mapping_path"] = "config/class_mapping_config.yaml"
 
+    # Add database config if not specified
+    if "database" not in config:
+        config["database"] = {"config_path": "config/database_config.yaml"}
+
+    # Add config path for reference
+    config["config_path"] = config_path
+
     return config
 
 
 def run_pipeline(config: Dict[str, Any], mode: str = "full"):
-    """
-    Run the ML pipeline with the specified configuration.
+    """Run the ML pipeline with the specified configuration."""
+    try:
+        # Initialize enhanced pipeline orchestrator
+        orchestrator = PipelineOrchestrator(config)
 
-    Args:
-        config: Pipeline configuration dictionary
-        mode: Pipeline execution mode (full, training, evaluation, report)
-    """
-    # Initialize pipeline orchestrator
-    orchestrator = PipelineOrchestrator(config)
+        # Run in the specified mode
+        if mode == "full":
+            metadata = orchestrator.run_pipeline()
+        elif mode == "training":
+            metadata = orchestrator.run_training()
+        elif mode == "evaluation":
+            metadata = orchestrator.run_evaluation()
+        elif mode == "report":
+            metadata = orchestrator.generate_report()
+        else:
+            raise ValueError(f"Invalid mode: {mode}")
 
-    # Run in the specified mode
-    if mode == "full":
-        metadata = orchestrator.run_pipeline()
-    elif mode == "training":
-        metadata = orchestrator.run_training()
-    elif mode == "evaluation":
-        metadata = orchestrator.run_evaluation()
-    elif mode == "report":
-        metadata = orchestrator.generate_report()
-    else:
-        raise ValueError(f"Invalid mode: {mode}")
+        return metadata
 
-    return metadata
+    except Exception as e:
+        logger.error(f"Pipeline execution failed: {e}", exc_info=True)
+        raise
 
-
-# Database command handlers
 
 def handle_db_command(args):
-    """Handle database commands."""
+    """Handle database commands with enhanced functionality."""
     if not args.db_command:
         print("Error: No database command specified. Use --help for options.")
         sys.exit(1)
+
+    logger.info("Processing database request...")
 
     # Initialize database API
     db_api = DBApi(config_path=args.config)
@@ -87,517 +87,408 @@ def handle_db_command(args):
     try:
         if args.db_command == "list-experiments":
             list_experiments(db_api, args)
-        elif args.db_command == "show-experiment":
-            show_experiment(db_api, args)
-        elif args.db_command == "compare":
-            compare_experiments(db_api, args)
-        elif args.db_command == "query":
-            query_experiments(db_api, args)
-        elif args.db_command == "export":
-            export_experiment(db_api, args)
-        elif args.db_command == "delete":
-            delete_experiment(db_api, args)
+        elif args.db_command == "list-runs":
+            list_runs(db_api, args)
+        elif args.db_command == "show-run":
+            show_run(db_api, args)
+        elif args.db_command == "compare-runs":
+            compare_runs(db_api, args)
+        elif args.db_command == "show-lineage":
+            show_lineage(db_api, args)
+        elif args.db_command == "query-artifacts":
+            query_artifacts(db_api, args)
+        elif args.db_command == "export-run":
+            export_run(db_api, args)
+        elif args.db_command == "delete-run":
+            delete_run(db_api, args)
+        elif args.db_command == "summary":
+            show_summary(db_api, args)
+        elif args.db_command == "monitor":
+            monitor_training(db_api, args)
         else:
             print(f"Unknown database command: {args.db_command}")
             sys.exit(1)
     except Exception as e:
-        logging.error(f"Database command failed: {e}", exc_info=True)
+        logger.error(f"Database command failed: {e}", exc_info=True)
         sys.exit(1)
 
 
 def list_experiments(db_api, args):
-    """List experiments in the database."""
-    experiments = db_api.query_experiments(
-        filters={},
-        sort_by=args.sort_by,
-        limit=args.limit
-    )
+    """List all experiments."""
+    experiments = db_api.get_experiments(limit=args.limit)
 
     if not experiments:
         print("No experiments found in the database.")
         return
 
     # Print table header
-    print(f"{'ID':<24} {'Name':<20} {'Model Type':<15} {'Accuracy':<10} {'Loss':<10} {'Date':<20}")
-    print('-' * 100)
+    print(f"{'ID':<30} {'Name':<25} {'Created':<20} {'Git SHA':<12} {'Runs':<8} {'Completed':<10}")
+    print('-' * 110)
 
     # Print each experiment
     for exp in experiments:
-        exp_id = exp.get("id", "N/A")
-        name = exp.get("name", "N/A")
+        exp_id = exp["id"][:29] if len(exp["id"]) > 29 else exp["id"]
+        name = exp["name"][:24] if len(exp["name"]) > 24 else exp["name"]
+        created = exp["created_at"][:19] if exp["created_at"] else "N/A"
+        git_sha = exp["git_commit_sha"][:11] if exp["git_commit_sha"] else "N/A"
+        total_runs = exp["total_runs"] or 0
+        completed_runs = exp["completed_runs"] or 0
 
-        # Get metadata
-        try:
-            metadata = json.loads(exp.get("metadata", "{}"))
-            model_type = metadata.get("model_type", "N/A")
-
-            # Get metrics
-            metrics = {}
-            if "metric_value" in exp:
-                metrics[args.sort_by] = exp["metric_value"]
-
-            accuracy = metrics.get("accuracy", metadata.get("test_metrics", {}).get("accuracy", "N/A"))
-            test_loss = metrics.get("test_loss", metadata.get("test_loss", "N/A"))
-            date = exp.get("timestamp", "N/A")
-
-            # Format values
-            if isinstance(accuracy, float):
-                accuracy = f"{accuracy:.4f}"
-            if isinstance(test_loss, float):
-                test_loss = f"{test_loss:.4f}"
-
-            print(f"{exp_id:<24} {name:<20} {model_type:<15} {accuracy:<10} {test_loss:<10} {date:<20}")
-        except json.JSONDecodeError:
-            # Fallback if metadata isn't valid JSON
-            print(f"{exp_id:<24} {name:<20} {'N/A':<15} {'N/A':<10} {'N/A':<10} {exp.get('timestamp', 'N/A'):<20}")
+        print(f"{exp_id:<30} {name:<25} {created:<20} {git_sha:<12} {total_runs:<8} {completed_runs:<10}")
 
 
-def show_experiment(db_api, args):
-    """Show details of a specific experiment."""
-    experiment = db_api.get_experiment(args.experiment_id)
-
+def list_runs(db_api, args):
+    """List runs for an experiment."""
+    # Find experiment using abstracted method
+    experiment = db_api.find_experiment_by_name_or_id(args.experiment)
     if not experiment:
-        print(f"Experiment '{args.experiment_id}' not found.")
+        print(f"Experiment '{args.experiment}' not found.")
         return
 
-    # Load metadata
-    metadata = experiment.get("metadata", {})
-    if isinstance(metadata, str):
-        try:
-            metadata = json.loads(metadata)
-        except json.JSONDecodeError:
-            metadata = {}
+    experiment_id = experiment["id"]
+    runs = db_api.get_runs_for_experiment(experiment_id, limit=args.limit)
 
-    # Load config
-    config = experiment.get("config", {})
-    if isinstance(config, str):
-        try:
-            config = json.loads(config)
-        except json.JSONDecodeError:
-            config = {}
-
-    # Print experiment details
-    print(f"Experiment: {experiment.get('name', 'N/A')}")
-    print(f"ID: {experiment.get('id', 'N/A')}")
-    print(f"Date: {experiment.get('timestamp', 'N/A')}")
-
-    # Print metadata
-    print("\nMetadata:")
-    for key, value in metadata.items():
-        if key not in ["config", "metrics"] and not isinstance(value, dict):
-            print(f"  {key}: {value}")
-
-    # Print metrics
-    print("\nMetrics:")
-    for name, value in experiment.get("metrics", {}).items():
-        print(f"  {name}: {value if not isinstance(value, float) else f'{value:.6f}'}")
-
-    # Print model information
-    if "model" in experiment:
-        print("\nModel:")
-        model = experiment["model"]
-        print(f"  Path: {model.get('path', 'N/A')}")
-
-    # Print artifacts
-    if "artifacts" in experiment:
-        print("\nArtifacts:")
-        for type_name, path in experiment["artifacts"].items():
-            print(f"  {type_name}: {path}")
-
-    # Print configuration summary
-    print("\nConfiguration Summary:")
-    if "model" in config:
-        print("  Model Configuration:")
-        for key, value in config["model"].items():
-            print(f"    {key}: {value}")
-
-    if "data" in config:
-        print("  Data Configuration:")
-        for key, value in config["data"].items():
-            if not isinstance(value, dict):
-                print(f"    {key}: {value}")
-
-
-def compare_experiments(db_api, args):
-    """Compare two or more experiments."""
-    # Get comparison data
-    comparison = db_api.compare_experiments(args.experiment_ids)
-
-    if not comparison or not comparison.get("experiments"):
-        print("No valid experiments to compare.")
-        return
-
-    experiments = comparison.get("experiments", [])
-    metrics = comparison.get("metrics", {})
-
-    # Print experiment summary
-    print("Experiments:")
-    for exp in experiments:
-        print(f"  - {exp.get('name', 'N/A')} (ID: {exp.get('id', 'N/A')}, Date: {exp.get('timestamp', 'N/A')})")
-
-    print("\nMetrics Comparison:")
-
-    # Filter metrics if specified
-    if args.metrics:
-        metrics = {k: v for k, v in metrics.items() if k in args.metrics}
-
-    if not metrics:
-        print("  No comparable metrics found.")
+    if not runs:
+        print(f"No runs found for experiment '{args.experiment}'.")
         return
 
     # Print table header
-    header = "Metric"
-    headers = [header]
-    for exp in experiments:
-        exp_name = exp.get("name", "Unknown")
-        exp_id = exp.get("id", "Unknown")
-        headers.append(f"{exp_name} ({exp_id[:8]})")
+    print(f"{'Run ID':<30} {'Created':<20} {'Status':<12} {'Data Reused':<12} {'Test Loss':<12}")
+    print('-' * 90)
 
-    # Print header
-    col_width = 20
-    print(" | ".join(h.ljust(col_width) for h in headers))
-    print("-" * ((col_width + 3) * len(headers) - 1))
+    # Print each run
+    for run in runs:
+        run_id = run["id"][:29] if len(run["id"]) > 29 else run["id"]
+        created = run["created_at"][:19] if run["created_at"] else "N/A"
+        status = run["status"] or "unknown"
+        data_reused = "Yes" if run["data_reused"] else "No"
+        test_loss = f"{run.get('avg_test_loss', 0):.4f}" if run.get('avg_test_loss') else "N/A"
 
-    # Print each metric
-    for metric_name, metric_info in metrics.items():
-        row = [metric_name.ljust(col_width)]
-        metric_values = metric_info.get("values", {})
-
-        for exp in experiments:
-            exp_id = exp.get("id", "Unknown")
-            value = metric_values.get(exp_id, "N/A")
-
-            if isinstance(value, float):
-                value = f"{value:.6f}"
-
-            row.append(str(value).ljust(col_width))
-
-        print(" | ".join(row))
+        print(f"{run_id:<30} {created:<20} {status:<12} {data_reused:<12} {test_loss:<12}")
 
 
-def query_experiments(db_api, args):
-    """Query experiments by criteria."""
-    # Build query filters
-    filters = {}
+def show_run(db_api, args):
+    """Show detailed information about a specific run."""
+    lineage = db_api.get_run_lineage(args.run_id)
 
-    if args.experiment_name:
-        filters["name"] = args.experiment_name
+    if not lineage or not lineage.get("run_info"):
+        print(f"Run '{args.run_id}' not found.")
+        return
 
-    if args.model_type:
-        filters["model_type"] = args.model_type
+    run_info = lineage["run_info"]
 
-    # Execute query
-    experiments = db_api.query_experiments(
-        filters=filters,
+    print(f"Run: {run_info.get('id', 'N/A')}")
+    print(f"Experiment: {run_info.get('experiment_id', 'N/A')}")
+    print(f"Status: {run_info.get('status', 'N/A')}")
+    print(f"Created: {run_info.get('created_at', 'N/A')}")
+    print(f"Completed: {run_info.get('completed_at', 'N/A')}")
+    print(f"Data Reused: {'Yes' if run_info.get('data_reused') else 'No'}")
+
+    # Show artifacts
+    artifacts = lineage.get("artifacts", [])
+    if artifacts:
+        print(f"\nArtifacts ({len(artifacts)}):")
+        for artifact in artifacts:
+            print(f"  - {artifact['artifact_role']} ({artifact['stage']}): {artifact['artifact_type']}")
+            print(f"    Path: {artifact['file_path']} {'✓' if os.path.exists(artifact['file_path']) else '✗'}")
+            print(f"    Size: {artifact.get('size_bytes', 0)} bytes")
+
+    # Show metrics by stage
+    metrics = lineage.get("metrics", [])
+    if metrics:
+        print(f"\nMetrics ({len(metrics)}):")
+        metrics_by_stage = {}
+        for metric in metrics:
+            stage = metric.get('stage', 'unknown')
+            if stage not in metrics_by_stage:
+                metrics_by_stage[stage] = []
+            metrics_by_stage[stage].append(metric)
+
+        for stage, stage_metrics in metrics_by_stage.items():
+            print(f"  {stage.upper()}:")
+            for metric in sorted(stage_metrics, key=lambda x: x.get('epoch', 0)):
+                epoch_info = f" (epoch {metric['epoch']})" if metric.get('epoch') else ""
+                print(f"    - {metric['metric_name']}: {metric['metric_value']:.6f}{epoch_info}")
+
+
+def monitor_training(db_api, args):
+    """Monitor real-time training progress."""
+    import time
+
+    print(f"Monitoring training progress for run: {args.run_id}")
+    print("Press Ctrl+C to stop monitoring\n")
+
+    try:
+        last_epoch = -1
+        while True:
+            progress = db_api.get_training_progress(args.run_id)
+
+            if progress["status"] == "no_training_data":
+                print("No training data found for this run.")
+                break
+
+            current_epoch = progress.get("current_epoch", 0)
+            if current_epoch > last_epoch:
+                latest_metrics = progress.get("latest_metrics", {})
+                print(f"Epoch {current_epoch}: " +
+                      ", ".join([f"{k}={v:.4f}" for k, v in latest_metrics.items()]))
+                last_epoch = current_epoch
+
+            # Check if training is complete using abstracted method
+            status = db_api.query_service.get_run_status(args.run_id)
+            if status == "completed":
+                print(f"\nTraining completed! Final metrics:")
+                latest_metrics = progress.get("latest_metrics", {})
+                for k, v in latest_metrics.items():
+                    print(f"  {k}: {v:.4f}")
+                break
+
+            time.sleep(5)  # Check every 5 seconds
+
+    except KeyboardInterrupt:
+        print("\nMonitoring stopped.")
+
+
+def compare_runs(db_api, args):
+    """Compare multiple runs."""
+    comparison = db_api.compare_runs(args.run_ids)
+
+    if not comparison or not comparison.get("runs"):
+        print("No valid runs to compare.")
+        return
+
+    runs = comparison.get("runs", [])
+    metrics_comparison = comparison.get("metrics_comparison", {})
+
+    print("Run Comparison:")
+    print(f"{'Run ID':<30} {'Experiment':<20} {'Status':<12} {'Created':<20}")
+    print('-' * 85)
+
+    for run in runs:
+        run_id = run["id"][:29] if len(run["id"]) > 29 else run["id"]
+        exp_name = run.get("experiment_name", "N/A")[:19]
+        status = run.get("status", "N/A")
+        created = run.get("created_at", "N/A")[:19]
+
+        print(f"{run_id:<30} {exp_name:<20} {status:<12} {created:<20}")
+
+    if metrics_comparison:
+        print(f"\nMetrics Comparison:")
+        header = ["Metric"] + [run["id"][:15] for run in runs]
+        col_width = 18
+        print(" | ".join(h.ljust(col_width) for h in header))
+        print("-" * ((col_width + 3) * len(header) - 1))
+
+        for metric_name, values in metrics_comparison.items():
+            row = [metric_name.ljust(col_width)]
+            for run in runs:
+                run_id = run["id"]
+                value = values.get(run_id, "N/A")
+                if isinstance(value, float):
+                    value_str = f"{value:.6f}"
+                else:
+                    value_str = str(value)
+                row.append(value_str.ljust(col_width))
+            print(" | ".join(row))
+
+
+def show_lineage(db_api, args):
+    """Show data lineage for a run."""
+    lineage = db_api.get_run_lineage(args.run_id)
+
+    if not lineage:
+        print(f"No lineage found for run '{args.run_id}'.")
+        return
+
+    transformation_lineage = lineage.get("transformation_lineage", [])
+
+    if not transformation_lineage:
+        print(f"No transformation lineage found for run '{args.run_id}'.")
+        return
+
+    print(f"Data Lineage for Run: {args.run_id}")
+    print(f"{'Stage':<20} {'Transformation':<25} {'Input Hash':<16} {'Output Hash':<16}")
+    print('-' * 80)
+
+    for entry in transformation_lineage:
+        stage = entry.get("stage", "N/A")
+        transformation = entry.get("transformation_name", "N/A")
+        input_hash = entry.get("input_hash", "N/A")[:15] if entry.get("input_hash") else "N/A"
+        output_hash = entry.get("output_hash", "N/A")[:15]
+
+        print(f"{stage:<20} {transformation:<25} {input_hash:<16} {output_hash:<16}")
+
+
+def query_artifacts(db_api, args):
+    """Query artifacts by type or stage."""
+    artifacts = db_api.query_artifacts_by_criteria(
+        artifact_type=args.artifact_type,
+        stage=args.stage,
         limit=args.limit
     )
 
-    # Filter results by min_accuracy and max_loss if specified
-    # (These may need to be handled after query since SQLite doesn't support complex JSON filtering)
-    if args.min_accuracy or args.max_loss:
-        filtered_experiments = []
-        for exp in experiments:
-            metadata = json.loads(exp.get("metadata", "{}"))
-            metrics = metadata.get("test_metrics", {})
-
-            accuracy = metrics.get("accuracy", 0.0)
-            loss = metadata.get("test_loss", float('inf'))
-
-            if (args.min_accuracy is None or accuracy >= args.min_accuracy) and \
-                    (args.max_loss is None or loss <= args.max_loss):
-                filtered_experiments.append(exp)
-
-        experiments = filtered_experiments
-
-    if not experiments:
-        print("No experiments found matching the query criteria.")
+    if not artifacts:
+        print("No artifacts found matching criteria.")
         return
 
-    # Display results
-    print(f"Found {len(experiments)} experiments matching criteria:")
+    print(f"{'Hash ID':<16} {'Type':<10} {'Role':<15} {'Stage':<15} {'Size':<10} {'Created':<20}")
+    print('-' * 90)
 
-    # Reuse list_experiments to display
-    args.sort_by = "timestamp"  # Default sort for query results
-    list_experiments(db_api, args)
+    for artifact in artifacts:
+        hash_id = artifact["hash_id"][:15]
+        artifact_type = artifact["artifact_type"]
+        role = artifact["artifact_role"][:14]
+        stage = artifact["stage"][:14]
+        size = f"{artifact['size_bytes']}B" if artifact['size_bytes'] else "N/A"
+        created = artifact["created_at"][:19] if artifact["created_at"] else "N/A"
+
+        print(f"{hash_id:<16} {artifact_type:<10} {role:<15} {stage:<15} {size:<10} {created:<20}")
 
 
-def export_experiment(db_api, args):
-    """Export experiment data."""
-    experiment = db_api.get_experiment(args.experiment_id)
+def export_run(db_api, args):
+    """Export complete run data."""
+    lineage = db_api.get_run_lineage(args.run_id)
 
-    if not experiment:
-        print(f"Experiment '{args.experiment_id}' not found.")
+    if not lineage:
+        print(f"Run '{args.run_id}' not found.")
         return
 
-    # Determine output path
-    output_path = args.output if args.output else f"experiment_{args.experiment_id}.{args.format}"
+    output_path = args.output if args.output else f"run_{args.run_id}.{args.format}"
 
-    # Export in specified format
     if args.format == "json":
         with open(output_path, 'w') as f:
-            json.dump(experiment, f, indent=2, default=str)
+            json.dump(lineage, f, indent=2, default=str)
     elif args.format == "yaml":
+        import yaml
         with open(output_path, 'w') as f:
-            yaml.dump(experiment, f, default_str=str)
-    elif args.format == "csv":
-        import csv
-        with open(output_path, 'w', newline='') as f:
-            writer = csv.writer(f)
-            # Write header
-            writer.writerow(["Property", "Value"])
-            # Write experiment data
-            for key, value in _flatten_dict(experiment).items():
-                writer.writerow([key, str(value)])
-
-    print(f"Experiment exported to {output_path}")
-
-
-def delete_experiment(db_api, args):
-    """Delete an experiment from the database."""
-    # First check if experiment exists
-    experiment = db_api.get_experiment(args.experiment_id)
-
-    if not experiment:
-        print(f"Experiment '{args.experiment_id}' not found.")
+            yaml.dump(lineage, f, default_flow_style=False)
+    else:
+        print(f"Unsupported format: {args.format}")
         return
 
-    # Confirm deletion unless --force is used
+    print(f"Run data exported to {output_path}")
+
+
+def delete_run(db_api, args):
+    """Delete a run and all associated data."""
+    lineage = db_api.get_run_lineage(args.run_id)
+
+    if not lineage or not lineage.get("run_info"):
+        print(f"Run '{args.run_id}' not found.")
+        return
+
     if not args.force:
-        confirm = input(f"Are you sure you want to delete experiment '{args.experiment_id}'? [y/N] ")
+        confirm = input(f"Are you sure you want to delete run '{args.run_id}'? [y/N] ")
         if confirm.lower() not in ['y', 'yes']:
             print("Deletion cancelled.")
             return
 
-    # Perform deletion
-    # Note: We need to implement delete_experiment in DBApi
-    try:
-        # Create a cursor for deletion
-        cursor = db_api.connection.cursor()
-
-        # Delete related records first
-        cursor.execute("DELETE FROM metrics WHERE experiment_id = ?", (args.experiment_id,))
-        cursor.execute("DELETE FROM models WHERE experiment_id = ?", (args.experiment_id,))
-        cursor.execute("DELETE FROM artifacts WHERE experiment_id = ?", (args.experiment_id,))
-
-        # Delete the experiment record
-        cursor.execute("DELETE FROM experiments WHERE id = ?", (args.experiment_id,))
-
-        # Commit changes
-        db_api.connection.commit()
-
-        print(f"Experiment '{args.experiment_id}' deleted successfully.")
-    except Exception as e:
-        db_api.connection.rollback()
-        print(f"Error deleting experiment: {e}")
+    if db_api.delete_run_cascade(args.run_id):
+        print(f"Run '{args.run_id}' deleted successfully.")
+    else:
+        print(f"Error deleting run '{args.run_id}'.")
 
 
-def _flatten_dict(d, parent_key='', sep='.'):
-    """Flatten a nested dictionary for CSV export."""
-    items = []
-    for k, v in d.items():
-        new_key = f"{parent_key}{sep}{k}" if parent_key else k
-        if isinstance(v, dict):
-            items.extend(_flatten_dict(v, new_key, sep=sep).items())
-        else:
-            items.append((new_key, v))
-    return dict(items)
+def show_summary(db_api, args):
+    """Show database summary statistics."""
+    summary = db_api.get_database_summary()
+
+    print("Database Summary:")
+    print("-" * 40)
+    print(f"Total Experiments: {summary['experiments']}")
+    print(f"Total Runs: {summary['runs']}")
+    print(f"Completed Runs: {summary['completed_runs']}")
+    print(f"Failed/Running Runs: {summary['failed_runs']}")
+    print(f"Runs with Data Reuse: {summary['data_reused_runs']}")
+    print(f"Total Artifacts: {summary['artifacts']}")
+    print(f"Total Storage: {summary['total_storage_bytes'] / (1024 * 1024):.2f} MB")
+
+    if summary['runs'] > 0:
+        print(f"Success Rate: {summary['success_rate']:.1f}%")
+        print(f"Data Reuse Rate: {summary['data_reuse_rate']:.1f}%")
 
 
 def main():
-    """Main entry point for ML pipeline command."""
-    # Create main parser
-    parser = argparse.ArgumentParser(description="ML Provenance Pipeline Framework")
+    """Main entry point for enhanced ML pipeline command."""
+    parser = argparse.ArgumentParser(description="Enhanced ML Provenance Pipeline Framework")
     subparsers = parser.add_subparsers(dest="command", help="Command to execute")
 
     # Pipeline command
     pipeline_parser = subparsers.add_parser("pipeline", help="Run the ML pipeline")
-    pipeline_parser.add_argument("--config", "-c", type=str, default="config/mnist_config.yaml",
+    pipeline_parser.add_argument("--config", "-c", type=str, default="config/mnist_cnn_config.yaml",
                                  help="Path to the pipeline configuration file")
     pipeline_parser.add_argument("--mode", "-m", type=str, default="full",
                                  choices=["full", "training", "evaluation", "report"],
                                  help="Pipeline execution mode")
 
-    # Provenance management commands - add subparser for experiment mgmt
-    prov_parser = subparsers.add_parser("provenance", help="Experiment and provenance management")
-    prov_subparsers = prov_parser.add_subparsers(dest="prov_command", help="Provenance command")
-
-    # List experiments
-    list_parser = prov_subparsers.add_parser("list", help="List experiments")
-    list_parser.add_argument("--output-dir", dest="output_dir", default="./output",
-                             help="Base output directory")
-
-    # List runs for an experiment
-    runs_parser = prov_subparsers.add_parser("runs", help="List runs for an experiment")
-    runs_parser.add_argument("experiment", help="Experiment name")
-    runs_parser.add_argument("--output-dir", dest="output_dir", default="./output",
-                             help="Base output directory")
-
-    # Show run details
-    show_parser = prov_subparsers.add_parser("show", help="Show run details")
-    show_parser.add_argument("experiment", help="Experiment name")
-    show_parser.add_argument("run", help="Run ID")
-    show_parser.add_argument("--output-dir", dest="output_dir", default="./output",
-                             help="Base output directory")
-
-    # Find runs with completed stages
-    find_parser = prov_subparsers.add_parser("find", help="Find runs with completed stages")
-    find_parser.add_argument("experiment", help="Experiment name")
-    find_parser.add_argument("stage", help="Stage name")
-    find_parser.add_argument("--output-dir", dest="output_dir", default="./output",
-                             help="Base output directory")
-
-    # Add database command
+    # Database commands
     db_parser = subparsers.add_parser("db", help="Database operations")
     db_subparsers = db_parser.add_subparsers(dest="db_command", help="Database command")
 
-    # List experiments in database
-    list_exp_parser = db_subparsers.add_parser("list-experiments", help="List all experiments in the database")
-    list_exp_parser.add_argument("--config", "-c", type=str, default="config/database_config.yaml",
-                                 help="Path to the database configuration file")
-    list_exp_parser.add_argument("--limit", "-l", type=int, default=10,
-                                 help="Maximum number of experiments to show")
-    list_exp_parser.add_argument("--sort-by", "-s", type=str, default="experiment_id",
-                                 help="Field to sort by")
-    list_exp_parser.add_argument("--desc", action="store_true",
-                                 help="Sort in descending order")
+    # Add all the database subcommands
+    list_exp_parser = db_subparsers.add_parser("list-experiments", help="List all experiments")
+    list_exp_parser.add_argument("--config", "-c", type=str, default="config/database_config.yaml")
+    list_exp_parser.add_argument("--limit", "-l", type=int, default=20)
 
-    # Show experiment details
-    show_exp_parser = db_subparsers.add_parser("show-experiment", help="Show details of a specific experiment")
-    show_exp_parser.add_argument("experiment_id", help="ID of the experiment to show")
-    show_exp_parser.add_argument("--config", "-c", type=str, default="config/database_config.yaml",
-                                 help="Path to the database configuration file")
+    list_runs_parser = db_subparsers.add_parser("list-runs", help="List runs for an experiment")
+    list_runs_parser.add_argument("experiment", help="Experiment name or ID")
+    list_runs_parser.add_argument("--config", "-c", type=str, default="config/database_config.yaml")
+    list_runs_parser.add_argument("--limit", "-l", type=int, default=20)
 
-    # Compare experiments
-    compare_parser = db_subparsers.add_parser("compare", help="Compare two or more experiments")
-    compare_parser.add_argument("experiment_ids", nargs="+", help="IDs of experiments to compare")
-    compare_parser.add_argument("--config", "-c", type=str, default="config/database_config.yaml",
-                                help="Path to the database configuration file")
-    compare_parser.add_argument("--metrics", "-m", nargs="+", default=["test_loss", "accuracy"],
-                                help="Metrics to compare")
+    show_run_parser = db_subparsers.add_parser("show-run", help="Show details of a specific run")
+    show_run_parser.add_argument("run_id", help="ID of the run to show")
+    show_run_parser.add_argument("--config", "-c", type=str, default="config/database_config.yaml")
 
-    # Query experiments
-    query_parser = db_subparsers.add_parser("query", help="Query experiments by criteria")
-    query_parser.add_argument("--config", "-c", type=str, default="config/database_config.yaml",
-                              help="Path to the database configuration file")
-    query_parser.add_argument("--experiment-name", type=str, help="Filter by experiment name")
-    query_parser.add_argument("--model-type", type=str, help="Filter by model type")
-    query_parser.add_argument("--min-accuracy", type=float, help="Minimum accuracy")
-    query_parser.add_argument("--max-loss", type=float, help="Maximum loss value")
-    query_parser.add_argument("--limit", "-l", type=int, default=10, help="Maximum results to show")
+    compare_parser = db_subparsers.add_parser("compare-runs", help="Compare multiple runs")
+    compare_parser.add_argument("run_ids", nargs="+", help="IDs of runs to compare")
+    compare_parser.add_argument("--config", "-c", type=str, default="config/database_config.yaml")
 
-    # Export experiment data
-    export_parser = db_subparsers.add_parser("export", help="Export experiment data")
-    export_parser.add_argument("experiment_id", help="ID of the experiment to export")
-    export_parser.add_argument("--config", "-c", type=str, default="config/database_config.yaml",
-                               help="Path to the database configuration file")
-    export_parser.add_argument("--format", "-f", choices=["json", "csv", "yaml"], default="json",
-                               help="Export format")
+    lineage_parser = db_subparsers.add_parser("show-lineage", help="Show data lineage for a run")
+    lineage_parser.add_argument("run_id", help="ID of the run")
+    lineage_parser.add_argument("--config", "-c", type=str, default="config/database_config.yaml")
+
+    artifacts_parser = db_subparsers.add_parser("query-artifacts", help="Query artifacts")
+    artifacts_parser.add_argument("--config", "-c", type=str, default="config/database_config.yaml")
+    artifacts_parser.add_argument("--artifact-type", type=str, help="Filter by artifact type")
+    artifacts_parser.add_argument("--stage", type=str, help="Filter by stage")
+    artifacts_parser.add_argument("--limit", "-l", type=int, default=20)
+
+    export_parser = db_subparsers.add_parser("export-run", help="Export run data")
+    export_parser.add_argument("run_id", help="ID of the run to export")
+    export_parser.add_argument("--config", "-c", type=str, default="config/database_config.yaml")
+    export_parser.add_argument("--format", "-f", choices=["json", "yaml"], default="json")
     export_parser.add_argument("--output", "-o", type=str, help="Output file path")
 
-    # Delete experiment
-    delete_parser = db_subparsers.add_parser("delete", help="Delete an experiment from the database")
-    delete_parser.add_argument("experiment_id", help="ID of the experiment to delete")
-    delete_parser.add_argument("--config", "-c", type=str, default="config/database_config.yaml",
-                               help="Path to the database configuration file")
+    delete_parser = db_subparsers.add_parser("delete-run", help="Delete a run")
+    delete_parser.add_argument("run_id", help="ID of the run to delete")
+    delete_parser.add_argument("--config", "-c", type=str, default="config/database_config.yaml")
     delete_parser.add_argument("--force", action="store_true", help="Skip confirmation")
 
-    # Parse arguments
+    summary_parser = db_subparsers.add_parser("summary", help="Show database summary")
+    summary_parser.add_argument("--config", "-c", type=str, default="config/database_config.yaml")
+
+    # Add training monitoring command
+    monitor_parser = db_subparsers.add_parser("monitor", help="Monitor real-time training progress")
+    monitor_parser.add_argument("run_id", help="ID of the run to monitor")
+    monitor_parser.add_argument("--config", "-c", type=str, default="config/database_config.yaml")
+
     args = parser.parse_args()
 
     # Execute the appropriate command
     if args.command == "pipeline":
         try:
-            # Load configuration
             config = load_config(args.config)
-
-            # Run pipeline
             metadata = run_pipeline(config, args.mode)
 
-            print(f"Pipeline completed successfully. Output directory: {metadata.get('output_dir')}")
+            print(f"Pipeline completed successfully.")
+            print(f"Experiment ID: {metadata.get('experiment_id')}")
+            print(f"Run ID: {metadata.get('run_id')}")
 
         except Exception as e:
-            logging.error(f"Pipeline execution failed: {e}", exc_info=True)
+            logger.error(f"Pipeline execution failed: {e}", exc_info=True)
             sys.exit(1)
 
-    elif args.command == "provenance":
-        # Handle provenance commands using the static CLI helpers
-        if args.prov_command == "list":
-            experiments = ProvenanceTracker.list_experiments(args.output_dir)
-            print("Available experiments:")
-            for exp in experiments:
-                print(f"  - {exp}")
-
-        elif args.prov_command == "runs":
-            tracker = ProvenanceTracker({"experiment_name": args.experiment})
-            tracker.experiment_dir = os.path.join(args.output_dir, args.experiment)
-            tracker.provenance_db_path = os.path.join(tracker.experiment_dir, "provenance")
-
-            runs = tracker.get_experiment_runs()
-
-            print(f"Runs for experiment '{args.experiment}':")
-            for run in runs:
-                run_id = run.get("run_id", "unknown")
-                start_time = run.get("start_time", "unknown")
-                stages = run.get("stages", {})
-                completed_stages = [s for s, details in stages.items() if details.get("completed", False)]
-
-                print(f"  - {run_id} (Started: {start_time})")
-                print(f"    Completed stages: {', '.join(completed_stages) if completed_stages else 'none'}")
-
-        elif args.prov_command == "show":
-            tracker = ProvenanceTracker({"experiment_name": args.experiment})
-            tracker.experiment_dir = os.path.join(args.output_dir, args.experiment)
-            tracker.provenance_db_path = os.path.join(tracker.experiment_dir, "provenance")
-
-            run_record_path = os.path.join(tracker.provenance_db_path, "runs", f"{args.run}.json")
-            if not os.path.exists(run_record_path):
-                print(f"Run '{args.run}' not found in experiment '{args.experiment}'")
-                return
-
-            with open(run_record_path, 'r') as f:
-                run = json.load(f)
-
-            print(f"Details for run '{args.run}' in experiment '{args.experiment}':")
-            print(f"  Started: {run.get('start_time', 'unknown')}")
-            print(f"  Pipeline hash: {run.get('pipeline_hash', 'unknown')}")
-
-            if "stages" in run:
-                print("  Stages:")
-                for stage, details in run["stages"].items():
-                    status = "Completed" if details.get("completed", False) else "Failed"
-                    timestamp = details.get("timestamp", "unknown")
-                    print(f"    - {stage}: {status} ({timestamp})")
-
-                    if details.get("artifacts"):
-                        print("      Artifacts:")
-                        for name, path in details["artifacts"].items():
-                            print(f"        - {name}: {path}")
-
-        elif args.prov_command == "find":
-            tracker = ProvenanceTracker({"experiment_name": args.experiment})
-            tracker.experiment_dir = os.path.join(args.output_dir, args.experiment)
-            tracker.provenance_db_path = os.path.join(tracker.experiment_dir, "provenance")
-
-            best_run = tracker.find_best_run_for_stage(args.stage)
-            if not best_run:
-                print(f"No runs found in experiment '{args.experiment}' with completed stage '{args.stage}'")
-                return
-
-            run_id = best_run.get("run_id", "unknown")
-            print(f"Best run for stage '{args.stage}' in experiment '{args.experiment}':")
-            print(f"  Run ID: {run_id}")
-            print(f"  Started: {best_run.get('start_time', 'unknown')}")
-
-            stage_details = best_run.get("stages", {}).get(args.stage, {})
-            print(f"  Completed: {stage_details.get('timestamp', 'unknown')}")
-
-            if stage_details.get("artifacts"):
-                print("  Artifacts:")
-                for name, path in stage_details["artifacts"].items():
-                    print(f"    - {name}: {path}")
-
     elif args.command == "db":
-        # Handle database commands
         handle_db_command(args)
 
     else:

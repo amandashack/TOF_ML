@@ -1,34 +1,38 @@
-# src/tof_ml/reporting/base_report_generator.py
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+"""
+Plugin interfaces for report generators with mixins for specific report types.
+"""
+
+from abc import ABC, abstractmethod
 import os
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+import datetime
 import logging
 import json
-import datetime
-from typing import Dict, Any, Optional
-import numpy as np
-
-import matplotlib.pyplot as plt
-
-from src.tof_ml.data.data_manager import DataManager
+from typing import Dict, Any, Optional, List
+from sklearn.metrics import confusion_matrix, classification_report
 
 logger = logging.getLogger(__name__)
-from abc import ABC, abstractmethod
 
-
-class BaseReportGenerator(ABC):
+class ReportGeneratorPlugin(ABC):
     """
-    Abstract base class for all report generators.
-    Defines the common interface and shared functionality.
+    Base abstract class for all report generator plugins.
+    Provides core functionality and enforces the plugin contract.
     """
 
     def __init__(
             self,
             config: Dict[str, Any],
-            data_manager: Optional[DataManager] = None,
+            data_manager: Optional[Any] = None,
             training_results: Optional[Dict[str, Any]] = None,
             evaluation_results: Optional[Dict[str, Any]] = None,
             output_dir: str = "./reports"
     ):
-        """Initialize the base report generator."""
+        """Initialize the report generator."""
         self.config = config
         self.data_manager = data_manager
         self.training_results = training_results or {}
@@ -43,8 +47,6 @@ class BaseReportGenerator(ABC):
 
         # Create output directory
         os.makedirs(self.output_dir, exist_ok=True)
-
-        logger.info(f"{self.__class__.__name__} initialized")
 
     def _setup_plotting_style(self):
         """Set up matplotlib plotting style."""
@@ -190,7 +192,7 @@ class BaseReportGenerator(ABC):
 
         data_summary = "<p>No data summary available.</p>"
         if self.data_manager:
-            metadata = self.data_manager.get_metadata()
+            metadata = self.data_manager.get_data_summary()
             data_summary = self._format_data_summary_table(metadata)
 
         return f"""
@@ -256,69 +258,19 @@ class BaseReportGenerator(ABC):
             json.dump(metadata, f, indent=2, default=str)
 
 
-class ClassificationReportGenerator(BaseReportGenerator):
+class ClassificationReportMixin:
     """
-    Report generator for classification tasks.
-    Provides visualizations and metrics specific to classification problems.
+    Mixin providing classification-specific plotting utilities.
     """
-
-    def generate_data_report(self) -> str:
-        """Generate data distribution report for classification tasks."""
-        logger.info("Generating classification data report")
-
-        if not self.data_manager:
-            logger.warning("No data manager provided, cannot generate data report")
-            return ""
-
-        # Create figure for data distributions
-        fig = plt.figure(figsize=(15, 10))
-        fig.suptitle("Classification Data Distribution Report", fontsize=16)
-
-        # Get train, val, test data
-        try:
-            X_train, y_train = self.data_manager.get_train_data()
-            X_val, y_val = self.data_manager.get_val_data()
-            X_test, y_test = self.data_manager.get_test_data()
-
-            # Plot class distribution
-            ax = fig.add_subplot(2, 1, 1)
-            self._plot_class_distribution(ax, y_train, y_val, y_test)
-
-            # Plot feature importance or distributions if feasible
-            ax = fig.add_subplot(2, 1, 2)
-            self._plot_feature_summary(ax, X_train, y_train)
-
-        except Exception as e:
-            logger.error(f"Error generating data distributions: {e}")
-
-            # Fallback visualization
-            ax = fig.add_subplot(1, 1, 1)
-            ax.text(0.5, 0.5, f"Error generating visualizations: {e}",
-                    ha='center', va='center', fontsize=12)
-
-        # Save figure
-        report_path = os.path.join(self.output_dir, "data_distribution_report.png")
-        fig.savefig(report_path, dpi=300, bbox_inches='tight')
-        plt.close(fig)
-
-        # Save data summary as JSON
-        summary_path = os.path.join(self.output_dir, "data_summary.json")
-        self._save_metadata(summary_path, self._get_data_summary())
-
-        logger.info(f"Classification data report saved to {report_path}")
-        return report_path
 
     def _plot_class_distribution(self, ax, y_train, y_val, y_test):
         """Plot class distribution for classification tasks."""
-        # Get class labels
-        unique_classes = np.unique(np.concatenate([y_train, y_val, y_test]))
+        unique_classes = np.unique(np.concatenate([y_train.flatten(), y_val.flatten(), y_test.flatten()]))
 
-        # Get class counts
-        train_counts = [np.sum(y_train == c) for c in unique_classes]
-        val_counts = [np.sum(y_val == c) for c in unique_classes]
-        test_counts = [np.sum(y_test == c) for c in unique_classes]
+        train_counts = [np.sum(y_train.flatten() == c) for c in unique_classes]
+        val_counts = [np.sum(y_val.flatten() == c) for c in unique_classes]
+        test_counts = [np.sum(y_test.flatten() == c) for c in unique_classes]
 
-        # Plot
         x = np.arange(len(unique_classes))
         width = 0.25
 
@@ -333,36 +285,68 @@ class ClassificationReportGenerator(BaseReportGenerator):
         ax.set_xticklabels(unique_classes)
         ax.legend()
 
+    def _plot_confusion_matrix(self, ax, y_true, y_pred, normalize=True):
+        """Plot confusion matrix."""
+        cm = confusion_matrix(y_true, y_pred)
+
+        if normalize:
+            cm = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
+
+        sns.heatmap(cm, annot=True, fmt='.2f' if normalize else 'd',
+                    cmap='Blues', ax=ax)
+        ax.set_title('Confusion Matrix' + (' (Normalized)' if normalize else ''))
+        ax.set_xlabel('Predicted')
+        ax.set_ylabel('True')
+
+    def _plot_per_class_metrics(self, ax, y_true, y_pred):
+        """Plot per-class precision, recall, and F1 scores."""
+        from sklearn.metrics import precision_recall_fscore_support
+
+        precision, recall, f1, support = precision_recall_fscore_support(
+            y_true, y_pred, average=None
+        )
+
+        classes = np.arange(len(precision))
+        x = np.arange(len(classes))
+        width = 0.25
+
+        ax.bar(x - width, precision, width, label='Precision')
+        ax.bar(x, recall, width, label='Recall')
+        ax.bar(x + width, f1, width, label='F1-Score')
+
+        ax.set_xlabel('Class')
+        ax.set_ylabel('Score')
+        ax.set_title('Per-Class Metrics')
+        ax.set_xticks(x)
+        ax.set_xticklabels(classes)
+        ax.legend()
+        ax.set_ylim([0, 1.05])
+
+    def _generate_classification_text_report(self, y_true, y_pred, class_names=None):
+        """Generate detailed classification report."""
+        report = classification_report(y_true, y_pred, target_names=class_names)
+        return report
 
 
-class RegressionReportGenerator(BaseReportGenerator):
+class RegressionReportMixin:
     """
-    Report generator for regression tasks.
-    Provides visualizations and metrics specific to regression problems.
+    Mixin providing regression-specific plotting utilities.
     """
 
-    def generate_data_report(self) -> str:
-        """Generate data distribution report for regression tasks."""
-        logger.info("Generating regression data report")
-
-
-    def generate_evaluation_report(self) -> str:
-        """Generate model evaluation report for regression tasks."""
-        logger.info("Generating regression evaluation report")
-
-    def _plot_predictions(self, ax, y_true, y_pred):
+    def _plot_predictions_vs_actual(self, ax, y_true, y_pred):
         """Plot predictions vs true values for regression."""
         ax.scatter(y_true, y_pred, alpha=0.5)
 
         # Add diagonal line
         min_val = min(np.min(y_true), np.min(y_pred))
         max_val = max(np.max(y_true), np.max(y_pred))
-        ax.plot([min_val, max_val], [min_val, max_val], 'r--')
+        ax.plot([min_val, max_val], [min_val, max_val], 'r--', label='Perfect Prediction')
 
-        ax.set_title("Predictions vs True Values")
-        ax.set_xlabel("True Values")
+        ax.set_title("Predictions vs Actual Values")
+        ax.set_xlabel("Actual Values")
         ax.set_ylabel("Predicted Values")
-        ax.grid(True)
+        ax.legend()
+        ax.grid(True, alpha=0.3)
 
     def _plot_residuals(self, ax, y_true, y_pred):
         """Plot residuals for regression tasks."""
@@ -371,7 +355,43 @@ class RegressionReportGenerator(BaseReportGenerator):
         ax.scatter(y_pred, residuals, alpha=0.5)
         ax.axhline(y=0, color='r', linestyle='--')
 
-        ax.set_title("Residuals vs Predicted Values")
+        ax.set_title("Residual Plot")
         ax.set_xlabel("Predicted Values")
         ax.set_ylabel("Residuals")
-        ax.grid(True)
+        ax.grid(True, alpha=0.3)
+
+    def _plot_residual_distribution(self, ax, y_true, y_pred):
+        """Plot distribution of residuals."""
+        residuals = y_true - y_pred
+
+        ax.hist(residuals, bins=50, edgecolor='black', alpha=0.7)
+        ax.axvline(x=0, color='r', linestyle='--', label='Zero Residual')
+        ax.set_title("Residual Distribution")
+        ax.set_xlabel("Residual Value")
+        ax.set_ylabel("Frequency")
+        ax.legend()
+
+    def _calculate_regression_metrics(self, y_true, y_pred):
+        """Calculate common regression metrics."""
+        from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
+
+        return {
+            'mse': mean_squared_error(y_true, y_pred),
+            'rmse': np.sqrt(mean_squared_error(y_true, y_pred)),
+            'mae': mean_absolute_error(y_true, y_pred),
+            'r2': r2_score(y_true, y_pred)
+        }
+
+
+class TimeSeriesReportMixin:
+    """Mixin for time series specific visualizations."""
+
+    def _plot_time_series_predictions(self, ax, timestamps, y_true, y_pred):
+        """Plot time series predictions."""
+        # ... implementation ...
+        pass
+
+    def _plot_seasonal_decomposition(self, ax, data):
+        """Plot seasonal decomposition."""
+        # ... implementation ...
+        pass

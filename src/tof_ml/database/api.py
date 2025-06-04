@@ -2,8 +2,8 @@
 # -*- coding: utf-8 -*-
 
 """
-Database API for the ML Provenance Tracker Framework.
-This module handles interactions with the experiment tracking database.
+Enhanced Database API for the ML Provenance Tracker Framework.
+This module handles interactions with the experiment tracking database using repository pattern.
 """
 
 import os
@@ -12,644 +12,396 @@ import datetime
 import json
 import sqlite3
 import yaml
-from typing import Dict, Any, Optional, List, Union, Tuple
+import hashlib
+import re
+from typing import Dict, Any, Optional, List, Tuple
+import subprocess
+
+from src.tof_ml.database.base_repository import BaseRepository, BaseQueryService
+from src.tof_ml.database.sqlite import SQLiteRepository, SQLiteQueryService
 
 logger = logging.getLogger(__name__)
 
+
 class DBApi:
     """
-    API for interacting with the experiment tracking database.
-    
-    This class provides methods to:
-    - Record experiment runs
-    - Query experiment results
-    - Track model artifacts
-    - Compare experiment results
+    Enhanced database API that composes repository and query services.
+    Provides database abstraction through repository pattern.
     """
-    
+
     def __init__(self, config_path: str):
         """
         Initialize the database API.
-        
+
         Args:
             config_path: Path to database configuration file
         """
         self.config = self._load_config(config_path)
         self.db_type = self.config.get("type", "sqlite")
         self.connection = None
-        
+
         # Connect to the database
         self._connect_to_database()
-        
+
         # Initialize database schema if needed
         self._initialize_database()
-        
+
+        # Initialize repository and query services
+        if self.db_type == "sqlite":
+            self.repository = SQLiteRepository(self.connection, self)
+            self.query_service = SQLiteQueryService(self.connection, self)
+        else:
+            raise ValueError(f"Unsupported database type: {self.db_type}")
+
         logger.info(f"Database API initialized with {self.db_type} backend")
-    
+
     def _load_config(self, config_path: str) -> Dict[str, Any]:
         """Load database configuration from YAML file."""
         if not os.path.exists(config_path):
             logger.warning(f"Database config file not found: {config_path}")
             return {"type": "sqlite", "path": ":memory:"}
-        
+
         with open(config_path, 'r') as f:
             config = yaml.safe_load(f)
-        
+
         return config
-    
+
     def _connect_to_database(self):
         """Connect to the database based on configuration."""
         if self.db_type == "sqlite":
             db_path = self.config.get("path", ":memory:")
-            
+
             # Create directory if it doesn't exist
             if db_path != ":memory:":
                 os.makedirs(os.path.dirname(db_path), exist_ok=True)
-            
+
             self.connection = sqlite3.connect(db_path)
             self.connection.row_factory = sqlite3.Row
         else:
             raise ValueError(f"Unsupported database type: {self.db_type}")
-    
+
     def _initialize_database(self):
-        """Initialize database schema if it doesn't exist."""
+        """Initialize the updated database schema."""
         if self.db_type == "sqlite":
             cursor = self.connection.cursor()
-            
-            # Create experiments table
+
+            # Create experiments table with unique constraint on name
             cursor.execute('''
             CREATE TABLE IF NOT EXISTS experiments (
                 id TEXT PRIMARY KEY,
-                name TEXT,
-                timestamp TEXT,
-                config TEXT,
-                metadata TEXT
+                name TEXT NOT NULL UNIQUE,
+                created_at TEXT NOT NULL,
+                description TEXT,
+                git_commit_sha TEXT,
+                pipeline_hash TEXT NOT NULL
             )
             ''')
-            
-            # Create models table
+
+            # Create runs table
             cursor.execute('''
-            CREATE TABLE IF NOT EXISTS models (
+            CREATE TABLE IF NOT EXISTS runs (
                 id TEXT PRIMARY KEY,
-                experiment_id TEXT,
-                path TEXT,
-                metadata TEXT,
-                FOREIGN KEY (experiment_id) REFERENCES experiments(id)
+                experiment_id TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                completed_at TEXT,
+                status TEXT DEFAULT 'running',
+                pipeline_hash TEXT NOT NULL,
+                data_reused BOOLEAN DEFAULT FALSE,
+                force_reload BOOLEAN DEFAULT FALSE,
+                source_run_id TEXT,
+                environment_hash TEXT NOT NULL,
+                FOREIGN KEY (experiment_id) REFERENCES experiments(id),
+                FOREIGN KEY (source_run_id) REFERENCES runs(id),
+                FOREIGN KEY (environment_hash) REFERENCES environments(hash_id)
             )
             ''')
-            
-            # Create metrics table
-            cursor.execute('''
-            CREATE TABLE IF NOT EXISTS metrics (
-                id TEXT PRIMARY KEY,
-                experiment_id TEXT,
-                metric_name TEXT,
-                metric_value REAL,
-                metric_type TEXT,
-                FOREIGN KEY (experiment_id) REFERENCES experiments(id)
-            )
-            ''')
-            
-            # Create artifacts table
+
+            # Create combined artifacts table
             cursor.execute('''
             CREATE TABLE IF NOT EXISTS artifacts (
-                id TEXT PRIMARY KEY,
-                experiment_id TEXT,
-                artifact_type TEXT,
-                path TEXT,
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                hash_id TEXT NOT NULL,
+                run_id TEXT NOT NULL,
+                artifact_role TEXT NOT NULL,
+                stage TEXT NOT NULL,
+                artifact_type TEXT NOT NULL,
+                file_path TEXT NOT NULL,
                 metadata TEXT,
-                FOREIGN KEY (experiment_id) REFERENCES experiments(id)
+                created_at TEXT NOT NULL,
+                size_bytes INTEGER,
+                FOREIGN KEY (run_id) REFERENCES runs(id)
             )
             ''')
-            
+
+            # Create enhanced data lineage table
+            cursor.execute('''
+            CREATE TABLE IF NOT EXISTS data_lineage (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                run_id TEXT NOT NULL,
+                input_hash TEXT,
+                output_hash TEXT NOT NULL,
+                transformation_name TEXT NOT NULL,
+                stage TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (run_id) REFERENCES runs(id)
+            )
+            ''')
+
+            # Create enhanced metrics table
+            cursor.execute('''
+            CREATE TABLE IF NOT EXISTS metrics (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                run_id TEXT NOT NULL,
+                metric_name TEXT NOT NULL,
+                metric_value REAL NOT NULL,
+                metric_type TEXT NOT NULL,
+                metric_category TEXT NOT NULL,
+                stage TEXT NOT NULL,
+                epoch INTEGER,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (run_id) REFERENCES runs(id)
+            )
+            ''')
+
+            # Create parameters table (for run/stage parameters)
+            cursor.execute('''
+            CREATE TABLE IF NOT EXISTS parameters (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                run_id TEXT NOT NULL,
+                parameter_name TEXT NOT NULL,
+                parameter_value TEXT NOT NULL,
+                parameter_type TEXT NOT NULL,
+                stage TEXT NOT NULL,
+                FOREIGN KEY (run_id) REFERENCES runs(id)
+            )
+            ''')
+
+            # Create environment table
+            cursor.execute('''
+            CREATE TABLE IF NOT EXISTS environments (
+                hash_id TEXT PRIMARY KEY,
+                python_version TEXT,
+                packages TEXT,
+                system_info TEXT,
+                created_at TEXT NOT NULL
+            )
+            ''')
+
+            # Create indexes for performance
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_experiments_name ON experiments(name)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_artifacts_hash ON artifacts(hash_id)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_artifacts_run ON artifacts(run_id)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_lineage_run ON data_lineage(run_id)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_metrics_run ON metrics(run_id)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_metrics_name ON metrics(metric_name)')
+
             self.connection.commit()
-    
-    def record_experiment(
-        self,
-        metadata: Dict[str, Any],
-        config: Dict[str, Any],
-        training_results: Optional[Dict[str, Any]] = None,
-        evaluation_results: Optional[Dict[str, Any]] = None,
-        model_path: Optional[str] = None,
-        report_paths: Optional[Dict[str, str]] = None
-    ) -> str:
-        """
-        Record an experiment run in the database.
-        
-        Args:
-            metadata: Experiment metadata
-            config: Experiment configuration
-            training_results: Optional training results
-            evaluation_results: Optional evaluation results
-            model_path: Optional path to saved model
-            report_paths: Optional paths to generated reports
-            
-        Returns:
-            Experiment ID
-        """
-        logger.info("Recording experiment in database")
-        
-        # Generate experiment ID if not provided
-        experiment_id = metadata.get("experiment_id", str(datetime.datetime.now().isoformat()))
-        
-        if self.db_type == "sqlite":
-            cursor = self.connection.cursor()
-            
-            # Insert experiment record
-            cursor.execute(
-                "INSERT INTO experiments (id, name, timestamp, config, metadata) VALUES (?, ?, ?, ?, ?)",
-                (
-                    experiment_id,
-                    metadata.get("experiment_name", "unnamed_experiment"),
-                    datetime.datetime.now().isoformat(),
-                    json.dumps(config),
-                    json.dumps(metadata)
-                )
-            )
-            
-            # Record metrics
-            self._record_metrics(cursor, experiment_id, training_results, evaluation_results)
-            
-            # Record model if available
-            if model_path:
-                self._record_model(cursor, experiment_id, model_path, metadata)
-            
-            # Record report artifacts if available
-            if report_paths:
-                self._record_artifacts(cursor, experiment_id, report_paths)
-            
-            self.connection.commit()
-        
-        logger.info(f"Experiment recorded with ID: {experiment_id}")
-        return experiment_id
-    
-    def _record_metrics(
-        self,
-        cursor,
-        experiment_id: str,
-        training_results: Optional[Dict[str, Any]],
-        evaluation_results: Optional[Dict[str, Any]]
-    ):
-        """Record metrics in the database."""
-        # Record training metrics
-        if training_results:
-            for key, value in training_results.items():
-                if isinstance(value, (int, float)) and not isinstance(value, bool):
-                    metric_id = f"{experiment_id}_{key}"
-                    cursor.execute(
-                        "INSERT INTO metrics (id, experiment_id, metric_name, metric_value, metric_type) VALUES (?, ?, ?, ?, ?)",
-                        (
-                            metric_id,
-                            experiment_id,
-                            key,
-                            float(value),
-                            "training"
-                        )
-                    )
-        
-        # Record evaluation metrics
-        if evaluation_results:
-            for key, value in evaluation_results.items():
-                if isinstance(value, (int, float)) and not isinstance(value, bool) and key not in ["y_true", "y_pred"]:
-                    metric_id = f"{experiment_id}_{key}"
-                    cursor.execute(
-                        "INSERT INTO metrics (id, experiment_id, metric_name, metric_value, metric_type) VALUES (?, ?, ?, ?, ?)",
-                        (
-                            metric_id,
-                            experiment_id,
-                            key,
-                            float(value),
-                            "evaluation"
-                        )
-                    )
-    
-    def _record_model(
-        self,
-        cursor,
-        experiment_id: str,
-        model_path: str,
-        metadata: Dict[str, Any]
-    ):
-        """Record model in the database."""
-        model_id = f"{experiment_id}_model"
-        cursor.execute(
-            "INSERT INTO models (id, experiment_id, path, metadata) VALUES (?, ?, ?, ?)",
-            (
-                model_id,
-                experiment_id,
-                model_path,
-                json.dumps(metadata)
-            )
-        )
-    
-    def _record_artifacts(
-        self,
-        cursor,
-        experiment_id: str,
-        artifact_paths: Dict[str, str]
-    ):
-        """Record artifacts in the database."""
-        for artifact_type, path in artifact_paths.items():
-            if path:
-                artifact_id = f"{experiment_id}_{artifact_type}"
-                cursor.execute(
-                    "INSERT INTO artifacts (id, experiment_id, artifact_type, path, metadata) VALUES (?, ?, ?, ?, ?)",
-                    (
-                        artifact_id,
-                        experiment_id,
-                        artifact_type,
-                        path,
-                        json.dumps({"timestamp": datetime.datetime.now().isoformat()})
-                    )
-                )
 
-    def get_experiment(self, experiment_id: str) -> Dict[str, Any]:
-        """
-        Get experiment details from the database.
+    @staticmethod
+    def slugify(name: str) -> str:
+        """Convert a name to a URL-friendly slug."""
+        name = name.lower().strip()
+        name = re.sub(r'[^a-z0-9]+', '-', name)
+        return name.strip('-')
 
-        Args:
-            experiment_id: ID of the experiment
+    @staticmethod
+    def generate_experiment_id(name: str) -> str:
+        """Generate a stable experiment ID from name using slug + hash."""
+        slug = DBApi.slugify(name)
+        hash_suffix = hashlib.sha256(name.encode('utf-8')).hexdigest()[:6]
+        return f"{slug}-{hash_suffix}"
 
-        Returns:
-            Experiment details
-        """
-        if self.db_type == "sqlite":
-            cursor = self.connection.cursor()
+    def get_git_commit_sha(self) -> str:
+        """Get current git commit SHA."""
+        try:
+            result = subprocess.run(['git', 'rev-parse', 'HEAD'],
+                                    capture_output=True, text=True, check=True)
+            return result.stdout.strip()
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            logger.warning("Could not retrieve git commit SHA")
+            return "unknown"
 
-            # Get experiment record
-            cursor.execute(
-                "SELECT * FROM experiments WHERE id = ?",
-                (experiment_id,)
-            )
-            experiment_row = cursor.fetchone()
+    def get_environment_hash(self) -> str:
+        """Get environment hash for reproducibility."""
+        import platform
+        import sys
+        import pkg_resources
 
-            if not experiment_row:
-                logger.warning(f"Experiment not found: {experiment_id}")
-                return {}
-
-            # Convert row to dictionary
-            experiment = dict(experiment_row)
-
-            # Parse JSON fields
-            experiment["config"] = json.loads(experiment["config"])
-            experiment["metadata"] = json.loads(experiment["metadata"])
-
-            # Get metrics
-            cursor.execute(
-                "SELECT metric_name, metric_value, metric_type FROM metrics WHERE experiment_id = ?",
-                (experiment_id,)
-            )
-            metrics_rows = cursor.fetchall()
-
-            experiment["metrics"] = {row["metric_name"]: row["metric_value"] for row in metrics_rows}
-
-            # Get model information
-            cursor.execute(
-                "SELECT * FROM models WHERE experiment_id = ?",
-                (experiment_id,)
-            )
-            model_row = cursor.fetchone()
-
-            if model_row:
-                experiment["model"] = dict(model_row)
-                experiment["model"]["metadata"] = json.loads(experiment["model"]["metadata"])
-
-            # Get artifacts
-            cursor.execute(
-                "SELECT artifact_type, path FROM artifacts WHERE experiment_id = ?",
-                (experiment_id,)
-            )
-            artifact_rows = cursor.fetchall()
-
-            experiment["artifacts"] = {row["artifact_type"]: row["path"] for row in artifact_rows}
-
-            return experiment
-
-        return {}
-
-    def query_experiments(
-            self,
-            filters: Optional[Dict[str, Any]] = None,
-            sort_by: Optional[str] = None,
-            limit: int = 10
-    ) -> List[Dict[str, Any]]:
-        """
-        Query experiments from the database.
-
-        Args:
-            filters: Optional filters to apply
-            sort_by: Optional metric to sort by
-            limit: Maximum number of results to return
-
-        Returns:
-            List of matching experiments
-        """
-        if self.db_type == "sqlite":
-            cursor = self.connection.cursor()
-
-            # Base query
-            query = "SELECT id, name, timestamp FROM experiments"
-            params = []
-
-            # Apply filters if provided
-            if filters:
-                filter_clauses = []
-
-                # Filter by name
-                if "name" in filters:
-                    filter_clauses.append("name LIKE ?")
-                    params.append(f"%{filters['name']}%")
-
-                # Filter by timestamp
-                if "timestamp_start" in filters:
-                    filter_clauses.append("timestamp >= ?")
-                    params.append(filters["timestamp_start"])
-
-                if "timestamp_end" in filters:
-                    filter_clauses.append("timestamp <= ?")
-                    params.append(filters["timestamp_end"])
-
-                # Filter by model type or other metadata fields
-                if "model_type" in filters:
-                    filter_clauses.append("json_extract(metadata, '$.model_type') = ?")
-                    params.append(filters["model_type"])
-
-                # Add WHERE clause if there are filters
-                if filter_clauses:
-                    query += " WHERE " + " AND ".join(filter_clauses)
-
-            # Apply sorting if provided
-            if sort_by:
-                # Sort by timestamp by default
-                if sort_by == "timestamp":
-                    query += " ORDER BY timestamp DESC"
-                # Sort by a metric if specified
-                else:
-                    # Join with metrics table to sort by a specific metric
-                    query = f"""
-                    SELECT e.id, e.name, e.timestamp, m.metric_value
-                    FROM experiments e
-                    LEFT JOIN metrics m ON e.id = m.experiment_id AND m.metric_name = ?
-                    """
-                    params.insert(0, sort_by)
-
-                    # Re-apply filters if any
-                    if filters and len(filter_clauses) > 0:
-                        query += " WHERE " + " AND ".join(filter_clauses)
-
-                    # Add sorting direction
-                    query += " ORDER BY m.metric_value ASC"
-            else:
-                # Default sorting by timestamp
-                query += " ORDER BY timestamp DESC"
-
-            # Apply limit
-            query += " LIMIT ?"
-            params.append(limit)
-
-            # Execute query
-            cursor.execute(query, params)
-            rows = cursor.fetchall()
-
-            # Convert rows to dictionaries
-            experiments = [dict(row) for row in rows]
-
-            return experiments
-
-        return []
-    
-    def compare_experiments(self, experiment_ids: List[str]) -> Dict[str, Any]:
-        """
-        Compare multiple experiments.
-        
-        Args:
-            experiment_ids: List of experiment IDs to compare
-            
-        Returns:
-            Comparison results
-        """
-        if self.db_type == "sqlite":
-            cursor = self.connection.cursor()
-            
-            # Get basic experiment information
-            experiments = []
-            for exp_id in experiment_ids:
-                cursor.execute(
-                    "SELECT id, name, timestamp FROM experiments WHERE id = ?",
-                    (exp_id,)
-                )
-                row = cursor.fetchone()
-                
-                if row:
-                    experiments.append(dict(row))
-            
-            # Get metrics for all experiments
-            metrics_comparison = {}
-            for exp_id in experiment_ids:
-                cursor.execute(
-                    "SELECT metric_name, metric_value, metric_type FROM metrics WHERE experiment_id = ?",
-                    (exp_id,)
-                )
-                rows = cursor.fetchall()
-                
-                exp_metrics = {}
-                for row in rows:
-                    metric_name = row["metric_name"]
-                    metric_value = row["metric_value"]
-                    metric_type = row["metric_type"]
-                    
-                    if metric_name not in metrics_comparison:
-                        metrics_comparison[metric_name] = {"type": metric_type, "values": {}}
-                    
-                    metrics_comparison[metric_name]["values"][exp_id] = metric_value
-            
-            return {
-                "experiments": experiments,
-                "metrics": metrics_comparison
-            }
-        
-        return {}
-
-    def get_metrics(self, experiment_id: str) -> Dict[str, float]:
-        """
-        Get all metrics for an experiment.
-
-        Args:
-            experiment_id: ID of the experiment
-
-        Returns:
-            Dictionary of metrics
-        """
-        if self.db_type == "sqlite":
-            cursor = self.connection.cursor()
-
-            cursor.execute(
-                "SELECT metric_name, metric_value FROM metrics WHERE experiment_id = ?",
-                (experiment_id,)
-            )
-            rows = cursor.fetchall()
-
-            return {row["metric_name"]: row["metric_value"] for row in rows}
-
-        return {}
-
-    def get_best_experiment(self, metric_name: str, higher_is_better: bool = False) -> Dict[str, Any]:
-        """
-        Get the experiment with the best metric value.
-
-        Args:
-            metric_name: Name of the metric to compare
-            higher_is_better: Whether higher values are better
-
-        Returns:
-            Best experiment details
-        """
-        if self.db_type == "sqlite":
-            cursor = self.connection.cursor()
-
-            # Order by metric value (ascending or descending)
-            order = "DESC" if higher_is_better else "ASC"
-
-            # Get experiment with the best metric
-            query = f"""
-            SELECT e.id
-            FROM experiments e
-            JOIN metrics m ON e.id = m.experiment_id
-            WHERE m.metric_name = ?
-            ORDER BY m.metric_value {order}
-            LIMIT 1
-            """
-
-            cursor.execute(query, (metric_name,))
-            row = cursor.fetchone()
-
-            if row:
-                return self.get_experiment(row["id"])
-
-        return {}
-    
-    def get_best_model(self, metric_name: str, is_higher_better: bool = False) -> Dict[str, Any]:
-        """
-        Get the best model based on a specific metric.
-        
-        Args:
-            metric_name: Metric to use for comparison
-            is_higher_better: Whether higher values are better
-            
-        Returns:
-            Best model information
-        """
-        if self.db_type == "sqlite":
-            cursor = self.connection.cursor()
-            
-            # Order by metric value (ascending or descending)
-            order = "DESC" if is_higher_better else "ASC"
-            
-            # Get experiment with the best metric
-            query = f"""
-            SELECT e.id, e.name, e.timestamp, m.metric_value
-            FROM experiments e
-            JOIN metrics m ON e.id = m.experiment_id
-            WHERE m.metric_name = ?
-            ORDER BY m.metric_value {order}
-            LIMIT 1
-            """
-            
-            cursor.execute(query, (metric_name,))
-            exp_row = cursor.fetchone()
-            
-            if not exp_row:
-                logger.warning(f"No experiments found with metric: {metric_name}")
-                return {}
-            
-            # Get the model for this experiment
-            exp_id = exp_row["id"]
-            cursor.execute(
-                "SELECT * FROM models WHERE experiment_id = ?",
-                (exp_id,)
-            )
-            model_row = cursor.fetchone()
-            
-            if not model_row:
-                logger.warning(f"No model found for best experiment: {exp_id}")
-                return {"experiment": dict(exp_row), "model": None}
-            
-            return {
-                "experiment": dict(exp_row),
-                "model": dict(model_row)
-            }
-        
-        return {}
-    
-    def record_model_run(
-        self,
-        config_dict: Dict[str, Any],
-        training_results: Dict[str, Any],
-        model_path: str,
-        plot_paths: Dict[str, str]
-    ) -> None:
-        """
-        Record a model training run.
-        
-        This method is a convenience wrapper for record_experiment.
-        
-        Args:
-            config_dict: Configuration dictionary
-            training_results: Training results
-            model_path: Path to saved model
-            plot_paths: Paths to generated plots
-        """
-        # Create metadata from config and results
-        metadata = {
-            "experiment_name": config_dict.get("experiment_name", "unnamed_run"),
-            "timestamp": datetime.datetime.now().isoformat(),
-            "training_results": {k: v for k, v in training_results.items() if isinstance(v, (int, float))}
+        # Get system information
+        system_info = {
+            "platform": platform.platform(),
+            "python_version": platform.python_version(),
+            "architecture": platform.architecture()
         }
-        
-        # Record as an experiment
-        self.record_experiment(
-            metadata=metadata,
-            config=config_dict,
-            training_results=training_results,
-            model_path=model_path,
-            report_paths=plot_paths
+
+        # Get installed packages
+        packages = {}
+        for dist in pkg_resources.working_set:
+            packages[dist.project_name] = dist.version
+
+        # Create hash
+        env_data = json.dumps({
+            "system_info": system_info,
+            "packages": packages
+        }, sort_keys=True)
+
+        env_hash = hashlib.sha256(env_data.encode()).hexdigest()
+
+        # Store environment if not exists
+        cursor = self.connection.cursor()
+        cursor.execute(
+            "INSERT OR IGNORE INTO environments (hash_id, python_version, packages, system_info, created_at) VALUES (?, ?, ?, ?, ?)",
+            (
+                env_hash,
+                sys.version,
+                json.dumps(packages),
+                json.dumps(system_info),
+                datetime.datetime.now().isoformat()
+            )
         )
-        
-        logger.info("Model run recorded successfully")
+        self.connection.commit()
 
-    def delete_experiment(self, experiment_id: str) -> bool:
-        """
-        Delete an experiment and all associated data from the database.
+        return env_hash
 
-        Args:
-            experiment_id: ID of the experiment to delete
+    def _generate_pipeline_hash(self, config: Dict[str, Any]) -> str:
+        """Generate hash for pipeline configuration."""
+        # Extract relevant config parts
+        pipeline_config = {
+            "data": config.get("data", {}),
+            "model": config.get("model", {}),
+            "plugins": config.get("plugins", {}),
+            "transformations": config.get("transformations", {})
+        }
 
-        Returns:
-            True if successful, False otherwise
-        """
-        if self.db_type == "sqlite":
-            try:
-                cursor = self.connection.cursor()
+        # Remove fields that don't affect processing
+        pipeline_config["data"].pop("force_reload", None)
 
-                # Delete related records first
-                cursor.execute("DELETE FROM metrics WHERE experiment_id = ?", (experiment_id,))
-                cursor.execute("DELETE FROM models WHERE experiment_id = ?", (experiment_id,))
-                cursor.execute("DELETE FROM artifacts WHERE experiment_id = ?", (experiment_id,))
+        config_str = json.dumps(pipeline_config, sort_keys=True)
+        return hashlib.sha256(config_str.encode()).hexdigest()
 
-                # Delete the experiment record
-                cursor.execute("DELETE FROM experiments WHERE id = ?", (experiment_id,))
+    def _calculate_file_hash(self, file_path: str) -> str:
+        """Calculate SHA256 hash of a file or directory."""
+        if not os.path.exists(file_path):
+            return hashlib.sha256(file_path.encode()).hexdigest()
 
-                # Commit changes
-                self.connection.commit()
+        hash_sha256 = hashlib.sha256()
 
-                return True
-            except Exception as e:
-                logger.error(f"Error deleting experiment: {e}")
-                self.connection.rollback()
-                return False
+        if os.path.isfile(file_path):
+            # Handle single file
+            with open(file_path, "rb") as f:
+                for chunk in iter(lambda: f.read(4096), b""):
+                    hash_sha256.update(chunk)
+        elif os.path.isdir(file_path):
+            # Handle directory (like TensorFlow saved models)
+            for root, dirs, files in os.walk(file_path):
+                # Sort for consistent hashing
+                dirs.sort()
+                files.sort()
 
-        return False
-    
+                for file in files:
+                    file_full_path = os.path.join(root, file)
+                    # Add relative path to hash for consistency
+                    relative_path = os.path.relpath(file_full_path, file_path)
+                    hash_sha256.update(relative_path.encode())
+
+                    try:
+                        with open(file_full_path, "rb") as f:
+                            for chunk in iter(lambda: f.read(4096), b""):
+                                hash_sha256.update(chunk)
+                    except (PermissionError, OSError) as e:
+                        # If we can't read a file, include its name and size in hash
+                        logger.warning(f"Cannot read file {file_full_path}: {e}")
+                        hash_sha256.update(f"UNREADABLE:{relative_path}:{os.path.getsize(file_full_path)}".encode())
+        else:
+            # Fallback for other types
+            hash_sha256.update(f"UNKNOWN_TYPE:{file_path}".encode())
+
+        return hash_sha256.hexdigest()
+
+    def _check_data_reuse(self, experiment_id: str, pipeline_hash: str,
+                          force_reload: bool) -> Tuple[bool, Optional[str]]:
+        """Check if data can be reused from previous runs."""
+        if force_reload:
+            return False, None
+
+        cursor = self.connection.cursor()
+        cursor.execute("""
+            SELECT id FROM runs 
+            WHERE experiment_id = ? AND pipeline_hash = ? AND status = 'completed'
+            AND EXISTS (
+                SELECT 1 FROM artifacts ra 
+                WHERE ra.run_id = runs.id AND ra.stage = 'data_splitting'
+            )
+            ORDER BY created_at DESC
+            LIMIT 1
+        """, (experiment_id, pipeline_hash))
+
+        result = cursor.fetchone()
+        if result:
+            return True, result["id"]
+
+        return False, None
+
+    # Repository methods (write operations)
+    def create_experiment(self, name: str, config: Dict[str, Any], description: str = "") -> str:
+        return self.repository.create_experiment(name, config, description)
+
+    def create_run(self, experiment_id: str, config: Dict[str, Any], force_reload: bool = False) -> str:
+        return self.repository.create_run(experiment_id, config, force_reload)
+
+    def complete_run(self, run_id: str, status: str = "completed") -> None:
+        return self.repository.complete_run(run_id, status)
+
+    def store_artifact(self, run_id: str, file_path: str, artifact_type: str,
+                       artifact_role: str, stage: str, metadata: Dict[str, Any] = None) -> str:
+        return self.repository.store_artifact(run_id, file_path, artifact_type, artifact_role, stage, metadata)
+
+    def store_metrics(self, run_id: str, metrics: Dict[str, Any], stage: str,
+                      epoch: int = None, metric_type: str = "predefined",
+                      metric_category: str = "custom") -> None:
+        return self.repository.store_metrics(run_id, metrics, stage, epoch, metric_type, metric_category)
+
+    def store_parameters(self, run_id: str, parameters: Dict[str, Any], stage: str) -> None:
+        return self.repository.store_parameters(run_id, parameters, stage)
+
+    def record_data_transformation(self, run_id: str, input_hash: str, output_hash: str,
+                                   transformation_type: str, transformation_config: Dict[str, Any],
+                                   stage: str) -> None:
+        return self.repository.record_data_transformation(run_id, input_hash, output_hash, transformation_type,
+                                                          transformation_config, stage)
+
+    # Query methods (read operations)
+    def find_experiment_by_name_or_id(self, identifier: str) -> Optional[Dict[str, Any]]:
+        return self.query_service.find_experiment_by_name_or_id(identifier)
+
+    def get_experiments(self, limit: int = 20) -> List[Dict[str, Any]]:
+        return self.query_service.get_experiments(limit)
+
+    def get_runs_for_experiment(self, experiment_id: str, limit: int = 20) -> List[Dict[str, Any]]:
+        return self.query_service.get_runs_for_experiment(experiment_id, limit)
+
+    def get_run_lineage(self, run_id: str) -> Dict[str, Any]:
+        return self.query_service.get_run_lineage(run_id)
+
+    def get_reusable_artifacts(self, experiment_id: str, pipeline_hash: str) -> Dict[str, str]:
+        return self.query_service.get_reusable_artifacts(experiment_id, pipeline_hash)
+
+    def compare_runs(self, run_ids: List[str]) -> Dict[str, Any]:
+        return self.query_service.compare_runs(run_ids)
+
+    def query_artifacts_by_criteria(self, artifact_type: str = None, stage: str = None,
+                                    limit: int = 20) -> List[Dict[str, Any]]:
+        return self.query_service.query_artifacts_by_criteria(artifact_type, stage, limit)
+
+    def get_database_summary(self) -> Dict[str, Any]:
+        return self.query_service.get_database_summary()
+
+    def delete_run_cascade(self, run_id: str) -> bool:
+        return self.query_service.delete_run_cascade(run_id)
+
+    def get_training_progress(self, run_id: str) -> Dict[str, Any]:
+        return self.query_service.get_training_progress(run_id)
+
     def __del__(self):
         """Clean up database connection on object destruction."""
         if self.connection:

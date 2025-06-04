@@ -3,87 +3,94 @@
 
 import logging
 import tensorflow as tf
-from typing import Dict, Any, Optional, List, Union
+from typing import Dict, Any, Optional, List, Union, Tuple
 import numpy as np
+import keras
 
-from src.tof_ml.pipeline.plugins.interfaces import ModelPlugin
+from src.tof_ml.models.base_model import BaseModelPlugin, KerasModelMixin
 
 logger = logging.getLogger(__name__)
 
 
-class MNISTConvModel(ModelPlugin):
-    """Convolutional neural network model for MNIST classification using Keras."""
+class MNISTConvModel(BaseModelPlugin, KerasModelMixin):
+    """CNN model for MNIST using the new structure."""
 
-    def __init__(self,
-                 conv_filters: List[int] = [32, 64],
-                 kernel_sizes: List[int] = [3, 3],
-                 pool_sizes: List[int] = [2, 2],
-                 dense_layers: List[int] = [128],
-                 dropout_rate: float = 0.3,
-                 activations: List[str] = ["relu", "relu", "relu"],
-                 output_activation: str = "softmax",
-                 output_units: int = 10,
-                 learning_rate: float = 0.001,
-                 optimizer_name: str = "Adam",
-                 loss: str = "sparse_categorical_crossentropy",
-                 metrics: List[str] = ["accuracy"],
-                 **kwargs):
-        """Initialize the model."""
-        self.conv_filters = conv_filters
-        self.kernel_sizes = kernel_sizes
-        self.pool_sizes = pool_sizes
-        self.dense_layers = dense_layers
-        self.dropout_rate = dropout_rate
-        self.activations = activations
-        self.output_activation = output_activation
-        self.output_units = output_units
-        self.learning_rate = learning_rate
-        self.optimizer_name = optimizer_name
-        self.loss = loss
-        self.metrics = metrics
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.model = None
+        self.history = None
 
-        # Define metrics names for access in evaluate method
-        self.metrics_names = ['loss'] + metrics
+        # Model architecture parameters
+        self.conv_filters = kwargs.get("conv_filters", [32, 64])
+        self.kernel_sizes = kwargs.get("kernel_sizes", [3, 3])
+        self.pool_sizes = kwargs.get("pool_sizes", [2, 2])
+        self.dense_layers = kwargs.get("dense_layers", [128])
+        self.dropout_rate = kwargs.get("dropout_rate", 0.3)
+        self.activations = kwargs.get("activations", ["relu", "relu", "relu"])
+        self.output_activation = kwargs.get("output_activation", "softmax")
+        self.output_units = kwargs.get("output_units", 10)
 
-        # Build the model
-        self.model = self._build_model()
-        logger.info("MNISTConvModel initialized")
+        # Training parameters
+        self.learning_rate = kwargs.get("learning_rate", 0.001)
+        self.optimizer_name = kwargs.get("optimizer_name", "Adam")
+        self.loss = kwargs.get("loss", "sparse_categorical_crossentropy")
+        self.metrics = kwargs.get("metrics", ["accuracy"])
 
-    def _build_model(self) -> tf.keras.Model:
-        """Build the CNN Keras model."""
+        # Model instance
+        self.model = None
+        self.input_shape = None
+
+        # Store hyperparameters for tracking
+        self.hyperparameters = {
+            "conv_filters": self.conv_filters,
+            "kernel_sizes": self.kernel_sizes,
+            "pool_sizes": self.pool_sizes,
+            "dense_layers": self.dense_layers,
+            "dropout_rate": self.dropout_rate,
+            "learning_rate": self.learning_rate,
+            "optimizer": self.optimizer_name
+        }
+
+    def _build_model(self, input_shape: Tuple[int, ...]):
+        """Build the CNN architecture."""
         model = tf.keras.Sequential()
 
-        # First convolutional layer
-        model.add(tf.keras.layers.Conv2D(
-            self.conv_filters[0],
-            kernel_size=(self.kernel_sizes[0], self.kernel_sizes[0]),
-            activation=self.activations[0],
-            input_shape=(28, 28, 1)
-        ))
-        model.add(tf.keras.layers.MaxPooling2D(
-            pool_size=(self.pool_sizes[0], self.pool_sizes[0])
-        ))
+        # Input layer
+        model.add(tf.keras.layers.Input(shape=input_shape))
 
-        # Second convolutional layer
-        model.add(tf.keras.layers.Conv2D(
-            self.conv_filters[1],
-            kernel_size=(self.kernel_sizes[1], self.kernel_sizes[1]),
-            activation=self.activations[1]
-        ))
-        model.add(tf.keras.layers.MaxPooling2D(
-            pool_size=(self.pool_sizes[1], self.pool_sizes[1])
-        ))
+        # Convolutional layers
+        for i, (filters, kernel_size, pool_size) in enumerate(
+                zip(self.conv_filters, self.kernel_sizes, self.pool_sizes)
+        ):
+            # Conv layer
+            model.add(tf.keras.layers.Conv2D(
+                filters=filters,
+                kernel_size=kernel_size,
+                activation=self.activations[i] if i < len(self.activations) else 'relu',
+                padding='same'
+            ))
 
-        # Flatten the output for dense layers
+            # Pooling layer
+            if pool_size > 1:
+                model.add(tf.keras.layers.MaxPooling2D(pool_size=pool_size))
+
+            # Optional batch normalization
+            model.add(tf.keras.layers.BatchNormalization())
+
+        # Flatten for dense layers
         model.add(tf.keras.layers.Flatten())
 
         # Dense layers
         for i, units in enumerate(self.dense_layers):
             model.add(tf.keras.layers.Dense(
                 units,
-                activation=self.activations[i + 2]
+                activation=self.activations[len(self.conv_filters) + i]
+                if len(self.conv_filters) + i < len(self.activations) else 'relu'
             ))
-            model.add(tf.keras.layers.Dropout(self.dropout_rate))
+
+            # Dropout
+            if self.dropout_rate > 0:
+                model.add(tf.keras.layers.Dropout(self.dropout_rate))
 
         # Output layer
         model.add(tf.keras.layers.Dense(
@@ -91,44 +98,88 @@ class MNISTConvModel(ModelPlugin):
             activation=self.output_activation
         ))
 
-        # Compile model
+        # Compile the model
         optimizer = tf.keras.optimizers.get(self.optimizer_name)
         if hasattr(optimizer, 'learning_rate'):
             optimizer.learning_rate = self.learning_rate
 
-        model.compile(optimizer=optimizer, loss=self.loss, metrics=self.metrics)
+        model.compile(
+            optimizer=optimizer,
+            loss=self.loss,
+            metrics=self.metrics
+        )
 
+        # FIXED: Assign the built model to self.model
+        self.model = model
         return model
 
-    # Keep all other methods the same as in MNISTKerasModel
-    # fit, predict, save, evaluate, custom_metrics, get_loss_value, load methods stay the same
+    def fit(self, X, y, validation_data=None, **kwargs):
+        """Train the model."""
+        if self.model is None:
+            self._build_model(X.shape[1:])
+
+        # Handle parameter conflicts - trainer passes these as kwargs
+        fit_kwargs = kwargs.copy()
+        epochs = fit_kwargs.pop('epochs', 10)
+        batch_size = fit_kwargs.pop('batch_size', 32)
+
+        self.history = self.model.fit(
+            X, y,
+            validation_data=validation_data,
+            epochs=epochs,
+            batch_size=batch_size,
+            **fit_kwargs
+        )
+        self.is_fitted = True
+        return self.history
+
+    def predict(self, X):
+        """Make predictions."""
+        if not self.is_fitted:
+            raise ValueError("Model must be fitted before making predictions")
+        return self.model.predict(X)
+
+    def evaluate(self, X, y, **kwargs):
+        """Evaluate the model."""
+        if not self.is_fitted:
+            raise ValueError("Model must be fitted before evaluation")
+        return self.model.evaluate(X, y, **kwargs)
+
+    def save(self, path: str):
+        """Save the model."""
+        if self.model is None:
+            raise ValueError("No model to save")
+        self.model.save(path)
+
+        # Save hyperparameters
+        import json
+        with open(f"{path}_hyperparameters.json", 'w') as f:
+            json.dump(self.hyperparameters, f)
 
     @classmethod
-    def load(cls, path):
+    def load(cls, path: str):
         """Load a saved model."""
-        instance = cls()
-        instance.model = tf.keras.models.load_model(path)
+        model = keras.models.load_model(path)
 
-        # Update metrics_names from loaded model
-        if hasattr(instance.model, 'metrics_names'):
-            instance.metrics_names = instance.model.metrics_names
+        # Load hyperparameters if available
+        import json
+        import os
+        hyperparam_path = f"{path}_hyperparameters.json"
+        if os.path.exists(hyperparam_path):
+            with open(hyperparam_path, 'r') as f:
+                hyperparameters = json.load(f)
+        else:
+            hyperparameters = {}
+
+        # Create instance
+        instance = cls(**hyperparameters)
+        instance.model = model
+        instance.is_fitted = True
 
         return instance
 
-    @property
-    def metrics_names(self):
-        """Get the metrics names from the underlying Keras model if available."""
-        if hasattr(self.model, 'metrics_names'):
-            return self.model.metrics_names
-        return self._metrics_names
 
-    @metrics_names.setter
-    def metrics_names(self, value):
-        """Set metrics names."""
-        self._metrics_names = value
-
-
-class MNISTKerasModel(ModelPlugin):
+class MNISTKerasModel(BaseModelPlugin):
     """Neural network model for MNIST classification using Keras."""
 
     def __init__(self,

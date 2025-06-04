@@ -9,14 +9,14 @@ from typing import Dict, Any, List, Optional
 import seaborn as sns
 import pandas as pd
 
-from src.tof_ml.reporting.report_generator import ClassificationReportGenerator
-from src.tof_ml.pipeline.plugins.interfaces import ReportGeneratorPlugin
+from src.tof_ml.reporting.report_generator import ReportGeneratorPlugin, ClassificationReportMixin
 from src.tof_ml.data.data_manager import DataManager
+from sklearn.metrics import confusion_matrix, classification_report, precision_score, recall_score, f1_score
 
 logger = logging.getLogger(__name__)
 
 
-class MNISTReportGenerator(ClassificationReportGenerator, ReportGeneratorPlugin):
+class MNISTReportGenerator(ClassificationReportMixin, ReportGeneratorPlugin):
     """
     Report generator plugin for MNIST dataset.
     Extends the classification report generator with MNIST-specific visualizations.
@@ -309,3 +309,380 @@ class MNISTReportGenerator(ClassificationReportGenerator, ReportGeneratorPlugin)
                 summary["flattened"] = False
 
         return summary
+
+
+class MNISTConvReportGenerator(ReportGeneratorPlugin, ClassificationReportMixin):
+    """
+    Report generator for MNIST classification.
+    Inherits base functionality from ReportGeneratorPlugin and
+    classification utilities from ClassificationReportMixin.
+    """
+
+    def generate_data_report(self) -> str:
+        """Generate MNIST data distribution report."""
+        logger.info("Generating MNIST data report")
+
+        fig = plt.figure(figsize=(20, 10))
+        fig.suptitle("MNIST Dataset Analysis", fontsize=16)
+
+        # Get data
+        X_train, y_train = self.data_manager.get_train_data()
+        X_val, y_val = self.data_manager.get_val_data()
+        X_test, y_test = self.data_manager.get_test_data()
+
+        # Use mixin method for class distribution
+        ax1 = fig.add_subplot(2, 3, 1)
+        self._plot_class_distribution(ax1, y_train, y_val, y_test)
+
+        # Add MNIST-specific visualizations
+        ax2 = fig.add_subplot(2, 3, 2)
+        self._plot_sample_digits(ax2, X_train, y_train)
+
+        # Dataset statistics
+        ax5 = fig.add_subplot(2, 3, 5)
+        self._plot_dataset_stats(ax5, X_train, X_val, X_test)
+
+        report_path = os.path.join(self.output_dir, "mnist_data_report.png")
+        fig.savefig(report_path, dpi=300, bbox_inches='tight')
+        plt.close(fig)
+
+        return report_path
+
+    def generate_training_report(self) -> str:
+        """Generate CNN training performance report."""
+        logger.info("Generating MNIST training report")
+
+        if not self.training_results:
+            logger.warning("No training results provided")
+            return ""
+
+        # Create figure
+        fig = plt.figure(figsize=(20, 12))
+        fig.suptitle("MNIST CNN Training Report", fontsize=16)
+
+        history = self.training_results.get("training_history", {})
+
+        if history:
+            # 1. Loss curves
+            ax1 = fig.add_subplot(2, 3, 1)
+            self._plot_loss_curves(ax1, history)
+
+            # 2. Accuracy curves
+            ax2 = fig.add_subplot(2, 3, 2)
+            self._plot_accuracy_curves(ax2, history)
+
+            # 3. Learning rate schedule (if available)
+            ax3 = fig.add_subplot(2, 3, 3)
+            self._plot_learning_rate(ax3, history)
+
+            # 4. Training summary
+            ax4 = fig.add_subplot(2, 3, 4)
+            self._plot_training_summary(ax4)
+
+            # 6. Training time analysis
+            ax6 = fig.add_subplot(2, 3, 6)
+            self._plot_training_time(ax6)
+
+        # Save figure
+        report_path = os.path.join(self.output_dir, "mnist_training_report.png")
+        fig.savefig(report_path, dpi=300, bbox_inches='tight')
+        plt.close(fig)
+
+        return report_path
+
+    def generate_evaluation_report(self) -> str:
+        """Generate CNN evaluation report."""
+        logger.info("Generating MNIST evaluation report")
+
+        if not self.evaluation_results:
+            logger.warning("No evaluation results provided")
+            return ""
+
+        # Create figure
+        fig = plt.figure(figsize=(20, 15))
+        fig.suptitle("MNIST CNN Evaluation Report", fontsize=16)
+
+        # Get predictions and true labels
+        y_true = np.array(self.evaluation_results.get("y_true", []))
+        y_pred_probs = np.array(self.evaluation_results.get("y_pred", []))
+
+        if len(y_pred_probs.shape) > 1:
+            y_pred = np.argmax(y_pred_probs, axis=1)
+        else:
+            y_pred = y_pred_probs.astype(int)
+
+        # 1. Confusion matrix
+        ax1 = fig.add_subplot(3, 3, 1)
+        self._plot_confusion_matrix(ax1, y_true, y_pred)
+
+        # 2. Per-class metrics
+        ax2 = fig.add_subplot(3, 3, 2)
+        self._plot_per_class_metrics(ax2, y_true, y_pred)
+
+        # 3. Misclassified samples
+        ax3 = fig.add_subplot(3, 3, 3)
+        self._plot_misclassified_samples(ax3, y_true, y_pred)
+
+        # 4. Confidence distribution
+        ax4 = fig.add_subplot(3, 3, 4)
+        if len(y_pred_probs.shape) > 1:
+            self._plot_confidence_distribution(ax4, y_pred_probs)
+
+        # 5. ROC curves (one-vs-rest)
+        ax5 = fig.add_subplot(3, 3, 5)
+        if len(y_pred_probs.shape) > 1:
+            self._plot_roc_curves(ax5, y_true, y_pred_probs)
+
+        # 7. Error analysis
+        ax7 = fig.add_subplot(3, 3, 7)
+        self._plot_error_analysis(ax7, y_true, y_pred)
+
+        # 6. Prediction distribution
+        ax6 = fig.add_subplot(3, 3, 6)
+        self._plot_prediction_distribution(ax6, y_pred)
+
+        # Save figure
+        report_path = os.path.join(self.output_dir, "mnist_evaluation_report.png")
+        fig.savefig(report_path, dpi=300, bbox_inches='tight')
+        plt.close(fig)
+
+        # Generate text report
+        self._generate_text_report(y_true, y_pred)
+
+        return report_path
+
+    # Add these methods to your MNISTConvReportGenerator class:
+
+    def _plot_sample_digits(self, ax, X_data, y_data):
+        """Plot sample MNIST digits with their labels."""
+        n_samples = min(10, X_data.shape[0])
+
+        # Clear the axis and set up for subplots
+        ax.axis('off')
+        ax.set_title("Sample Digits")
+
+        # Create a grid of sample images
+        for i in range(n_samples):
+            # Create inset axes for each image
+            left = (i % 5) * 0.2
+            bottom = 0.5 if i < 5 else 0.0
+            width = 0.18
+            height = 0.4
+
+            ax_img = ax.inset_axes([left, bottom, width, height])
+
+            # Handle both flattened (784,) and CNN format (28, 28, 1)
+            if len(X_data.shape) == 2:  # Flattened format
+                img = X_data[i].reshape(28, 28)
+            else:  # CNN format (28, 28, 1)
+                img = X_data[i].squeeze()  # Remove the channel dimension
+
+            ax_img.imshow(img, cmap='gray')
+            # Handle both 1D and 2D label formats
+            label = int(y_data[i]) if y_data[i].size == 1 else int(y_data[i, 0])
+            ax_img.set_title(f"{label}", fontsize=8)
+            ax_img.axis('off')
+
+    def _plot_dataset_stats(self, ax, X_train, X_val, X_test):
+        """Plot dataset statistics."""
+        stats = {
+            'Training': len(X_train),
+            'Validation': len(X_val),
+            'Test': len(X_test)
+        }
+
+        ax.bar(stats.keys(), stats.values())
+        ax.set_title('Dataset Size Distribution')
+        ax.set_ylabel('Number of Samples')
+
+        # Add value labels on bars
+        for i, (name, value) in enumerate(stats.items()):
+            ax.text(i, value + 100, str(value), ha='center', va='bottom')
+
+    def _plot_loss_curves(self, ax, history):
+        """Plot training and validation loss curves."""
+        if "loss" in history:
+            ax.plot(history["loss"], label="Training Loss")
+        if "val_loss" in history:
+            ax.plot(history["val_loss"], label="Validation Loss")
+
+        ax.set_title("Loss Curves")
+        ax.set_xlabel("Epoch")
+        ax.set_ylabel("Loss")
+        ax.legend()
+        ax.grid(True, alpha=0.3)
+
+    def _plot_accuracy_curves(self, ax, history):
+        """Plot training and validation accuracy curves."""
+        if "accuracy" in history:
+            ax.plot(history["accuracy"], label="Training Accuracy")
+        if "val_accuracy" in history:
+            ax.plot(history["val_accuracy"], label="Validation Accuracy")
+
+        ax.set_title("Accuracy Curves")
+        ax.set_xlabel("Epoch")
+        ax.set_ylabel("Accuracy")
+        ax.legend()
+        ax.grid(True, alpha=0.3)
+
+    def _plot_learning_rate(self, ax, history):
+        """Plot learning rate schedule if available."""
+        if "lr" in history:
+            ax.plot(history["lr"])
+            ax.set_title("Learning Rate Schedule")
+            ax.set_xlabel("Epoch")
+            ax.set_ylabel("Learning Rate")
+            ax.grid(True, alpha=0.3)
+        else:
+            ax.text(0.5, 0.5, "No learning rate data available",
+                    ha='center', va='center', transform=ax.transAxes)
+            ax.set_title("Learning Rate Schedule")
+
+    def _plot_training_summary(self, ax):
+        """Plot training summary statistics."""
+        if not self.training_results:
+            ax.text(0.5, 0.5, "No training data available",
+                    ha='center', va='center', transform=ax.transAxes)
+            return
+
+        # Create summary statistics
+        summary_data = {
+            'Epochs': self.training_results.get('epochs_completed', 0),
+            'Best Val Loss': self.training_results.get('best_val_loss', 0),
+            'Training Time (min)': self.training_results.get('training_time', 0) / 60
+        }
+
+        # Create a simple text summary
+        ax.axis('off')
+        ax.set_title("Training Summary")
+
+        y_pos = 0.8
+        for key, value in summary_data.items():
+            if isinstance(value, float):
+                text = f"{key}: {value:.4f}"
+            else:
+                text = f"{key}: {value}"
+            ax.text(0.1, y_pos, text, transform=ax.transAxes, fontsize=12)
+            y_pos -= 0.2
+
+    def _plot_training_time(self, ax):
+        """Plot training time analysis."""
+        if not self.training_results:
+            ax.text(0.5, 0.5, "No training data available",
+                    ha='center', va='center', transform=ax.transAxes)
+            return
+
+        training_time = self.training_results.get('training_time', 0)
+        epochs = self.training_results.get('epochs_completed', 1)
+
+        ax.bar(['Total Time', 'Time per Epoch'],
+               [training_time, training_time / epochs])
+        ax.set_title("Training Time Analysis")
+        ax.set_ylabel("Time (seconds)")
+
+    def _plot_misclassified_samples(self, ax, y_true, y_pred):
+        """Plot misclassified samples."""
+        # Find misclassified examples
+        misclassified = np.where(y_true != y_pred)[0]
+
+        if len(misclassified) == 0:
+            ax.text(0.5, 0.5, "No misclassified examples found",
+                    ha='center', va='center', transform=ax.transAxes)
+            ax.set_title("Misclassified Examples")
+            return
+
+        ax.text(0.5, 0.5,
+                f"Found {len(misclassified)} misclassified examples\n({len(misclassified) / len(y_true) * 100:.1f}%)",
+                ha='center', va='center', transform=ax.transAxes)
+        ax.set_title("Misclassified Examples")
+        ax.axis('off')
+
+    def _plot_confidence_distribution(self, ax, y_pred_probs):
+        """Plot confidence distribution."""
+        if len(y_pred_probs.shape) > 1:
+            # Get max probability for each prediction
+            confidences = np.max(y_pred_probs, axis=1)
+            ax.hist(confidences, bins=50, alpha=0.7, edgecolor='black')
+            ax.set_title("Prediction Confidence Distribution")
+            ax.set_xlabel("Confidence (Max Probability)")
+            ax.set_ylabel("Frequency")
+            ax.grid(True, alpha=0.3)
+        else:
+            ax.text(0.5, 0.5, "No probability data available",
+                    ha='center', va='center', transform=ax.transAxes)
+
+    def _plot_roc_curves(self, ax, y_true, y_pred_probs):
+        """Plot ROC curves for multiclass classification."""
+        try:
+            from sklearn.metrics import roc_curve, auc
+            from sklearn.preprocessing import label_binarize
+
+            # Binarize the labels
+            y_bin = label_binarize(y_true, classes=range(10))
+
+            # Plot ROC curve for each class
+            for i in range(min(3, 10)):  # Show only first 3 classes to avoid clutter
+                fpr, tpr, _ = roc_curve(y_bin[:, i], y_pred_probs[:, i])
+                roc_auc = auc(fpr, tpr)
+                ax.plot(fpr, tpr, label=f'Class {i} (AUC = {roc_auc:.2f})')
+
+            ax.plot([0, 1], [0, 1], 'k--')
+            ax.set_xlim([0.0, 1.0])
+            ax.set_ylim([0.0, 1.05])
+            ax.set_xlabel('False Positive Rate')
+            ax.set_ylabel('True Positive Rate')
+            ax.set_title('ROC Curves (First 3 Classes)')
+            ax.legend()
+
+        except ImportError:
+            ax.text(0.5, 0.5, "sklearn required for ROC curves",
+                    ha='center', va='center', transform=ax.transAxes)
+
+    def _plot_prediction_distribution(self, ax, y_pred):
+        """Plot distribution of predictions."""
+        unique_classes, counts = np.unique(y_pred, return_counts=True)
+
+        ax.bar(unique_classes, counts)
+        ax.set_title("Prediction Distribution")
+        ax.set_xlabel("Predicted Class")
+        ax.set_ylabel("Count")
+        ax.set_xticks(unique_classes)
+
+    def _plot_error_analysis(self, ax, y_true, y_pred):
+        """Plot error analysis."""
+        # Calculate per-class error rates
+        error_rates = []
+        classes = np.unique(y_true)
+
+        for cls in classes:
+            mask = y_true == cls
+            if np.sum(mask) > 0:
+                error_rate = np.sum(y_true[mask] != y_pred[mask]) / np.sum(mask)
+                error_rates.append(error_rate)
+            else:
+                error_rates.append(0)
+
+        ax.bar(classes, error_rates)
+        ax.set_title("Per-Class Error Rates")
+        ax.set_xlabel("Class")
+        ax.set_ylabel("Error Rate")
+        ax.set_xticks(classes)
+        ax.grid(True, alpha=0.3)
+
+    def _generate_text_report(self, y_true, y_pred):
+        """Generate text classification report."""
+        try:
+            from sklearn.metrics import classification_report
+            report = classification_report(y_true, y_pred)
+
+            # Save text report
+            report_path = os.path.join(self.output_dir, "classification_report.txt")
+            with open(report_path, 'w') as f:
+                f.write("MNIST Classification Report\n")
+                f.write("=" * 50 + "\n\n")
+                f.write(report)
+
+            logger.info(f"Text classification report saved to {report_path}")
+
+        except ImportError:
+            logger.warning("sklearn not available for detailed classification report")
